@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# 数据库文件
+*.db
+*.sqlite3
+
+# 向量数据库
+backend/data/chroma/
+
+# 用户上传的文件
+backend/data/uploads/*.pdf
+backend/data/uploads/*.doc
+backend/data/uploads/*.docx
+
+# 生成的文件
+backend/data/diagrams/
+backend/data/notes/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+
+# 环境变量
+.env
+.env.local
+
+# 临时文件
+*.tmp
+*.bak
+
