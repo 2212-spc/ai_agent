@@ -8,12 +8,19 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application configuration derived from environment variables."""
 
-    deepseek_api_key: str = Field(..., env="DEEPSEEK_API_KEY")
+    deepseek_api_key: str = Field(default="", env="DEEPSEEK_API_KEY")
     deepseek_base_url: str = Field(
         default="https://api.deepseek.com",
         description="Override to point at a proxy or self-hosted gateway.",
         env="DEEPSEEK_BASE_URL",
     )
+    
+    def validate_api_key(self) -> bool:
+        """验证 API key 是否有效"""
+        if not self.deepseek_api_key or self.deepseek_api_key == "sk-placeholder":
+            return False
+        return True
+    
     app_name: str = "AI Agent Backend"
     data_dir: Path = Field(
         default=Path("./data"),
@@ -28,9 +35,11 @@ class Settings(BaseSettings):
         description="Chroma persistent directory.",
     )
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "allow"  # 允许额外字段
+    }
 
     @field_validator("data_dir", "sqlite_path", "chroma_dir", mode="before")
     def resolve_path(cls, value: str | Path) -> Path:

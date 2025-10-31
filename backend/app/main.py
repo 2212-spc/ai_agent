@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Literal
 
 import httpx
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,6 +38,9 @@ from .tool_service import (
     parse_tool_call,
     validate_tool_config,
 )
+from .graph_agent import run_agent, stream_agent
+from .file_processor import FileProcessor, chunk_text
+from .rag_service import ingest_text_chunk
 
 
 logging.basicConfig(
@@ -55,6 +58,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 添加请求日志中间件
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info(f"🌐 收到请求: {request.method} {request.url.path}")
+    response = await call_next(request)
+    logger.info(f"📤 响应状态: {response.status_code}")
+    return response
 
 
 class Message(BaseModel):
@@ -176,9 +187,29 @@ async def startup() -> None:
         logger.info("数据目录: %s", settings.data_dir)
         logger.info("数据库路径: %s", settings.sqlite_path)
         logger.info("Chroma 目录: %s", settings.chroma_dir)
+        
+        # 验证 API Key
+        if not settings.validate_api_key():
+            logger.warning("⚠️ DeepSeek API Key 未配置或无效！")
+            logger.warning("请设置环境变量 DEEPSEEK_API_KEY 或在 backend/.env 文件中配置")
+            logger.warning("示例: DEEPSEEK_API_KEY=sk-your-real-api-key")
+        else:
+            logger.info("✅ DeepSeek API Key 已配置")
+        
         ensure_directories(settings)
         init_engine(settings.sqlite_path)
-        logger.info("数据库初始化成功")
+        logger.info("✅ 数据库初始化成功")
+        
+        # 预加载嵌入模型（避免首次上传文件卡住）
+        try:
+            logger.info("🔄 预加载嵌入模型...")
+            from .rag_service import get_embeddings
+            embeddings = get_embeddings()
+            test_emb = embeddings.embed_query("预热测试")
+            logger.info(f"✅ 嵌入模型已加载 (维度: {len(test_emb)})")
+        except Exception as e:
+            logger.warning(f"⚠️ 嵌入模型预加载失败: {e}")
+            
     except Exception as exc:  # pragma: no cover
         logger.exception("启动初始化失败: %s", exc)
         raise
@@ -677,6 +708,220 @@ async def get_tool_logs(
     ]
 
 
+@app.post("/chat/agent", response_model=ChatResponse)
+async def chat_with_langgraph_agent(
+    payload: ChatRequest,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> ChatResponse:
+    """
+    使用 LangGraph Agent 处理对话
+    
+    特点：
+    - 多步骤规划与执行
+    - 智能工具选择
+    - 状态持久化
+    - 反思与优化
+    """
+    logger.info("🤖 [LangGraph Agent] 开始处理请求")
+    
+    # 获取可用工具
+    tool_records = select_tool_records(payload, session)
+    
+    # 运行 LangGraph Agent
+    result = await run_agent(
+        user_query=payload.messages[-1].content if payload.messages else "",
+        settings=settings,
+        session=session,
+        tool_records=tool_records,
+        use_knowledge_base=payload.use_knowledge_base,
+        conversation_history=[msg.model_dump() for msg in payload.messages],
+    )
+    
+    # 构建响应
+    contexts = [
+        ContextSnippet(
+            document_id=ctx.get("document_id"),
+            original_name=ctx.get("original_name"),
+            content=ctx.get("content", "")[:500]
+        )
+        for ctx in result.get("retrieved_contexts", [])
+    ]
+    
+    tool_results = [
+        ToolExecutionResult(
+            tool_id=tr.get("tool_id", ""),
+            tool_name=tr.get("tool_name", ""),
+            output=tr.get("output", "")
+        )
+        for tr in result.get("tool_results", [])
+    ]
+    
+    return ChatResponse(
+        reply=result.get("final_answer", "抱歉，无法生成答案"),
+        raw={
+            "thoughts": result.get("thoughts", []),
+            "observations": result.get("observations", []),
+            "plan": result.get("plan", ""),
+            "quality_score": result.get("quality_score", 0.0),
+            "reflection": result.get("reflection", ""),
+            "thread_id": result.get("thread_id", ""),
+            "success": result.get("success", False),
+        },
+        contexts=contexts,
+        tool_results=tool_results,
+    )
+
+
+@app.get("/agent/workflow/visualization")
+async def get_workflow_visualization() -> Dict[str, Any]:
+    """
+    获取 LangGraph Agent 工作流的可视化表示（Mermaid 格式）
+    """
+    mermaid_graph = """
+graph TD
+    A[用户输入] --> B[🧠 规划器<br/>任务分析与规划]
+    B --> C[🔀 路由器<br/>决策下一步]
+    
+    C -->|需要知识库| D[📚 知识库检索<br/>RAG检索]
+    C -->|需要工具| E[🔧 工具执行器<br/>调用工具]
+    C -->|信息充足| F[🤔 反思器<br/>质量评估]
+    
+    D --> C
+    E --> C
+    
+    F -->|质量不足<br/>需要人工| G[👤 人工介入<br/>等待反馈]
+    F -->|质量合格| H[✨ 合成器<br/>生成答案]
+    
+    G --> C
+    
+    H --> I[完成]
+    
+    style A fill:#667eea,stroke:#333,stroke-width:2px,color:#fff
+    style I fill:#10a37f,stroke:#333,stroke-width:2px,color:#fff
+    style B fill:#fff9e6,stroke:#ffc107,stroke-width:2px
+    style C fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style D fill:#f0f9ff,stroke:#10a37f,stroke-width:2px
+    style E fill:#f0f9ff,stroke:#10a37f,stroke-width:2px
+    style F fill:#fff0f6,stroke:#eb2f96,stroke-width:2px
+    style G fill:#fff1f0,stroke:#ff4d4f,stroke-width:2px
+    style H fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+"""
+    
+    return {
+        "mermaid_code": mermaid_graph,
+        "description": "LangGraph Agent 工作流图",
+        "nodes": [
+            {"id": "planner", "name": "规划器", "description": "分析用户问题，制定执行计划"},
+            {"id": "router", "name": "路由器", "description": "根据当前状态决定下一步动作"},
+            {"id": "knowledge_search", "name": "知识库检索", "description": "从向量数据库检索相关内容"},
+            {"id": "tool_executor", "name": "工具执行器", "description": "智能选择并执行工具"},
+            {"id": "reflector", "name": "反思器", "description": "评估当前进展，决定是否需要调整"},
+            {"id": "synthesizer", "name": "合成器", "description": "综合所有信息生成最终答案"},
+            {"id": "human_input", "name": "人工介入", "description": "暂停执行，等待人工反馈"}
+        ]
+    }
+
+
+@app.post("/chat/agent/stream")
+async def chat_with_langgraph_agent_stream(
+    payload: ChatRequest,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    """
+    使用 LangGraph Agent 处理对话（流式）
+    
+    实时返回 Agent 的思考过程和执行步骤
+    """
+    logger.info("🌊 [LangGraph Agent Stream] 开始流式处理")
+    
+    tool_records = select_tool_records(payload, session)
+    
+    async def event_generator() -> AsyncGenerator[bytes, None]:
+        try:
+            yield format_sse("status", {"stage": "started", "mode": "langgraph_agent"})
+            
+            # 流式执行 LangGraph Agent
+            async for event in stream_agent(
+                user_query=payload.messages[-1].content if payload.messages else "",
+                settings=settings,
+                session=session,
+                tool_records=tool_records,
+                use_knowledge_base=payload.use_knowledge_base,
+                conversation_history=[msg.model_dump() for msg in payload.messages],
+            ):
+                event_type = event.get("event", "unknown")
+                
+                if event_type == "node_output":
+                    # 节点执行输出
+                    node_name = event.get("node", "")
+                    node_data = event.get("data", {})
+                    
+                    # 发送节点开始事件
+                    yield format_sse("agent_node", {
+                        "node": node_name,
+                        "status": "completed",
+                        "data": node_data,
+                        "timestamp": event.get("timestamp")
+                    })
+                    
+                    # 如果有思考过程，发送思考事件
+                    if "thoughts" in node_data and node_data["thoughts"]:
+                        for thought in node_data["thoughts"]:
+                            yield format_sse("agent_thought", {
+                                "node": node_name,
+                                "thought": thought,
+                                "timestamp": event.get("timestamp")
+                            })
+                    
+                    # 如果有观察结果，发送观察事件
+                    if "observations" in node_data and node_data["observations"]:
+                        for observation in node_data["observations"]:
+                            yield format_sse("agent_observation", {
+                                "node": node_name,
+                                "observation": observation,
+                                "timestamp": event.get("timestamp")
+                            })
+                    
+                    # 如果有工具结果，发送工具事件
+                    if "tool_results" in node_data and node_data["tool_results"]:
+                        for tool_result in node_data["tool_results"]:
+                            yield format_sse("tool_result", tool_result)
+                    
+                    # 如果有知识库检索结果
+                    if "retrieved_contexts" in node_data and node_data["retrieved_contexts"]:
+                        yield format_sse("context", {
+                            "items": node_data["retrieved_contexts"]
+                        })
+                    
+                    # 如果有最终答案
+                    if "final_answer" in node_data and node_data["final_answer"]:
+                        yield format_sse("assistant_final", {
+                            "content": node_data["final_answer"]
+                        })
+                        logger.info(f"📤 已发送最终答案到前端，长度: {len(node_data['final_answer'])}")
+                
+                elif event_type == "completed":
+                    # Agent 执行完成
+                    yield format_sse("completed", {
+                        "thread_id": event.get("thread_id"),
+                        "timestamp": event.get("timestamp")
+                    })
+                    logger.info(f"📤 已发送完成事件到前端")
+        
+        except HTTPException as http_error:
+            yield format_sse(
+                "error",
+                {"message": http_error.detail, "status_code": http_error.status_code},
+            )
+        except Exception as exc:
+            logger.exception("LangGraph Agent streaming 出错: %s", exc)
+            yield format_sse("error", {"message": str(exc)})
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 def serialize_tool(record: ToolRecord) -> ToolResponse:
     config = load_tool_config(record)
     return ToolResponse.model_validate(
@@ -691,3 +936,223 @@ def serialize_tool(record: ToolRecord) -> ToolResponse:
             "updated_at": record.updated_at,
         }
     )
+
+
+@app.post("/test-upload")
+async def test_upload(files: List[UploadFile] = File(...)):
+    """测试文件上传接口"""
+    logger.info(f"🧪 [测试接口] 收到 {len(files)} 个文件")
+    for idx, f in enumerate(files, 1):
+        content = await f.read()
+        logger.info(f"   文件 {idx}: {f.filename}, 大小: {len(content)} bytes")
+    return {"status": "ok", "files": len(files)}
+
+
+@app.post("/chat/agent/stream-with-files")
+async def chat_with_files_stream(
+    message: str = Form(""),
+    use_knowledge_base: bool = Form(True),
+    use_tools: bool = Form(True),
+    files: List[UploadFile] = File(...),
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    """
+    支持文件上传的 Agent 对话（流式）- 真正的 RAG
+    
+    上传的文件会被解析、向量化并存储到知识库，然后基于文件内容回答问题
+    """
+    logger.info(f"=" * 80)
+    logger.info(f"📁 [文件上传 API] 收到请求")
+    logger.info(f"📝 消息: {message}")
+    logger.info(f"📚 使用知识库: {use_knowledge_base}")
+    logger.info(f"🔧 使用工具: {use_tools}")
+    logger.info(f"📁 文件数量: {len(files)}")
+    for idx, f in enumerate(files, 1):
+        logger.info(f"   文件 {idx}: {f.filename} ({f.content_type})")
+    logger.info(f"=" * 80)
+    
+    file_processor = FileProcessor()
+    processed_files = []
+    
+    # 处理每个上传的文件
+    for upload_file in files:
+        try:
+            logger.info(f"📄 处理文件: {upload_file.filename}")
+            
+            # 读取文件内容
+            file_content = await upload_file.read()
+            
+            # 保存文件
+            file_path = file_processor.save_file(file_content, upload_file.filename)
+            
+            # 提取文本
+            text_content = file_processor.extract_text(file_path)
+            
+            if text_content and not text_content.startswith("["):
+                logger.info(f"📝 文本内容长度: {len(text_content)} 字符")
+                
+                try:
+                    # 文本分块
+                    logger.info(f"🔄 开始文本分块...")
+                    chunks = chunk_text(text_content, chunk_size=500, overlap=50)
+                    logger.info(f"📦 文本分块完成: {len(chunks)} 个块")
+                except Exception as chunk_error:
+                    logger.error(f"❌ 文本分块失败: {chunk_error}", exc_info=True)
+                    processed_files.append({
+                        "filename": upload_file.filename,
+                        "error": f"文本分块失败: {str(chunk_error)}"
+                    })
+                    continue
+                
+                # 向量化并存储到知识库
+                doc_id = f"file_{upload_file.filename}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                
+                successful_chunks = 0
+                logger.info(f"🔄 开始向量化存储到知识库...")
+                
+                for i, chunk in enumerate(chunks):
+                    try:
+                        chunk_metadata = {
+                            "source": upload_file.filename,
+                            "chunk_index": i,
+                            "total_chunks": len(chunks),
+                            "upload_time": datetime.now().isoformat()
+                        }
+                        
+                        logger.debug(f"💾 向量化块 {i+1}/{len(chunks)}: {len(chunk)} 字符")
+                        
+                        ingest_text_chunk(
+                            session=session,
+                            settings=settings,
+                            doc_id=f"{doc_id}_chunk_{i}",
+                            content=chunk,
+                            metadata=chunk_metadata
+                        )
+                        successful_chunks += 1
+                        
+                        if (i + 1) % 10 == 0:
+                            logger.info(f"💾 已向量化 {i + 1}/{len(chunks)} 个块...")
+                    except Exception as chunk_error:
+                        logger.error(f"❌ 块 {i} 向量化失败: {chunk_error}", exc_info=True)
+                
+                logger.info(f"✅ 文件已向量化: {upload_file.filename}, 成功 {successful_chunks}/{len(chunks)} 个块")
+                
+                processed_files.append({
+                    "filename": upload_file.filename,
+                    "chunks": len(chunks),
+                    "characters": len(text_content)
+                })
+            else:
+                logger.warning(f"⚠️ 文件无法解析: {upload_file.filename}")
+                processed_files.append({
+                    "filename": upload_file.filename,
+                    "error": text_content
+                })
+                
+        except Exception as e:
+            logger.error(f"❌ 文件处理失败 {upload_file.filename}: {e}", exc_info=True)
+            processed_files.append({
+                "filename": upload_file.filename,
+                "error": str(e)
+            })
+    
+    logger.info(f"📊 文件处理汇总: 总共 {len(files)} 个文件, 成功 {len([f for f in processed_files if 'error' not in f])} 个")
+    
+    # 构建用户查询
+    user_query = message if message else "请分析这些文件的内容并总结关键信息"
+    
+    # 获取工具列表
+    tool_records = list_tools(session)
+    if not use_tools:
+        tool_records = []
+    
+    async def event_generator() -> AsyncGenerator[bytes, None]:
+        try:
+            # 发送文件处理结果
+            yield format_sse("files_processed", {
+                "files": processed_files,
+                "total": len(files)
+            })
+            
+            yield format_sse("status", {"stage": "started", "mode": "langgraph_agent_with_files"})
+            
+            # 流式执行 LangGraph Agent（强制启用知识库）
+            async for event in stream_agent(
+                user_query=user_query,
+                settings=settings,
+                session=session,
+                tool_records=tool_records,
+                use_knowledge_base=True,  # 强制启用，因为文件已存入知识库
+                conversation_history=[{"role": "user", "content": user_query}],
+            ):
+                event_type = event.get("event", "unknown")
+                
+                if event_type == "node_output":
+                    node_name = event.get("node", "")
+                    node_data = event.get("data", {})
+                    
+                    yield format_sse("agent_node", {
+                        "node": node_name,
+                        "status": "completed",
+                        "data": node_data,
+                        "timestamp": event.get("timestamp")
+                    })
+                    
+                    if "thoughts" in node_data and node_data["thoughts"]:
+                        for thought in node_data["thoughts"]:
+                            yield format_sse("agent_thought", {
+                                "node": node_name,
+                                "thought": thought,
+                                "timestamp": event.get("timestamp")
+                            })
+                    
+                    if "observations" in node_data and node_data["observations"]:
+                        for obs in node_data["observations"]:
+                            yield format_sse("agent_observation", {
+                                "node": node_name,
+                                "observation": obs,
+                                "timestamp": event.get("timestamp")
+                            })
+                    
+                    if "tool_results" in node_data:
+                        for tool_result in node_data["tool_results"]:
+                            yield format_sse("tool_result", {
+                                "tool_name": tool_result.get("tool_name"),
+                                "output": tool_result.get("output"),
+                                "timestamp": event.get("timestamp")
+                            })
+                    
+                    if "contexts" in node_data and node_data["contexts"]:
+                        yield format_sse("context", {
+                            "items": node_data["contexts"],
+                            "count": len(node_data["contexts"])
+                        })
+                    
+                    if node_name == "synthesizer" and "final_answer" in node_data:
+                        logger.info("📤 已发送最终答案到前端，长度: %d", len(node_data["final_answer"]))
+                        yield format_sse("assistant_final", {
+                            "content": node_data["final_answer"]
+                        })
+                
+                elif event_type == "final_answer":
+                    yield format_sse("assistant_final", {
+                        "content": event.get("content", "")
+                    })
+                
+                elif event_type == "error":
+                    yield format_sse("error", {
+                        "message": event.get("message", "Unknown error")
+                    })
+            
+            logger.info("📤 已发送完成事件到前端")
+            yield format_sse("completed", {
+                "status": "success",
+                "files_processed": len(processed_files)
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ 流式处理错误: {e}", exc_info=True)
+            yield format_sse("error", {"message": str(e)})
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

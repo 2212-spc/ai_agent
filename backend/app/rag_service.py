@@ -49,6 +49,34 @@ def get_embeddings() -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(model_name=_EMBEDDING_MODEL_NAME)
 
 
+def ingest_text_chunk(
+    session: Session,
+    settings: Settings,
+    doc_id: str,
+    content: str,
+    metadata: dict
+) -> None:
+    """将文本块向量化并存入知识库（用于文件上传）"""
+    try:
+        # 创建 Document 对象
+        doc = Document(page_content=content, metadata=metadata)
+        
+        # 获取向量数据库
+        vectorstore = get_vectorstore(settings)
+        
+        # 添加文档（这一步可能较慢）
+        vectorstore.add_documents([doc], ids=[doc_id])
+        
+        # 清除 BM25 缓存，强制重新构建
+        key = str(settings.chroma_dir)
+        if key in _BM25_CACHE:
+            del _BM25_CACHE[key]
+        
+    except Exception as e:
+        logger.error(f"❌ 文本块向量化失败 {doc_id}: {e}", exc_info=True)
+        raise
+
+
 def get_vectorstore(settings: Settings) -> Chroma:
     """Return a cached Chroma vector store bound to the project data directory."""
     key = str(settings.chroma_dir)

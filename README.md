@@ -11,11 +11,12 @@
 ## ✨ 核心功能
 
 ### 🎨 现代化界面
-- ✅ **登录系统** - 美观的登录页面（演示模式）
+- ✅ **注册登录系统** - 完整的用户注册和登录功能（演示模式）
 - ✅ **ChatGPT 风格界面** - 三栏布局，左侧边栏 + 主聊天区 + 右侧上下文面板
 - ✅ **流式响应** - 实时打字机效果，体验流畅
 - ✅ **对话历史** - 自动保存，支持多会话切换
 - ✅ **响应式设计** - 完美支持桌面端和移动端
+- ✅ **LangGraph Agent 界面** - 实时展示 Agent 执行过程，包括规划、路由、工具调用等
 
 ### 💬 对话能力
 - ✅ **Markdown 渲染** - 支持标题、列表、表格、引用等
@@ -37,8 +38,16 @@
 ### 🔧 工具系统
 - ✅ **笔记记录** - 自动保存总结和笔记
 - ✅ **知识库检索** - 语义搜索已上传文档
-- ✅ **结构图绘制** - Mermaid 流程图、架构图
+- ✅ **结构图绘制** - Mermaid 流程图、架构图、思维导图（LLM 智能生成）
 - ✅ **自定义工具** - 支持添加 HTTP GET 工具
+
+### 🤖 LangGraph Agent（新增）
+- ✅ **多步骤规划** - 智能分析任务，生成执行计划
+- ✅ **智能路由** - 根据执行状态动态决策下一步动作
+- ✅ **工具调用** - 自动调用搜索、绘图、笔记等工具
+- ✅ **状态管理** - 完整的执行状态跟踪和持久化
+- ✅ **流式执行** - 实时展示 Agent 的思考过程和执行步骤
+- ✅ **智能思维导图** - 基于搜索结果使用 LLM 生成高质量思维导图
 
 ---
 
@@ -122,7 +131,9 @@ INFO:     Application startup complete.
 
 在浏览器中打开：
 - **登录页面**：`frontend/login.html`
+- **注册页面**：`frontend/register.html`（或从登录页点击注册链接）
 - **聊天界面**：`frontend/chat.html`（登录后自动跳转）
+- **LangGraph Agent 界面**：`frontend/agent_chat.html`（登录后自动跳转）
 
 或者使用 Live Server（VS Code 插件）打开 `frontend/login.html`
 
@@ -132,8 +143,10 @@ INFO:     Application startup complete.
 
 ### 登录系统
 1. 打开 `frontend/login.html`
-2. 输入任意邮箱和密码（演示模式，无需注册）
-3. 点击"登录"自动跳转到聊天界面
+2. **首次使用**：点击"立即注册"，填写用户名、邮箱和密码创建账号
+3. **已有账号**：输入邮箱和密码登录
+4. 登录后自动跳转到 LangGraph Agent 界面
+5. 支持"记住我"功能，下次访问自动登录
 
 ### 文档上传
 1. 点击聊天界面右上角的 📁 按钮
@@ -157,6 +170,15 @@ INFO:     Application startup complete.
 帮我搜索一下 2024 年人工智能的最新发展趋势
 ```
 
+**搜索并生成思维导图：**
+```
+帮我搜索人工智能的最新进展，总结关键点并画个思维导图
+```
+系统会：
+1. 先执行网络搜索
+2. 使用 LLM 分析搜索结果
+3. 生成结构化的思维导图（Mermaid 格式）
+
 **读取网页：**
 ```
 请帮我总结这个网页的内容：https://example.com/article
@@ -166,6 +188,15 @@ INFO:     Application startup complete.
 ```
 北京今天天气怎么样？
 ```
+
+**复杂任务示例：**
+```
+查询北京明天的天气，如果会下雨就写个笔记提醒我带伞
+```
+系统会自动：
+1. 查询天气
+2. 判断是否下雨
+3. 如果需要，创建提醒笔记
 
 ---
 
@@ -191,9 +222,9 @@ ai_agent/
 │
 ├── frontend/                   # 前端界面
 │   ├── login.html             # 登录页面
-│   ├── chat.html              # 主聊天界面
-│   ├── MCP使用指南.md         # 工具使用指南
-│   └── 使用指南.md             # 用户手册
+│   ├── register.html          # 注册页面
+│   ├── chat.html              # 传统聊天界面
+│   └── agent_chat.html        # LangGraph Agent 界面（推荐）
 │
 └── README.md                   # 本文件
 ```
@@ -205,11 +236,14 @@ ai_agent/
 ### 后端
 - **FastAPI** - 高性能 Web 框架
 - **DeepSeek API** - 大语言模型
+- **LangGraph** - Agent 工作流编排框架
+- **LangChain** - LLM 应用开发框架
 - **ChromaDB** - 向量数据库
 - **Sentence Transformers** - 文本嵌入模型
 - **SQLite** - 关系数据库
 - **BeautifulSoup** - 网页解析
 - **httpx** - HTTP 客户端
+- **rank-bm25** - BM25 关键词检索
 
 ### 前端
 - **原生 HTML/CSS/JavaScript** - 无框架依赖
@@ -234,6 +268,8 @@ ai_agent/
 |------|------|------|
 | POST | `/chat/stream` | 流式对话（推荐） |
 | POST | `/chat` | 普通对话 |
+| POST | `/chat/agent/stream` | LangGraph Agent 流式执行（推荐） |
+| POST | `/chat/agent` | LangGraph Agent 执行 |
 | POST | `/documents/upload` | 上传文档 |
 | GET | `/documents` | 列出文档 |
 | DELETE | `/documents/{id}` | 删除文档 |
@@ -251,7 +287,9 @@ ai_agent/
 - **search_knowledge** - 搜索知识库
 
 ### 可视化
-- **draw_diagram** - 绘制 Mermaid 结构图
+- **draw_diagram** - 绘制 Mermaid 结构图（支持流程图、思维导图等）
+  - 支持基于搜索结果智能生成思维导图
+  - 使用 LLM 分析内容，生成结构化图表
 
 ### 上网功能
 - **web_search** - 网页搜索（DuckDuckGo）
@@ -320,15 +358,20 @@ A: 确保：
 - [x] Markdown 渲染
 - [x] 数学公式支持
 - [x] 上网搜索功能
+- [x] LangGraph Agent 工作流
+- [x] 用户注册登录系统
+- [x] 智能思维导图生成（基于 LLM）
+- [x] 任务执行顺序优化
+- [x] Agent 执行过程可视化
 
 ### 计划中 🚧
-- [ ] 用户认证系统
+- [ ] 真实用户认证系统（后端 API）
 - [ ] 多 Agent 协作
-- [ ] 工作流编排
 - [ ] Prompt 模板管理
 - [ ] 长期记忆系统
 - [ ] 数据库连接器
 - [ ] 语音输入/输出
+- [ ] 文件上传支持更多格式（PPT、Excel 等）
 
 ---
 

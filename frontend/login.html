@@ -281,7 +281,7 @@
         </div>
 
         <div class="signup-link">
-            还没有账号？ <a href="#">立即注册</a>
+            还没有账号？ <a href="register.html">立即注册</a>
         </div>
 
         <div class="demo-hint">
@@ -315,7 +315,7 @@
                 btn.style.opacity = '0.7';
                 
                 setTimeout(() => {
-                    window.location.href = 'chat.html';
+                    window.location.href = 'agent_chat.html';
                 }, 800);
             }
         }
@@ -334,7 +334,7 @@
                 const user = JSON.parse(userInfo);
                 if (user.remember) {
                     // 如果选择了记住我，直接跳转
-                    window.location.href = 'chat.html';
+                    window.location.href = 'agent_chat.html';
                 }
             }
         };
