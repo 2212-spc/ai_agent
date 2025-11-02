@@ -320,13 +320,19 @@ async def router_node(
             }
     
     # 步骤 >= 1，使用 LLM 智能决策
+    # 先检查是否已经检索过知识库，避免重复搜索
+    kb_already_searched = len(retrieved_contexts) > 0 or any("知识库" in obs or "检索到" in obs for obs in observations)
+    
     try:
         # 构建决策上下文
+        kb_status = "已检索" if kb_already_searched else "未检索"
+        kb_status_detail = f"已检索 {len(retrieved_contexts)} 条" if retrieved_contexts else "未检索"
+        
         context_summary = f"""当前执行状态：
 - 用户问题：{user_query}
 - 执行步骤：{current_step}/{max_iterations}
 - 已调用工具数：{len(tool_calls_made)}
-- 知识库检索：{"已检索 " + str(len(retrieved_contexts)) + " 条" if retrieved_contexts else "未检索"}
+- 知识库检索状态：{kb_status_detail}
 - 工具执行结果数：{len(tool_results)}
 
 最近观察：
@@ -338,11 +344,12 @@ B. tool_executor - 需要调用外部工具获取数据
 C. synthesize - 信息已足够，可以生成最终答案
 
 要求：
-1. 如果启用了知识库但还没检索，优先选择 A
-2. 如果问题需要多个工具（如：搜索+绘图），必须执行完所有工具后再选择 C
-3. 如果问题需要实时数据（天气、搜索等），但还没调用相应工具，选择 B
-4. 如果已有足够信息且所有必要工具都已执行，选择 C
-5. 只回复一个字母（A/B/C），不要解释
+1. 如果启用了知识库但还没检索（知识库检索状态显示"未检索"），优先选择 A
+2. 如果知识库已经检索过（知识库检索状态显示"已检索"），不要重复选择 A，应该选择 B 或 C
+3. 如果问题需要多个工具（如：搜索+绘图），必须执行完所有工具后再选择 C
+4. 如果问题需要实时数据（天气、搜索等），但还没调用相应工具，选择 B
+5. 如果已有足够信息且所有必要工具都已执行，选择 C
+6. 只回复一个字母（A/B/C），不要解释
 """
         
         # 调用 LLM 决策
@@ -363,7 +370,18 @@ C. synthesize - 信息已足够，可以生成最终答案
         }
         
         next_action = action_map.get(decision, "synthesize")
-        thought = f"LLM 智能路由：{decision} -> {next_action}"
+        
+        # 防止重复搜索知识库：如果已经检索过，强制改为 synthesize 或 tool_executor
+        if next_action == "search_kb" and kb_already_searched:
+            logger.warning(f"⚠️ 阻止重复知识库搜索：已检索过 {len(retrieved_contexts)} 条，强制改为 synthesize")
+            if should_call_tool(state):
+                next_action = "tool_executor"
+                thought = "LLM选择A但已检索过知识库，改为调用工具"
+            else:
+                next_action = "synthesize"
+                thought = "LLM选择A但已检索过知识库，改为生成答案"
+        else:
+            thought = f"LLM 智能路由：{decision} -> {next_action}"
         
         logger.info(f"📍 智能路由决策：步骤{current_step}, 决策={decision}, 下一步={next_action}")
         
@@ -377,11 +395,20 @@ C. synthesize - 信息已足够，可以生成最终答案
         logger.error(f"路由器 LLM 决策失败: {e}")
         
         # 降级策略：使用简单规则
-        kb_searched = any("知识库" in obs for obs in observations)
+        kb_searched = len(retrieved_contexts) > 0 or any("知识库" in obs or "检索到" in obs for obs in observations)
         
+        # 防止重复搜索：如果已经检索过，不再选择 search_kb
         if use_knowledge_base and not kb_searched and current_step < 2:
             next_action = "search_kb"
             thought = "降级决策：检索知识库"
+        elif kb_searched and current_step >= 2:
+            # 已经检索过，如果还有工具要调用就调用工具，否则生成答案
+            if should_call_tool(state):
+                next_action = "tool_executor"
+                thought = "降级决策：已检索过知识库，调用工具"
+            else:
+                next_action = "synthesize"
+                thought = "降级决策：已检索过知识库，生成答案"
         elif should_call_tool(state):
             next_action = "tool_executor"
             thought = "降级决策：调用工具"
