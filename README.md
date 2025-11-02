@@ -49,6 +49,15 @@
 - ✅ **流式执行** - 实时展示 Agent 的思考过程和执行步骤
 - ✅ **智能思维导图** - 基于搜索结果使用 LLM 生成高质量思维导图
 
+### 🛠️ 自定义Agent构建器（最新）
+- ✅ **可视化构建** - 拖拽节点创建自定义Agent工作流
+- ✅ **多种节点类型** - 规划器、知识库检索、工具执行器、条件判断、LLM调用、合成器等
+- ✅ **灵活连接** - 支持拖拽连接和双击连接两种方式
+- ✅ **节点配置** - 可视化配置每个节点的参数和提示词
+- ✅ **示例模板** - 内置天气助手、搜索总结等示例模板
+- ✅ **性能优化** - 流畅的拖拽体验，硬件加速渲染
+- ✅ **保存与测试** - 一键保存Agent配置，即时测试执行效果
+
 ---
 
 ## 🚀 快速开始
@@ -137,6 +146,14 @@ INFO:     Application startup complete.
 
 或者使用 Live Server（VS Code 插件）打开 `frontend/login.html`
 
+### 使用Agent构建器
+1. 登录后，点击右上角的 🛠️ 按钮打开Agent构建器
+2. 从左侧拖拽节点到画布，或点击节点类型快速添加
+3. 点击节点进行配置，设置提示词、选择工具等
+4. 连接节点：从输出端口拖拽到输入端口，或双击两个节点
+5. 点击 **保存** 保存Agent配置，点击 **测试** 立即测试
+6. 查看 **AGENT_BUILDER_EXAMPLE.md** 了解详细使用教程
+
 ---
 
 ## 📖 使用指南
@@ -210,7 +227,9 @@ ai_agent/
 │   │   ├── config.py          # 配置管理
 │   │   ├── database.py        # 数据库模型
 │   │   ├── rag_service.py     # RAG 检索服务
-│   │   └── tool_service.py    # 工具服务（含上网功能）
+│   │   ├── tool_service.py    # 工具服务（含上网功能）
+│   │   ├── graph_agent.py      # LangGraph Agent 核心逻辑
+│   │   └── agent_builder.py   # Agent构建器后端逻辑
 │   ├── data/
 │   │   ├── uploads/           # 上传的文档
 │   │   ├── notes/             # AI 生成的笔记
@@ -224,8 +243,9 @@ ai_agent/
 │   ├── login.html             # 登录页面
 │   ├── register.html          # 注册页面
 │   ├── chat.html              # 传统聊天界面
-│   └── agent_chat.html        # LangGraph Agent 界面（推荐）
+│   └── agent_chat.html        # LangGraph Agent 界面（推荐，包含构建器）
 │
+├── AGENT_BUILDER_EXAMPLE.md   # Agent构建器使用教程
 └── README.md                   # 本文件
 ```
 
@@ -270,6 +290,11 @@ ai_agent/
 | POST | `/chat` | 普通对话 |
 | POST | `/chat/agent/stream` | LangGraph Agent 流式执行（推荐） |
 | POST | `/chat/agent` | LangGraph Agent 执行 |
+| POST | `/agents` | 创建自定义Agent配置 |
+| GET | `/agents` | 列出所有Agent配置 |
+| GET | `/agents/{id}` | 获取Agent配置详情 |
+| POST | `/agents/{id}/execute` | 执行自定义Agent |
+| POST | `/agents/{id}/execute/stream` | 流式执行自定义Agent |
 | POST | `/documents/upload` | 上传文档 |
 | GET | `/documents` | 列出文档 |
 | DELETE | `/documents/{id}` | 删除文档 |
@@ -363,8 +388,15 @@ A: 确保：
 - [x] 智能思维导图生成（基于 LLM）
 - [x] 任务执行顺序优化
 - [x] Agent 执行过程可视化
+- [x] **自定义Agent构建器** - 可视化拖拽创建Agent工作流
+- [x] **节点类型扩展** - 支持延迟、变量、循环等高级节点
+- [x] **性能优化** - 流畅的拖拽体验，硬件加速渲染
 
 ### 计划中 🚧
+- [ ] Agent配置导入/导出（JSON格式）
+- [ ] Agent版本管理和历史记录
+- [ ] 更多节点类型（API调用、数据库查询等）
+- [ ] 条件分支的可视化配置
 - [ ] 真实用户认证系统（后端 API）
 - [ ] 多 Agent 协作
 - [ ] Prompt 模板管理

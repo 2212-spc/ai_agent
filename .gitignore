@@ -47,4 +47,11 @@ Thumbs.db
 *.tmp
 *.bak
 
+# 视频文件（避免乱码问题）
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+
 
