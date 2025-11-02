@@ -567,6 +567,7 @@ async def tool_executor_node(
             tool_args = payload
             action_description = "生成思维导图"
     elif pending_task == "note":
+        # 检查是否有带伞提醒的天气场景（特殊逻辑）
         weather_result = None
         for result in reversed(tool_results):
             task_id = result.get("task")
@@ -574,33 +575,76 @@ async def tool_executor_node(
             if task_id == "weather" or "天气" in tool_name:
                 weather_result = result
                 break
+        
+        # 场景1：带伞提醒（需要天气结果且有降雨）
+        if weather_result and any(kw in user_query for kw in ["带伞", "雨伞", "提醒"]):
+            weather_text = weather_result.get("output", "")
+            if not detect_rain_in_text(weather_text):
+                reason = "天气预报无降雨，无需提醒带伞"
+                logger.info(reason)
+                return {
+                    "skipped_tasks": [{"task": "note", "reason": reason}],
+                    "observations": [reason],
+                    "thoughts": ["不满足条件，跳过"],
+                }
+            
+            city_from_weather = weather_result.get("arguments", {}).get("city")
+            if not city_from_weather:
+                city_from_weather = extract_city_from_query(user_query)
+            filename = build_note_filename(city_from_weather)
+            note_content = build_note_content(city_from_weather, weather_text, user_query)
+            tool_args = {"filename": filename, "content": note_content}
+            action_description = f"为{city_from_weather}创建带伞提醒"
+        else:
+            # 场景2：通用笔记（使用LLM生成笔记内容）
+            try:
+                # 收集所有工具结果作为上下文
+                context_parts = []
+                if tool_results:
+                    for tr in tool_results:
+                        tool_name = tr.get("tool_name", "工具")
+                        output = tr.get("output", "")
+                        context_parts.append(f"【{tool_name}结果】\n{output[:800]}")
+                
+                context_text = "\n\n".join(context_parts) if context_parts else "无工具结果"
+                
+                # 使用LLM生成笔记内容
+                note_prompt = f"""用户请求：{user_query}
 
-        if not weather_result:
-            reason = "笔记任务依赖天气结果，但未找到"
-            logger.warning(reason)
-            return {
-                "skipped_tasks": [{"task": "note", "reason": reason}],
-                "observations": [reason],
-                "thoughts": ["天气结果未找到"],
-            }
+已获取的信息：
+{context_text}
 
-        weather_text = weather_result.get("output", "")
-        if not detect_rain_in_text(weather_text):
-            reason = "天气预报无降雨，无需提醒带伞"
-            logger.info(reason)
-            return {
-                "skipped_tasks": [{"task": "note", "reason": reason}],
-                "observations": [reason],
-                "thoughts": ["不满足条件，跳过"],
-            }
+请生成一份结构化的笔记，要求：
+1. 标题：根据用户请求生成合适的标题
+2. 内容：总结关键信息，使用 Markdown 格式
+3. 条理清晰，分点列出重要内容
+4. 长度适中（300-800字）
 
-        city_from_weather = weather_result.get("arguments", {}).get("city")
-        if not city_from_weather:
-            city_from_weather = extract_city_from_query(user_query)
-        filename = build_note_filename(city_from_weather)
-        note_content = build_note_content(city_from_weather, weather_text, user_query)
-        tool_args = {"filename": filename, "content": note_content}
-        action_description = f"为{city_from_weather}创建带伞提醒"
+直接输出笔记内容，不要其他解释："""
+                
+                note_content, _ = await invoke_llm(
+                    messages=[{"role": "user", "content": note_prompt}],
+                    settings=settings,
+                    temperature=0.7,
+                    max_tokens=1000
+                )
+                
+                # 生成文件名
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_query = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fa5]', '_', user_query[:20])
+                filename = f"note_{safe_query}_{timestamp}.md"
+                
+                tool_args = {"filename": filename, "content": note_content}
+                action_description = f"创建笔记：{user_query[:30]}"
+                
+            except Exception as e:
+                logger.error(f"生成笔记失败: {e}")
+                reason = f"笔记生成失败：{str(e)}"
+                return {
+                    "skipped_tasks": [{"task": "note", "reason": reason}],
+                    "observations": [reason],
+                    "thoughts": ["笔记生成失败"],
+                }
     else:
         reason = f"无法处理任务类型：{pending_task}"
         logger.warning(reason)
@@ -866,9 +910,9 @@ TASK_ORDER: List[str] = ["weather", "search", "diagram", "note"]  # 执行顺序
 
 TASK_KEYWORDS: Dict[str, List[str]] = {
     "weather": ["天气", "气温", "下雨", "降雨", "雨伞", "rain", "weather", "forecast", "明天", "今天", "后天"],
-    "search": ["搜索", "查找", "搜一下", "调查", "look up", "research", "扩散模型", "最新进展"],
+    "search": ["搜索", "查找", "搜一下", "调查", "查询", "查一下", "检索", "找一下", "look up", "research", "扩散模型", "最新进展", "相关信息", "资料"],
     "diagram": ["思维导图", "流程图", "画图", "绘制", "diagram", "flowchart", "结构图", "图表", "导图"],
-    "note": ["笔记", "提醒", "记录", "备忘", "记下来", "note", "带伞", "提醒我"],
+    "note": ["笔记", "提醒", "记录", "备忘", "记下来", "note", "带伞", "提醒我", "写入", "保存", "记下"],
 }
 
 RAIN_KEYWORDS: List[str] = [

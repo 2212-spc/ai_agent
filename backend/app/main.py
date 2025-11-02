@@ -208,6 +208,106 @@ def ensure_directories(settings: Settings) -> None:
         Path(path).mkdir(parents=True, exist_ok=True)
 
 
+def register_builtin_tools_on_startup() -> None:
+    """
+    在启动时自动注册所有内置工具
+    
+    作用：确保数据库中有可用的内置工具，避免 Agent 找不到工具
+    策略：只注册数据库中不存在的工具，避免重复注册
+    """
+    logger.info("🔧 [启动] 检查并注册内置工具...")
+    
+    # 获取数据库会话
+    SessionLocal = get_session_factory()
+    session = SessionLocal()
+    
+    try:
+        # 定义需要注册的内置工具
+        builtin_tools_to_register = [
+            {
+                "name": "天气查询",
+                "description": "查询指定城市的实时天气情况，包括温度、湿度、风速等信息。支持中英文城市名。",
+                "builtin_key": "get_weather"
+            },
+            {
+                "name": "网页搜索",
+                "description": "在互联网上搜索信息。输入搜索关键词，返回相关网页的标题、链接和摘要。适合查找最新信息、新闻、技术文档等。",
+                "builtin_key": "web_search"
+            },
+            {
+                "name": "绘制思维导图",
+                "description": "使用 Mermaid 语法绘制流程图、思维导图、架构图等结构图，保存为 Markdown 文件。",
+                "builtin_key": "draw_diagram"
+            },
+            {
+                "name": "写入笔记",
+                "description": "在 data/notes 目录下创建或覆盖笔记文件，可用于记录总结或执行结果。",
+                "builtin_key": "write_note"
+            },
+            {
+                "name": "获取网页内容",
+                "description": "读取指定网页的完整内容（Markdown格式）。适合深入阅读某个网页的详细信息。",
+                "builtin_key": "fetch_webpage"
+            },
+        ]
+        
+        # 获取数据库中已存在的工具
+        existing_tools = session.query(ToolRecord).all()
+        existing_builtin_keys = set()
+        
+        for tool in existing_tools:
+            try:
+                config = json.loads(tool.config or "{}")
+                if tool.tool_type == "builtin":
+                    builtin_key = config.get("builtin_key")
+                    if builtin_key:
+                        existing_builtin_keys.add(builtin_key)
+            except:
+                pass
+        
+        # 注册缺失的工具
+        registered_count = 0
+        for tool_def in builtin_tools_to_register:
+            builtin_key = tool_def["builtin_key"]
+            
+            if builtin_key in existing_builtin_keys:
+                logger.debug(f"   ⏭️  工具已存在: {tool_def['name']} ({builtin_key})")
+                continue
+            
+            # 创建新工具记录
+            new_tool = ToolRecord(
+                id=uuid.uuid4().hex,
+                name=tool_def["name"],
+                description=tool_def["description"],
+                tool_type="builtin",
+                config=json.dumps({"builtin_key": builtin_key}, ensure_ascii=False),
+                is_active=True,
+            )
+            session.add(new_tool)
+            registered_count += 1
+            logger.info(f"   ✅ 已注册工具: {tool_def['name']} ({builtin_key})")
+        
+        if registered_count > 0:
+            session.commit()
+            logger.info(f"🎉 [启动] 成功注册 {registered_count} 个新的内置工具")
+        else:
+            logger.info(f"✅ [启动] 所有内置工具已存在，无需注册")
+        
+        # 显示当前可用的工具
+        all_active_tools = session.query(ToolRecord).filter(ToolRecord.is_active == True).all()
+        logger.info(f"📊 [启动] 当前可用工具数量: {len(all_active_tools)}")
+        for tool in all_active_tools:
+            config = json.loads(tool.config or "{}")
+            builtin_key = config.get("builtin_key", "N/A")
+            logger.info(f"   • {tool.name} ({tool.tool_type}, key: {builtin_key})")
+            
+    except Exception as e:
+        logger.error(f"❌ [启动] 注册内置工具失败: {e}", exc_info=True)
+        session.rollback()
+    finally:
+        session.close()
+
+
 @app.on_event("startup")
 async def startup() -> None:
     try:
@@ -227,6 +327,9 @@ async def startup() -> None:
         ensure_directories(settings)
         init_engine(settings.sqlite_path)
         logger.info("✅ 数据库初始化成功")
+        
+        # 自动注册内置工具
+        register_builtin_tools_on_startup()
         
         # 预加载嵌入模型（避免首次上传文件卡住）
         try:
