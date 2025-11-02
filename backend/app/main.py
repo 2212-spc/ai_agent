@@ -41,6 +41,8 @@ from .tool_service import (
 from .graph_agent import run_agent, stream_agent
 from .file_processor import FileProcessor, chunk_text
 from .rag_service import ingest_text_chunk
+from .agent_builder import execute_custom_agent, stream_custom_agent
+from .database import AgentConfig, get_agent_config_by_id, list_agent_configs
 
 
 logging.basicConfig(
@@ -173,6 +175,32 @@ class ToolLogItem(BaseModel):
     success: bool
     error_message: Optional[str]
     created_at: datetime
+
+
+class AgentConfigCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    config: Dict[str, Any]  # {nodes: [...], edges: [...]}
+    is_active: bool = True
+
+
+class AgentConfigResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str
+    name: str
+    description: Optional[str]
+    config: Dict[str, Any]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentExecuteRequest(BaseModel):
+    agent_id: str
+    messages: List[Message]
+    use_knowledge_base: bool = False
+    use_tools: bool = True
 
 
 def ensure_directories(settings: Settings) -> None:
@@ -936,6 +964,216 @@ def serialize_tool(record: ToolRecord) -> ToolResponse:
             "updated_at": record.updated_at,
         }
     )
+
+
+# ==================== Agent构建器API ====================
+
+@app.post("/agents", response_model=AgentConfigResponse)
+async def create_agent_config(
+    payload: AgentConfigCreateRequest,
+    session: Session = Depends(get_db_session),
+) -> AgentConfigResponse:
+    """创建自定义Agent配置"""
+    agent = AgentConfig(
+        id=uuid.uuid4().hex,
+        name=payload.name,
+        description=payload.description,
+        config=json.dumps(payload.config, ensure_ascii=False),
+        is_active=payload.is_active,
+    )
+    session.add(agent)
+    session.commit()
+    session.refresh(agent)
+    
+    return AgentConfigResponse.model_validate({
+        "id": agent.id,
+        "name": agent.name,
+        "description": agent.description,
+        "config": json.loads(agent.config),
+        "is_active": agent.is_active,
+        "created_at": agent.created_at,
+        "updated_at": agent.updated_at,
+    })
+
+
+@app.get("/agents", response_model=List[AgentConfigResponse])
+async def list_agent_configs_endpoint(
+    include_inactive: bool = False,
+    session: Session = Depends(get_db_session),
+) -> List[AgentConfigResponse]:
+    """列出所有Agent配置"""
+    agents = list_agent_configs(session, include_inactive=include_inactive)
+    return [
+        AgentConfigResponse.model_validate({
+            "id": agent.id,
+            "name": agent.name,
+            "description": agent.description,
+            "config": json.loads(agent.config),
+            "is_active": agent.is_active,
+            "created_at": agent.created_at,
+            "updated_at": agent.updated_at,
+        })
+        for agent in agents
+    ]
+
+
+@app.get("/agents/{agent_id}", response_model=AgentConfigResponse)
+async def get_agent_config(
+    agent_id: str,
+    session: Session = Depends(get_db_session),
+) -> AgentConfigResponse:
+    """获取Agent配置"""
+    agent = get_agent_config_by_id(session, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent配置不存在")
+    
+    return AgentConfigResponse.model_validate({
+        "id": agent.id,
+        "name": agent.name,
+        "description": agent.description,
+        "config": json.loads(agent.config),
+        "is_active": agent.is_active,
+        "created_at": agent.created_at,
+        "updated_at": agent.updated_at,
+    })
+
+
+@app.post("/agents/{agent_id}/execute", response_model=ChatResponse)
+async def execute_custom_agent_endpoint(
+    agent_id: str,
+    payload: AgentExecuteRequest,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> ChatResponse:
+    """执行自定义Agent"""
+    agent_config = get_agent_config_by_id(session, agent_id)
+    if agent_config is None:
+        raise HTTPException(status_code=404, detail="Agent配置不存在")
+    
+    if not agent_config.is_active:
+        raise HTTPException(status_code=400, detail="Agent配置未激活")
+    
+    tool_records = []
+    if payload.use_tools:
+        tool_records = list_tools(session, include_inactive=False)
+    
+    result = await execute_custom_agent(
+        agent_config=agent_config,
+        user_query=payload.messages[-1].content if payload.messages else "",
+        settings=settings,
+        session=session,
+        tool_records=tool_records,
+        conversation_history=[msg.model_dump() for msg in payload.messages],
+    )
+    
+    contexts = [
+        ContextSnippet(
+            document_id=ctx.get("document_id"),
+            original_name=ctx.get("original_name"),
+            content=ctx.get("content", "")[:500]
+        )
+        for ctx in result.get("retrieved_contexts", [])
+    ]
+    
+    tool_results = [
+        ToolExecutionResult(
+            tool_id=tr.get("tool_id", ""),
+            tool_name=tr.get("tool_name", ""),
+            output=tr.get("output", "")
+        )
+        for tr in result.get("tool_results", [])
+    ]
+    
+    return ChatResponse(
+        reply=result.get("final_answer", "执行完成"),
+        raw={"success": result.get("success", False), "thread_id": result.get("thread_id")},
+        contexts=contexts,
+        tool_results=tool_results,
+    )
+
+
+@app.post("/agents/{agent_id}/execute/stream")
+async def execute_custom_agent_stream(
+    agent_id: str,
+    payload: AgentExecuteRequest,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    """流式执行自定义Agent"""
+    agent_config = get_agent_config_by_id(session, agent_id)
+    if agent_config is None:
+        raise HTTPException(status_code=404, detail="Agent配置不存在")
+    
+    if not agent_config.is_active:
+        raise HTTPException(status_code=400, detail="Agent配置未激活")
+    
+    tool_records = []
+    if payload.use_tools:
+        tool_records = list_tools(session, include_inactive=False)
+    
+    async def event_generator() -> AsyncGenerator[bytes, None]:
+        try:
+            yield format_sse("status", {"stage": "started", "mode": "custom_agent", "agent_name": agent_config.name})
+            
+            async for event in stream_custom_agent(
+                agent_config=agent_config,
+                user_query=payload.messages[-1].content if payload.messages else "",
+                settings=settings,
+                session=session,
+                tool_records=tool_records,
+                conversation_history=[msg.model_dump() for msg in payload.messages],
+            ):
+                event_type = event.get("event", "unknown")
+                
+                if event_type == "node_output":
+                    node_name = event.get("node", "")
+                    node_data = event.get("data", {})
+                    
+                    yield format_sse("agent_node", {
+                        "node": node_name,
+                        "status": "completed",
+                        "data": node_data,
+                    })
+                    
+                    if "thoughts" in node_data:
+                        for thought in node_data.get("thoughts", []):
+                            yield format_sse("agent_thought", {
+                                "node": node_name,
+                                "thought": thought,
+                            })
+                    
+                    if "observations" in node_data:
+                        for observation in node_data.get("observations", []):
+                            yield format_sse("agent_observation", {
+                                "node": node_name,
+                                "observation": observation,
+                            })
+                    
+                    if "tool_results" in node_data:
+                        for tool_result in node_data.get("tool_results", []):
+                            yield format_sse("tool_result", tool_result)
+                    
+                    if "final_answer" in node_data and node_data["final_answer"]:
+                        yield format_sse("assistant_final", {
+                            "content": node_data["final_answer"]
+                        })
+                
+                elif event_type == "final_answer":
+                    # 直接发送最终答案事件
+                    yield format_sse("assistant_final", {
+                        "content": event.get("content", "")
+                    })
+                
+                elif event_type == "completed":
+                    yield format_sse("completed", {
+                        "thread_id": event.get("thread_id"),
+                    })
+        
+        except Exception as e:
+            logger.exception("自定义Agent流式执行失败: %s", e)
+            yield format_sse("error", {"message": str(e)})
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/test-upload")

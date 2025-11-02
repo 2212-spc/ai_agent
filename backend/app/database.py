@@ -70,6 +70,22 @@ class ToolExecutionLog(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class AgentConfig(Base):
+    """Custom Agent configuration saved by users."""
+
+    __tablename__ = "agent_configs"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    config = Column(Text, nullable=False)  # JSON string: nodes, edges, settings
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 _engine: Optional[Engine] = None
 _SessionLocal: Optional[sessionmaker[Session]] = None
 
@@ -149,4 +165,18 @@ def list_tool_logs(session: Session, limit: int = 50) -> list[ToolExecutionLog]:
         .order_by(ToolExecutionLog.created_at.desc())
         .limit(limit)
     )
+    return list(session.execute(statement).scalars())
+
+
+def get_agent_config_by_id(session: Session, agent_id: str) -> AgentConfig | None:
+    """Return an agent configuration by its identifier."""
+    statement = select(AgentConfig).where(AgentConfig.id == agent_id)
+    return session.execute(statement).scalar_one_or_none()
+
+
+def list_agent_configs(session: Session, include_inactive: bool = False) -> list[AgentConfig]:
+    """List all agent configurations."""
+    statement = select(AgentConfig).order_by(AgentConfig.created_at.desc())
+    if not include_inactive:
+        statement = statement.where(AgentConfig.is_active.is_(True))
     return list(session.execute(statement).scalars())

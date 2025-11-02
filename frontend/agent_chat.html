@@ -760,6 +760,409 @@
                 padding: 5px 10px;
             }
         }
+        
+        /* Agent构建器样式 */
+        .builder-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            background: white;
+            z-index: 2000;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .builder-panel.open {
+            display: flex;
+        }
+        
+        .builder-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .builder-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .builder-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .builder-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        .builder-sidebar {
+            width: 250px;
+            border-right: 1px solid #e5e5e5;
+            padding: 16px;
+            overflow-y: auto;
+            background: #f9fafb;
+        }
+        
+        .builder-canvas {
+            flex: 1;
+            position: relative;
+            background: #fafafa;
+            overflow: auto;
+        }
+        
+        .node-palette {
+            margin-bottom: 20px;
+        }
+        
+        .palette-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #374151;
+        }
+        
+        .palette-item {
+            padding: 10px;
+            margin-bottom: 8px;
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            cursor: grab;
+            transition: all 0.2s;
+            font-size: 13px;
+        }
+        
+        .palette-item:hover {
+            border-color: #10a37f;
+            background: #f0fdf4;
+        }
+        
+        .palette-item:active {
+            cursor: grabbing;
+        }
+        
+        .node-item {
+            position: absolute;
+            min-width: 160px;
+            padding: 0;
+            background: white;
+            border: 2px solid #10a37f;
+            border-radius: 10px;
+            cursor: move;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            transition: box-shadow 0.2s, border-color 0.2s;
+            overflow: hidden;
+            will-change: transform;
+            /* 启用硬件加速 */
+            transform: translateZ(0);
+            -webkit-transform: translateZ(0);
+        }
+        
+        .node-item:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        }
+        
+        .node-item.dragging {
+            transition: none !important;
+            z-index: 1000;
+            will-change: transform;
+        }
+        
+        .node-item.selected {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2), 0 4px 16px rgba(0,0,0,0.15);
+        }
+        
+        .node-header-bar {
+            padding: 10px 12px;
+            background: linear-gradient(135deg, #10a37f 0%, #0e9168 100%);
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        .node-item.selected .node-header-bar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .node-header-icon {
+            margin-right: 6px;
+            font-size: 14px;
+        }
+        
+        .node-delete-btn {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            opacity: 0;
+        }
+        
+        .node-item:hover .node-delete-btn {
+            opacity: 1;
+        }
+        
+        .node-delete-btn:hover {
+            background: rgba(239, 68, 68, 0.8);
+            transform: scale(1.1);
+        }
+        
+        .node-content {
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #6b7280;
+            background: white;
+        }
+        
+        .node-ports {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 8px;
+            background: #f9fafb;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        .node-port {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #10a37f;
+            border: 2px solid white;
+            cursor: crosshair;
+            transition: all 0.2s;
+        }
+        
+        .node-port:hover {
+            transform: scale(1.3);
+            background: #667eea;
+        }
+        
+        .node-port.input {
+            background: #3b82f6;
+        }
+        
+        .node-port.output {
+            background: #10a37f;
+        }
+        
+        .connection-line {
+            stroke: #10a37f;
+            stroke-width: 3;
+            fill: none;
+            pointer-events: stroke;
+            cursor: pointer;
+            transition: stroke 0.15s, stroke-width 0.15s;
+            /* 优化SVG渲染 */
+            shape-rendering: geometricPrecision;
+        }
+        
+        .connection-line:hover {
+            stroke: #ef4444;
+            stroke-width: 4;
+        }
+        
+        .connection-line.selected {
+            stroke: #ef4444;
+            stroke-width: 4;
+        }
+        
+        /* 拖拽时禁用连线hover效果 */
+        .node-item.dragging ~ * .connection-line {
+            pointer-events: none;
+        }
+        
+        /* 节点类型颜色 */
+        .node-item[data-type="planner"] .node-header-bar { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+        .node-item[data-type="knowledge_search"] .node-header-bar { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
+        .node-item[data-type="tool_executor"] .node-header-bar { background: linear-gradient(135deg, #10a37f 0%, #0e9168 100%); }
+        .node-item[data-type="condition"] .node-header-bar { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
+        .node-item[data-type="llm_call"] .node-header-bar { background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); }
+        .node-item[data-type="synthesizer"] .node-header-bar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .node-item[data-type="delay"] .node-header-bar { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); }
+        .node-item[data-type="variable"] .node-header-bar { background: linear-gradient(135deg, #84cc16 0%, #65a30d 100%); }
+        .node-item[data-type="loop"] .node-header-bar { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); }
+        
+        .config-panel {
+            width: 300px;
+            border-left: 1px solid #e5e5e5;
+            padding: 16px;
+            overflow-y: auto;
+            background: white;
+        }
+        
+        .config-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        
+        .config-field {
+            margin-bottom: 16px;
+        }
+        
+        .config-label {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 6px;
+            display: block;
+        }
+        
+        .config-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        .config-select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        /* 右键菜单 */
+        .context-menu {
+            position: fixed;
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 4px;
+            z-index: 3000;
+            min-width: 150px;
+            display: none;
+        }
+        
+        .context-menu-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #374151;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        
+        .context-menu-item:hover {
+            background: #f3f4f6;
+        }
+        
+        .context-menu-item.danger {
+            color: #ef4444;
+        }
+        
+        .context-menu-item.danger:hover {
+            background: #fee2e2;
+        }
+        
+        /* 工具栏 */
+        .builder-toolbar {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            background: #f9fafb;
+        }
+        
+        .toolbar-btn {
+            padding: 6px 12px;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .toolbar-btn:hover {
+            background: #f3f4f6;
+            border-color: #10a37f;
+        }
+        
+        .toolbar-btn.danger:hover {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+        
+        /* 连线预览 */
+        .connection-preview {
+            stroke: #667eea;
+            stroke-width: 2;
+            stroke-dasharray: 5,5;
+            fill: none;
+            pointer-events: none;
+        }
+        
+        /* 画布控制 */
+        .canvas-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 100;
+        }
+        
+        .canvas-control-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: white;
+            border: 1px solid #d1d5db;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+        
+        .canvas-control-btn:hover {
+            background: #f3f4f6;
+            transform: scale(1.1);
+        }
+        
+        /* 提示信息 */
+        .builder-hint {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #9ca3af;
+            font-size: 14px;
+            pointer-events: none;
+        }
+        
+        .builder-hint.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -773,6 +1176,7 @@
                 </div>
             </div>
             <div class="header-actions">
+                <button class="icon-btn" onclick="toggleBuilder()" title="Agent构建器">🛠️</button>
                 <button class="toggle-timeline-btn" onclick="toggleTimeline()">
                     <span id="timelineToggleText">展开过程 →</span>
                 </button>
@@ -877,6 +1281,87 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Agent构建器面板 -->
+        <div class="builder-panel" id="builderPanel">
+            <div class="builder-header">
+                <div class="builder-title">Agent构建器</div>
+                <div class="builder-actions">
+                    <button onclick="saveAgentConfig()" style="padding: 8px 16px; background: #10a37f; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">💾 保存</button>
+                    <button onclick="testAgentConfig()" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">▶️ 测试</button>
+                    <button onclick="clearBuilder()" style="padding: 8px 16px; background: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer;">🗑️ 清空</button>
+                    <button onclick="toggleBuilder()" style="padding: 8px 16px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">✕ 关闭</button>
+                </div>
+            </div>
+            <div class="builder-toolbar">
+                <div class="toolbar-btn" onclick="autoLayout()" title="自动布局">
+                    <span>📐</span> 自动布局
+                </div>
+                <div class="toolbar-btn" onclick="zoomIn()" title="放大">
+                    <span>🔍+</span>
+                </div>
+                <div class="toolbar-btn" onclick="zoomOut()" title="缩小">
+                    <span>🔍-</span>
+                </div>
+                <div class="toolbar-btn" onclick="resetZoom()" title="重置缩放">
+                    <span>🔍</span> 重置
+                </div>
+                <div style="flex: 1;"></div>
+                <div style="font-size: 12px; color: #6b7280;">
+                    提示：拖拽节点移动 | 双击节点连接 | 右键删除 | Delete键删除选中节点
+                </div>
+            </div>
+            <div class="builder-content">
+                <div class="builder-sidebar">
+                    <div class="node-palette">
+                        <div class="palette-title">节点类型</div>
+                        <div class="palette-item" draggable="true" data-type="planner" onclick="addNode('planner', '规划器')">🧠 规划器</div>
+                        <div class="palette-item" draggable="true" data-type="knowledge_search" onclick="addNode('knowledge_search', '知识库检索')">📚 知识库检索</div>
+                        <div class="palette-item" draggable="true" data-type="tool_executor" onclick="addNode('tool_executor', '工具执行器')">🔧 工具执行器</div>
+                        <div class="palette-item" draggable="true" data-type="condition" onclick="addNode('condition', '条件判断')">🔀 条件判断</div>
+                        <div class="palette-item" draggable="true" data-type="llm_call" onclick="addNode('llm_call', 'LLM调用')">💬 LLM调用</div>
+                        <div class="palette-item" draggable="true" data-type="synthesizer" onclick="addNode('synthesizer', '合成器')">✨ 合成器</div>
+                    </div>
+                    <div class="node-palette" id="toolsPalette">
+                        <div class="palette-title">可用工具</div>
+                        <div id="toolsList">加载中...</div>
+                    </div>
+                    <div class="node-palette">
+                        <div class="palette-title">示例模板</div>
+                        <div class="palette-item" onclick="loadExample('weather')" style="background: #e0f2fe; border-color: #0284c7;">
+                            🌤️ 天气助手示例
+                        </div>
+                        <div class="palette-item" onclick="loadExample('search')" style="background: #fef3c7; border-color: #f59e0b;">
+                            🔍 搜索总结示例
+                        </div>
+                    </div>
+                </div>
+                <div class="builder-canvas" id="builderCanvas">
+                    <div class="builder-hint" id="builderHint">
+                        <div style="font-size: 24px; margin-bottom: 8px;">🎨</div>
+                        <div>从左侧拖拽节点到画布</div>
+                        <div style="font-size: 12px; margin-top: 4px; color: #9ca3af;">或点击节点类型快速添加</div>
+                    </div>
+                    <svg id="connectionSvg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                    </svg>
+                    <div class="canvas-controls">
+                        <div class="canvas-control-btn" onclick="centerCanvas()" title="居中画布">🎯</div>
+                        <div class="canvas-control-btn" onclick="fitToScreen()" title="适应屏幕">📐</div>
+                    </div>
+                </div>
+                <div class="config-panel" id="configPanel">
+                    <div class="config-title">节点配置</div>
+                    <div id="configContent" style="color: #9ca3af; font-size: 13px;">选择一个节点进行配置</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 右键菜单 -->
+        <div class="context-menu" id="contextMenu">
+            <div class="context-menu-item" onclick="deleteSelectedNode()">🗑️ 删除节点</div>
+            <div class="context-menu-item" onclick="duplicateNode()">📋 复制节点</div>
+            <div class="context-menu-item" onclick="closeContextMenu()">✕ 取消</div>
+        </div>
     </div>
 
     <script>
@@ -887,6 +1372,38 @@
         let isSendingMessage = false;
         let attachedFiles = [];
         let isTimelineOpen = false;
+        
+        // Agent构建器状态
+        let builderNodes = [];
+        let builderEdges = [];
+        let selectedNodeId = null;
+        let selectedEdge = null;
+        let availableTools = [];
+        let nodeCounter = 0;
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+        let connectingFromPort = null;
+        let canvasZoom = 1;
+        let canvasOffset = { x: 0, y: 0 };
+        let contextMenuNodeId = null;
+        let isDraggingNode = false;
+        let draggingNodeId = null;
+        let rafId = null;
+        let needsConnectionUpdate = false;
+        let connectionUpdateScheduled = false;
+        
+        // 节点类型图标映射
+        const nodeIcons = {
+            planner: '🧠',
+            knowledge_search: '📚',
+            tool_executor: '🔧',
+            condition: '🔀',
+            llm_call: '💬',
+            synthesizer: '✨',
+            delay: '⏱️',
+            variable: '📝',
+            loop: '🔄'
+        };
 
         // Mermaid 初始化
         mermaid.initialize({ 
@@ -1011,28 +1528,40 @@
                 const contentDiv = messageDiv.querySelector('.message-content');
                 
                 // 1. 渲染 Markdown
-                contentDiv.innerHTML = marked.parse(content);
+                if (typeof marked !== 'undefined') {
+                    contentDiv.innerHTML = marked.parse(content);
+                } else {
+                    contentDiv.textContent = content;
+                }
                 
-                // 2. 代码高亮
-                contentDiv.querySelectorAll('pre code').forEach((block) => {
-                    hljs.highlightElement(block);
-                });
+                // 2. 代码高亮（如果 hljs 可用）
+                if (typeof hljs !== 'undefined') {
+                    contentDiv.querySelectorAll('pre code').forEach((block) => {
+                        try {
+                            hljs.highlightElement(block);
+                        } catch (e) {
+                            console.warn('代码高亮失败:', e);
+                        }
+                    });
+                }
                 
-                // 3. 渲染 Mermaid 图表
-                contentDiv.querySelectorAll('code.language-mermaid').forEach((block) => {
-                    const mermaidCode = block.textContent;
-                    const mermaidDiv = document.createElement('div');
-                    mermaidDiv.className = 'mermaid';
-                    mermaidDiv.textContent = mermaidCode;
-                    // 替换整个 pre 标签
-                    block.parentElement.replaceWith(mermaidDiv);
-                });
-                
-                // 异步渲染所有 mermaid 图表
-                if (contentDiv.querySelector('.mermaid')) {
-                    mermaid.run({
-                        querySelector: '.mermaid'
-                    }).catch(err => console.error('Mermaid render error:', err));
+                // 3. 渲染 Mermaid 图表（如果 mermaid 可用）
+                if (typeof mermaid !== 'undefined') {
+                    contentDiv.querySelectorAll('code.language-mermaid').forEach((block) => {
+                        const mermaidCode = block.textContent;
+                        const mermaidDiv = document.createElement('div');
+                        mermaidDiv.className = 'mermaid';
+                        mermaidDiv.textContent = mermaidCode;
+                        // 替换整个 pre 标签
+                        block.parentElement.replaceWith(mermaidDiv);
+                    });
+                    
+                    // 异步渲染所有 mermaid 图表
+                    if (contentDiv.querySelector('.mermaid')) {
+                        mermaid.run({
+                            querySelector: '.mermaid'
+                        }).catch(err => console.error('Mermaid render error:', err));
+                    }
                 }
                 
                 // 4. 添加复制按钮
@@ -1040,7 +1569,9 @@
                 
                 // 5. 滚动到底部
                 const container = document.getElementById('messagesContainer');
-                container.scrollTop = container.scrollHeight;
+                if (container) {
+                    container.scrollTop = container.scrollHeight;
+                }
             }
         }
         
@@ -1354,7 +1885,11 @@
                 case 'assistant_final':
                     console.log('📝 收到最终答案，长度:', data.content ? data.content.length : 0);
                     completeCurrentNode();
-                    updateAgentMessage(data.content);
+                    if (data.content) {
+                        updateAgentMessage(data.content);
+                    } else {
+                        console.warn('⚠️ 最终答案内容为空');
+                    }
                     break;
 
                 case 'completed':
@@ -1469,6 +2004,1081 @@
             if (confirm('确定要退出登录吗？')) {
                 localStorage.removeItem('userInfo');
                 window.location.href = 'login.html';
+            }
+        }
+        
+        // ==================== Agent构建器功能 ====================
+        
+        async function toggleBuilder() {
+            const panel = document.getElementById('builderPanel');
+            const isOpen = panel.classList.contains('open');
+            
+            if (!isOpen) {
+                panel.classList.add('open');
+                await loadTools();
+            } else {
+                panel.classList.remove('open');
+            }
+        }
+        
+        async function loadTools() {
+            try {
+                const response = await fetch(`${API_BASE}/tools`);
+                availableTools = await response.json();
+                
+                const toolsList = document.getElementById('toolsList');
+                if (availableTools.length === 0) {
+                    toolsList.innerHTML = '<div style="color: #9ca3af; font-size: 12px;">暂无工具</div>';
+                } else {
+                    toolsList.innerHTML = availableTools.map(tool => 
+                        `<div class="palette-item" onclick="addToolNode('${tool.id}', '${tool.name}')">🔧 ${tool.name}</div>`
+                    ).join('');
+                }
+            } catch (error) {
+                console.error('加载工具失败:', error);
+                document.getElementById('toolsList').innerHTML = '<div style="color: #ef4444; font-size: 12px;">加载失败</div>';
+            }
+        }
+        
+        function addNode(type, label) {
+            nodeCounter++;
+            const nodeId = `node-${nodeCounter}`;
+            const canvas = document.getElementById('builderCanvas');
+            const rect = canvas.getBoundingClientRect();
+            
+            const node = {
+                id: nodeId,
+                type: type,
+                label: label,
+                x: Math.random() * (rect.width - 200) + 50,
+                y: Math.random() * (rect.height - 100) + 50,
+                data: getDefaultNodeData(type)
+            };
+            
+            builderNodes.push(node);
+            renderNode(node);
+        }
+        
+        function addToolNode(toolId, toolName) {
+            nodeCounter++;
+            const nodeId = `node-${nodeCounter}`;
+            const canvas = document.getElementById('builderCanvas');
+            const rect = canvas.getBoundingClientRect();
+            
+            const node = {
+                id: nodeId,
+                type: 'tool_executor',
+                label: toolName,
+                x: Math.random() * (rect.width - 200) + 50,
+                y: Math.random() * (rect.height - 100) + 50,
+                data: {
+                    toolId: toolId,
+                    label: toolName,
+                    arguments: {}
+                }
+            };
+            
+            builderNodes.push(node);
+            renderNode(node);
+        }
+        
+        function getDefaultNodeData(type) {
+            const defaults = {
+                planner: { label: '规划器', prompt: '分析用户问题，制定执行计划。' },
+                knowledge_search: { label: '知识库检索' },
+                tool_executor: { label: '工具执行器', toolId: '', arguments: {} },
+                condition: { label: '条件判断', conditionType: 'always', conditionValue: '' },
+                llm_call: { label: 'LLM调用', prompt: '{{user_query}}', temperature: 0.7, maxTokens: 1000 },
+                synthesizer: { label: '合成器', prompt: '请根据工具执行结果生成详细、完整的回复。如果执行了搜索工具，请在回复中包含搜索到的关键信息。如果创建了笔记，请说明笔记中包含了哪些内容。' },
+                delay: { label: '延迟等待', seconds: 1 },
+                variable: { label: '变量设置', variableName: '', variableValue: '' },
+                loop: { label: '循环执行', maxIterations: 5, condition: '' }
+            };
+            return defaults[type] || { label: type };
+        }
+        
+        function renderNode(node) {
+            const canvas = document.getElementById('builderCanvas');
+            
+            // 如果节点已存在，先删除
+            const existing = document.getElementById(node.id);
+            if (existing) {
+                existing.remove();
+            }
+            
+            const nodeDiv = document.createElement('div');
+            nodeDiv.className = 'node-item';
+            nodeDiv.id = node.id;
+            nodeDiv.setAttribute('data-type', node.type);
+            // 如果节点正在拖拽，使用transform（已在startDrag中设置）
+            // 否则使用left/top定位
+            if (!isDraggingNode || draggingNodeId !== node.id) {
+                nodeDiv.style.left = node.x + 'px';
+                nodeDiv.style.top = node.y + 'px';
+                nodeDiv.style.transform = '';
+            }
+            
+            const icon = nodeIcons[node.type] || '⚙️';
+            
+            nodeDiv.innerHTML = `
+                <div class="node-header-bar">
+                    <span>
+                        <span class="node-header-icon">${icon}</span>
+                        ${node.label}
+                    </span>
+                    <button class="node-delete-btn" onclick="deleteNode('${node.id}'); event.stopPropagation();" title="删除节点">✕</button>
+                </div>
+                <div class="node-content">${node.type}</div>
+                <div class="node-ports">
+                    <div class="node-port input" data-node="${node.id}" data-port="input" title="输入端口"></div>
+                    <div class="node-port output" data-node="${node.id}" data-port="output" title="输出端口" onmousedown="startConnection(event, '${node.id}')"></div>
+                </div>
+            `;
+            
+            // 点击事件由 mousedown/mouseup 处理，这里不需要单独的 onclick
+            // nodeDiv.onclick 会被拖拽事件干扰，所以移除
+            
+            nodeDiv.oncontextmenu = (e) => {
+                e.preventDefault();
+                showContextMenu(e, node.id);
+            };
+            
+            // 区分点击和拖拽
+            let dragStartPos = { x: 0, y: 0 };
+            let isClick = true;
+            let dragStarted = false;
+            
+            nodeDiv.onmousedown = (e) => {
+                if (!e.target.closest('.node-delete-btn') && !e.target.closest('.node-port')) {
+                    dragStartPos.x = e.clientX;
+                    dragStartPos.y = e.clientY;
+                    isClick = true;
+                    dragStarted = false;
+                    
+                    const moveHandler = (moveEvent) => {
+                        const movedX = Math.abs(moveEvent.clientX - dragStartPos.x);
+                        const movedY = Math.abs(moveEvent.clientY - dragStartPos.y);
+                        
+                        // 如果移动超过5像素，启动拖拽
+                        if ((movedX > 5 || movedY > 5) && !dragStarted) {
+                            isClick = false;
+                            dragStarted = true;
+                            nodeDiv.classList.add('dragging');
+                            startDrag(e, node.id);
+                            document.removeEventListener('mousemove', moveHandler);
+                            document.removeEventListener('mouseup', upHandler);
+                        }
+                    };
+                    
+                    const upHandler = (upEvent) => {
+                        document.removeEventListener('mousemove', moveHandler);
+                        document.removeEventListener('mouseup', upHandler);
+                        
+                        // 如果没有移动，视为点击，选择节点
+                        if (isClick && !dragStarted) {
+                            const movedX = Math.abs(upEvent.clientX - dragStartPos.x);
+                            const movedY = Math.abs(upEvent.clientY - dragStartPos.y);
+                            if (movedX < 5 && movedY < 5) {
+                                selectNode(node.id);
+                            }
+                        }
+                    };
+                    
+                    document.addEventListener('mousemove', moveHandler);
+                    document.addEventListener('mouseup', upHandler);
+                }
+            };
+            
+            // 确保拖拽结束后移除dragging类
+            const originalStyle = nodeDiv.style.transform;
+            
+            canvas.appendChild(nodeDiv);
+            
+            // 隐藏提示
+            const hint = document.getElementById('builderHint');
+            if (hint && builderNodes.length > 0) {
+                hint.classList.add('hidden');
+            }
+        }
+        
+        function selectNode(nodeId) {
+            // 移除之前的选中状态
+            document.querySelectorAll('.node-item').forEach(n => n.classList.remove('selected'));
+            
+            // 选中当前节点
+            const nodeDiv = document.getElementById(nodeId);
+            if (nodeDiv) {
+                nodeDiv.classList.add('selected');
+                selectedNodeId = nodeId;
+                showNodeConfig(nodeId);
+            }
+        }
+        
+        function showNodeConfig(nodeId) {
+            const node = builderNodes.find(n => n.id === nodeId);
+            if (!node) return;
+            
+            const configContent = document.getElementById('configContent');
+            let html = `<div class="config-field">
+                <label class="config-label">节点ID</label>
+                <input class="config-input" value="${node.id}" readonly>
+            </div>
+            <div class="config-field">
+                <label class="config-label">节点类型</label>
+                <input class="config-input" value="${node.type}" readonly>
+            </div>`;
+            
+            if (node.type === 'tool_executor') {
+                html += `
+                <div class="config-field">
+                    <label class="config-label">选择工具</label>
+                    <select class="config-select" onchange="updateNodeData('${nodeId}', 'toolId', this.value)">
+                        <option value="">请选择工具</option>
+                        ${availableTools.map(t => `<option value="${t.id}" ${node.data.toolId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                    </select>
+                </div>`;
+            }
+            
+            if (node.type === 'planner' || node.type === 'llm_call') {
+                html += `
+                <div class="config-field">
+                    <label class="config-label">提示词</label>
+                    <textarea class="config-input" rows="4" onchange="updateNodeData('${nodeId}', 'prompt', this.value)">${node.data.prompt || ''}</textarea>
+                </div>`;
+            }
+            
+            if (node.type === 'condition') {
+                html += `
+                <div class="config-field">
+                    <label class="config-label">条件类型</label>
+                    <select class="config-select" onchange="updateNodeData('${nodeId}', 'conditionType', this.value)">
+                        <option value="always" ${node.data.conditionType === 'always' ? 'selected' : ''}>总是执行</option>
+                        <option value="contains" ${node.data.conditionType === 'contains' ? 'selected' : ''}>包含文本</option>
+                        <option value="equals" ${node.data.conditionType === 'equals' ? 'selected' : ''}>等于值</option>
+                    </select>
+                </div>
+                <div class="config-field">
+                    <label class="config-label">条件值</label>
+                    <input class="config-input" value="${node.data.conditionValue || ''}" onchange="updateNodeData('${nodeId}', 'conditionValue', this.value)">
+                </div>`;
+            }
+            
+            if (node.type === 'delay') {
+                html += `
+                <div class="config-field">
+                    <label class="config-label">延迟秒数</label>
+                    <input type="number" class="config-input" value="${node.data.seconds || 1}" min="0" max="60" onchange="updateNodeData('${nodeId}', 'seconds', parseInt(this.value))">
+                </div>`;
+            }
+            
+            if (node.type === 'variable') {
+                html += `
+                <div class="config-field">
+                    <label class="config-label">变量名</label>
+                    <input class="config-input" value="${node.data.variableName || ''}" placeholder="例如: result" onchange="updateNodeData('${nodeId}', 'variableName', this.value)">
+                </div>
+                <div class="config-field">
+                    <label class="config-label">变量值</label>
+                    <textarea class="config-input" rows="3" placeholder="可以是固定值或 {{last_tool_result}}" onchange="updateNodeData('${nodeId}', 'variableValue', this.value)">${node.data.variableValue || ''}</textarea>
+                </div>`;
+            }
+            
+            if (node.type === 'loop') {
+                html += `
+                <div class="config-field">
+                    <label class="config-label">最大迭代次数</label>
+                    <input type="number" class="config-input" value="${node.data.maxIterations || 5}" min="1" max="20" onchange="updateNodeData('${nodeId}', 'maxIterations', parseInt(this.value))">
+                </div>
+                <div class="config-field">
+                    <label class="config-label">循环条件</label>
+                    <input class="config-input" value="${node.data.condition || ''}" placeholder="例如: 结果不为空" onchange="updateNodeData('${nodeId}', 'condition', this.value)">
+                </div>`;
+            }
+            
+            configContent.innerHTML = html;
+        }
+        
+        function updateNodeData(nodeId, key, value) {
+            const node = builderNodes.find(n => n.id === nodeId);
+            if (node) {
+                node.data[key] = value;
+            }
+        }
+        
+        function startDrag(e, nodeId) {
+            isDragging = true;
+            isDraggingNode = true;
+            draggingNodeId = nodeId;
+            const node = builderNodes.find(n => n.id === nodeId);
+            if (!node) return;
+            
+            const nodeDiv = document.getElementById(nodeId);
+            if (!nodeDiv) return;
+            
+            const canvas = document.getElementById('builderCanvas');
+            const canvasRect = canvas.getBoundingClientRect();
+            const nodeRect = nodeDiv.getBoundingClientRect();
+            
+            // 计算鼠标相对于节点的偏移
+            dragOffset.x = e.clientX - nodeRect.left;
+            dragOffset.y = e.clientY - nodeRect.top;
+            
+            // 初始位置
+            const startX = node.x;
+            const startY = node.y;
+            
+            // 添加拖拽样式
+            nodeDiv.classList.add('dragging');
+            nodeDiv.style.cursor = 'grabbing';
+            nodeDiv.style.userSelect = 'none';
+            // 不设置 pointerEvents = 'none'，这样可以在拖拽时仍然能选中节点
+            document.body.style.userSelect = 'none';
+            document.body.style.cursor = 'grabbing';
+            
+            // 使用transform，初始位置
+            nodeDiv.style.transform = `translate(${startX}px, ${startY}px)`;
+            nodeDiv.style.left = '0';
+            nodeDiv.style.top = '0';
+            
+            // 重置连线更新调度标志
+            connectionUpdateScheduled = false;
+            
+            const onMouseMove = (e) => {
+                if (!isDragging) return;
+                
+                // 直接计算新位置，不使用节流
+                const newX = e.clientX - canvasRect.left - dragOffset.x;
+                const newY = e.clientY - canvasRect.top - dragOffset.y;
+                
+                // 立即更新transform，保证流畅
+                nodeDiv.style.transform = `translate(${newX}px, ${newY}px)`;
+                
+                // 更新节点数据
+                node.x = newX;
+                node.y = newY;
+                
+                // 使用requestAnimationFrame延迟更新连线（不影响节点移动）
+                // 只在还没有调度更新时才调度新的更新
+                if (!connectionUpdateScheduled) {
+                    connectionUpdateScheduled = true;
+                    requestAnimationFrame(() => {
+                        updateConnections();
+                        connectionUpdateScheduled = false;
+                    });
+                }
+            };
+            
+            const onMouseUp = () => {
+                if (!isDragging) return;
+                
+                isDragging = false;
+                isDraggingNode = false;
+                draggingNodeId = null;
+                
+                // 恢复样式
+                nodeDiv.classList.remove('dragging');
+                nodeDiv.style.cursor = 'move';
+                nodeDiv.style.userSelect = '';
+                // pointerEvents 已在优化中移除，不需要恢复
+                
+                // 同步位置到left/top（拖拽结束后）
+                const finalX = node.x;
+                const finalY = node.y;
+                nodeDiv.style.left = finalX + 'px';
+                nodeDiv.style.top = finalY + 'px';
+                nodeDiv.style.transform = '';
+                
+                document.body.style.userSelect = '';
+                document.body.style.cursor = '';
+                
+                // 最终更新一次连线
+                updateConnections();
+                
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+            
+            // 使用 passive: false 以确保可以 preventDefault
+            document.addEventListener('mousemove', onMouseMove, { passive: true });
+            document.addEventListener('mouseup', onMouseUp);
+            
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        function updateConnections() {
+            const svg = document.getElementById('connectionSvg');
+            if (!svg) return;
+            
+            // 保留预览线
+            const previewLine = svg.querySelector('#previewLine');
+            
+            // 快速获取所有需要更新的路径
+            const paths = [];
+            
+            builderEdges.forEach((edge, index) => {
+                const sourceNode = builderNodes.find(n => n.id === edge.source);
+                const targetNode = builderNodes.find(n => n.id === edge.target);
+                
+                if (sourceNode && targetNode) {
+                    // 直接使用节点位置，不考虑transform（节点移动时已经更新了x,y）
+                    const sourceX = sourceNode.x;
+                    const sourceY = sourceNode.y;
+                    const targetX = targetNode.x;
+                    const targetY = targetNode.y;
+                    
+                    // 使用端口位置
+                    const x1 = sourceX + 148; // 输出端口X
+                    const y1 = sourceY + 55;  // 输出端口Y
+                    const x2 = targetX + 12;  // 输入端口X
+                    const y2 = targetY + 55;  // 输入端口Y
+                    
+                    // 创建贝塞尔曲线路径
+                    const midX = (x1 + x2) / 2;
+                    const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+                    
+                    paths.push({ d, index });
+                }
+            });
+            
+            // 批量更新：先更新已有路径，再添加新路径
+            const existingPaths = svg.querySelectorAll('.connection-line');
+            const pathCount = Math.max(existingPaths.length, paths.length);
+            
+            paths.forEach((pathData, i) => {
+                let path;
+                if (i < existingPaths.length) {
+                    // 更新已有路径
+                    path = existingPaths[i];
+                    path.setAttribute('d', pathData.d);
+                } else {
+                    // 创建新路径
+                    path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    path.setAttribute('class', 'connection-line');
+                    path.setAttribute('data-edge-index', pathData.index);
+                    path.style.pointerEvents = 'stroke';
+                    path.onclick = (e) => {
+                        e.stopPropagation();
+                        deleteEdge(pathData.index);
+                    };
+                    svg.appendChild(path);
+                }
+                path.setAttribute('d', pathData.d);
+            });
+            
+            // 删除多余的路径
+            for (let i = paths.length; i < existingPaths.length; i++) {
+                existingPaths[i].remove();
+            }
+            
+            // 确保预览线在最上层
+            if (previewLine && previewLine.parentNode !== svg) {
+                svg.appendChild(previewLine);
+            }
+        }
+        
+        function deleteEdge(edgeIndex) {
+            if (confirm('确定要删除这条连线吗？')) {
+                builderEdges.splice(edgeIndex, 1);
+                updateConnections();
+            }
+        }
+        
+        function deleteNode(nodeId) {
+            if (!confirm('确定要删除这个节点吗？删除后所有相关连线也会被删除。')) {
+                return;
+            }
+            
+            // 删除节点
+            builderNodes = builderNodes.filter(n => n.id !== nodeId);
+            
+            // 删除相关连线
+            builderEdges = builderEdges.filter(edge => 
+                edge.source !== nodeId && edge.target !== nodeId
+            );
+            
+            // 从DOM删除
+            const nodeDiv = document.getElementById(nodeId);
+            if (nodeDiv) {
+                nodeDiv.remove();
+            }
+            
+            // 清除选中状态
+            if (selectedNodeId === nodeId) {
+                selectedNodeId = null;
+                document.getElementById('configContent').innerHTML = 
+                    '<div style="color: #9ca3af; font-size: 13px;">选择一个节点进行配置</div>';
+            }
+            
+            updateConnections();
+            
+            // 如果画布为空，显示提示
+            if (builderNodes.length === 0) {
+                const hint = document.getElementById('builderHint');
+                if (hint) {
+                    hint.classList.remove('hidden');
+                }
+            }
+        }
+        
+        function deleteSelectedNode() {
+            if (selectedNodeId) {
+                deleteNode(selectedNodeId);
+            }
+            closeContextMenu();
+        }
+        
+        function duplicateNode() {
+            if (!contextMenuNodeId) return;
+            
+            const node = builderNodes.find(n => n.id === contextMenuNodeId);
+            if (node) {
+                nodeCounter++;
+                const newNode = {
+                    ...node,
+                    id: `node-${nodeCounter}`,
+                    x: node.x + 50,
+                    y: node.y + 50,
+                    label: node.label + ' (副本)'
+                };
+                builderNodes.push(newNode);
+                renderNode(newNode);
+            }
+            closeContextMenu();
+        }
+        
+        function showContextMenu(e, nodeId) {
+            contextMenuNodeId = nodeId;
+            const menu = document.getElementById('contextMenu');
+            menu.style.display = 'block';
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = e.clientY + 'px';
+        }
+        
+        function closeContextMenu() {
+            document.getElementById('contextMenu').style.display = 'none';
+            contextMenuNodeId = null;
+        }
+        
+        // 点击其他地方关闭右键菜单
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.context-menu') && !e.target.closest('.node-item')) {
+                closeContextMenu();
+            }
+        });
+        
+        // Delete键删除选中节点
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Delete' && selectedNodeId && document.getElementById('builderPanel').classList.contains('open')) {
+                deleteNode(selectedNodeId);
+            }
+        });
+        
+        function clearBuilder() {
+            if (!confirm('确定要清空画布吗？所有节点和连线都会被删除。')) {
+                return;
+            }
+            
+            builderNodes = [];
+            builderEdges = [];
+            selectedNodeId = null;
+            
+            const canvas = document.getElementById('builderCanvas');
+            canvas.querySelectorAll('.node-item').forEach(n => n.remove());
+            document.getElementById('connectionSvg').innerHTML = '';
+            document.getElementById('configContent').innerHTML = 
+                '<div style="color: #9ca3af; font-size: 13px;">选择一个节点进行配置</div>';
+            
+            const hint = document.getElementById('builderHint');
+            if (hint) {
+                hint.classList.remove('hidden');
+            }
+        }
+        
+        function autoLayout() {
+            if (builderNodes.length === 0) return;
+            
+            const canvas = document.getElementById('builderCanvas');
+            const rect = canvas.getBoundingClientRect();
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            
+            // 简单的层次布局
+            const levels = {};
+            builderNodes.forEach(node => {
+                const level = getNodeLevel(node.id);
+                if (!levels[level]) {
+                    levels[level] = [];
+                }
+                levels[level].push(node);
+            });
+            
+            const levelCount = Object.keys(levels).length;
+            const levelHeight = rect.height / (levelCount + 1);
+            let levelIndex = 0;
+            
+            Object.keys(levels).sort().forEach(level => {
+                const nodesInLevel = levels[level];
+                const nodeWidth = rect.width / (nodesInLevel.length + 1);
+                nodesInLevel.forEach((node, index) => {
+                    node.x = (index + 1) * nodeWidth - 80;
+                    node.y = (levelIndex + 1) * levelHeight - 30;
+                    renderNode(node);
+                });
+                levelIndex++;
+            });
+            
+            updateConnections();
+        }
+        
+        function getNodeLevel(nodeId) {
+            // 简单的BFS计算节点层级
+            const visited = new Set();
+            const queue = [{ id: nodeId, level: 0 }];
+            let maxLevel = 0;
+            
+            while (queue.length > 0) {
+                const { id, level } = queue.shift();
+                if (visited.has(id)) continue;
+                visited.add(id);
+                maxLevel = Math.max(maxLevel, level);
+                
+                builderEdges.forEach(edge => {
+                    if (edge.source === id && !visited.has(edge.target)) {
+                        queue.push({ id: edge.target, level: level + 1 });
+                    }
+                });
+            }
+            
+            return maxLevel;
+        }
+        
+        function zoomIn() {
+            canvasZoom = Math.min(canvasZoom * 1.2, 2);
+            applyZoom();
+        }
+        
+        function zoomOut() {
+            canvasZoom = Math.max(canvasZoom / 1.2, 0.5);
+            applyZoom();
+        }
+        
+        function resetZoom() {
+            canvasZoom = 1;
+            canvasOffset = { x: 0, y: 0 };
+            applyZoom();
+        }
+        
+        function applyZoom() {
+            const canvas = document.getElementById('builderCanvas');
+            canvas.style.transform = `scale(${canvasZoom}) translate(${canvasOffset.x}px, ${canvasOffset.y}px)`;
+            canvas.style.transformOrigin = 'top left';
+        }
+        
+        function centerCanvas() {
+            if (builderNodes.length === 0) return;
+            
+            const canvas = document.getElementById('builderCanvas');
+            const rect = canvas.getBoundingClientRect();
+            
+            // 计算所有节点的边界
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            builderNodes.forEach(node => {
+                minX = Math.min(minX, node.x);
+                minY = Math.min(minY, node.y);
+                maxX = Math.max(maxX, node.x + 160);
+                maxY = Math.max(maxY, node.y + 80);
+            });
+            
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+            
+            canvasOffset.x = rect.width / 2 - centerX;
+            canvasOffset.y = rect.height / 2 - centerY;
+            applyZoom();
+        }
+        
+        function fitToScreen() {
+            if (builderNodes.length === 0) return;
+            
+            const canvas = document.getElementById('builderCanvas');
+            const rect = canvas.getBoundingClientRect();
+            
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            builderNodes.forEach(node => {
+                minX = Math.min(minX, node.x);
+                minY = Math.min(minY, node.y);
+                maxX = Math.max(maxX, node.x + 160);
+                maxY = Math.max(maxY, node.y + 80);
+            });
+            
+            const width = maxX - minX;
+            const height = maxY - minY;
+            
+            const scaleX = rect.width / (width + 100);
+            const scaleY = rect.height / (height + 100);
+            canvasZoom = Math.min(scaleX, scaleY, 1);
+            
+            canvasOffset.x = (rect.width - (minX + maxX) * canvasZoom) / 2;
+            canvasOffset.y = (rect.height - (minY + maxY) * canvasZoom) / 2;
+            
+            applyZoom();
+        }
+        
+        // 改进的连线方式：从输出端口拖拽到输入端口
+        function startConnection(e, sourceNodeId) {
+            e.stopPropagation();
+            connectingFromPort = sourceNodeId;
+            
+            const canvas = document.getElementById('builderCanvas');
+            const svg = document.getElementById('connectionSvg');
+            
+            // 创建预览线
+            const previewLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            previewLine.id = 'previewLine';
+            previewLine.setAttribute('class', 'connection-preview');
+            svg.appendChild(previewLine);
+            
+            const sourceNode = builderNodes.find(n => n.id === sourceNodeId);
+            const sourcePort = e.target;
+            const portRect = sourcePort.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            let startX = sourceNode.x + 148; // 输出端口位置
+            let startY = sourceNode.y + 55;
+            
+            previewLine.setAttribute('x1', startX);
+            previewLine.setAttribute('y1', startY);
+            
+            const onMouseMove = (e) => {
+                const x = e.clientX - canvasRect.left;
+                const y = e.clientY - canvasRect.top;
+                previewLine.setAttribute('x2', x);
+                previewLine.setAttribute('y2', y);
+            };
+            
+            const onMouseUp = (e) => {
+                const targetPort = e.target.closest('.node-port.input');
+                if (targetPort && connectingFromPort) {
+                    const targetNodeId = targetPort.getAttribute('data-node');
+                    if (targetNodeId && targetNodeId !== connectingFromPort) {
+                        // 检查是否已存在连接
+                        const exists = builderEdges.some(edge => 
+                            edge.source === connectingFromPort && edge.target === targetNodeId
+                        );
+                        if (!exists) {
+                            builderEdges.push({ source: connectingFromPort, target: targetNodeId });
+                            updateConnections();
+                        }
+                    }
+                }
+                
+                previewLine.remove();
+                connectingFromPort = null;
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+        
+        // 双击方式创建连接（保留兼容性）
+        let connectionSource = null;
+        document.addEventListener('dblclick', (e) => {
+            if (e.target.closest('.node-item') && !e.target.closest('.node-port')) {
+                const nodeId = e.target.closest('.node-item').id;
+                if (!connectionSource) {
+                    connectionSource = nodeId;
+                    // 视觉反馈
+                    const nodeDiv = document.getElementById(nodeId);
+                    if (nodeDiv) {
+                        nodeDiv.style.borderColor = '#667eea';
+                        setTimeout(() => {
+                            if (nodeDiv.style.borderColor === 'rgb(102, 126, 234)') {
+                                nodeDiv.style.borderColor = '';
+                            }
+                        }, 1000);
+                    }
+                } else {
+                    if (connectionSource !== nodeId) {
+                        const exists = builderEdges.some(edge => 
+                            edge.source === connectionSource && edge.target === nodeId
+                        );
+                        if (!exists) {
+                            builderEdges.push({ source: connectionSource, target: nodeId });
+                            updateConnections();
+                        }
+                        connectionSource = null;
+                    } else {
+                        connectionSource = null;
+                    }
+                }
+            }
+        });
+        
+        async function saveAgentConfig() {
+            if (builderNodes.length === 0) {
+                alert('请至少添加一个节点');
+                return;
+            }
+            
+            const name = prompt('请输入Agent名称:', '我的自定义Agent');
+            if (!name) return;
+            
+            const config = {
+                nodes: builderNodes.map(n => ({
+                    id: n.id,
+                    type: n.type,
+                    data: n.data
+                })),
+                edges: builderEdges
+            };
+            
+            try {
+                const response = await fetch(`${API_BASE}/agents`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        description: '自定义Agent配置',
+                        config: config,
+                        is_active: true
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Agent配置已保存！');
+                    toggleBuilder();
+                } else {
+                    const error = await response.text();
+                    alert('保存失败: ' + error);
+                }
+            } catch (error) {
+                alert('保存失败: ' + error.message);
+            }
+        }
+        
+        async function testAgentConfig() {
+            if (builderNodes.length === 0) {
+                alert('请至少添加一个节点');
+                return;
+            }
+            
+            const query = prompt('请输入测试查询:', '测试查询');
+            if (!query) return;
+            
+            // 关闭构建器，显示聊天界面
+            toggleBuilder();
+            
+            // 添加用户消息到聊天界面
+            addUserMessage(query);
+            
+            // 创建Agent消息占位符
+            const agentMessageDiv = createAgentMessage();
+            
+            // 重置计数器
+            nodeCount = 0;
+            toolCount = 0;
+            document.getElementById('timelineContent').innerHTML = '';
+            document.getElementById('statsBar').style.display = 'none';
+            
+            // 先保存配置
+            const config = {
+                nodes: builderNodes.map(n => ({
+                    id: n.id,
+                    type: n.type,
+                    data: n.data
+                })),
+                edges: builderEdges
+            };
+            
+            try {
+                const saveResponse = await fetch(`${API_BASE}/agents`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: '临时测试Agent_' + Date.now(),
+                        description: '临时测试',
+                        config: config,
+                        is_active: true
+                    })
+                });
+                
+                if (!saveResponse.ok) {
+                    const errorText = await saveResponse.text();
+                    throw new Error(`保存Agent配置失败: ${errorText}`);
+                }
+                
+                const agent = await saveResponse.json();
+                console.log('✅ Agent配置已保存:', agent.id);
+                
+                // 执行Agent（流式）
+                const executeResponse = await fetch(`${API_BASE}/agents/${agent.id}/execute/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        agent_id: agent.id,
+                        messages: [{ role: 'user', content: query }],
+                        use_knowledge_base: false,
+                        use_tools: true
+                    })
+                });
+                
+                if (!executeResponse.ok) {
+                    const errorText = await executeResponse.text();
+                    throw new Error(`执行Agent失败: ${errorText}`);
+                }
+                
+                // 处理流式响应
+                const reader = executeResponse.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let eventCount = 0;
+                
+                console.log('📡 开始接收Agent流式数据...');
+                
+                while (true) {
+                    const {done, value} = await reader.read();
+                    if (done) {
+                        console.log(`✅ 流式传输完成，共接收 ${eventCount} 个事件`);
+                        break;
+                    }
+                    
+                    buffer += decoder.decode(value, {stream: true});
+                    const events = buffer.split('\n\n');
+                    buffer = events.pop();
+                    
+                    for (const eventText of events) {
+                        if (!eventText.trim()) continue;
+                        
+                        const lines = eventText.split('\n');
+                        let eventType = '';
+                        let eventData = null;
+                        
+                        for (const line of lines) {
+                            if (line.startsWith('event: ')) {
+                                eventType = line.slice(7).trim();
+                            } else if (line.startsWith('data: ')) {
+                                try {
+                                    eventData = JSON.parse(line.slice(6));
+                                } catch (e) {
+                                    console.error('JSON parse error:', e, line);
+                                }
+                            }
+                        }
+                        
+                        if (eventType && eventData) {
+                            eventCount++;
+                            console.log(`📨 收到事件 [${eventCount}]:`, eventType, eventData);
+                            handleAgentEvent(eventType, eventData);
+                        }
+                    }
+                }
+                
+                // 完成处理
+                finalizeAgentMessage();
+                completeCurrentNode();
+                console.log('✅ Agent测试完成');
+                
+            } catch (error) {
+                console.error('❌ Agent测试失败:', error);
+                // 确保消息容器存在
+                if (!document.getElementById('currentAgentMessage')) {
+                    createAgentMessage();
+                }
+                updateAgentMessage(`❌ 测试失败：${error.message}\n\n请检查：\n1. 后端服务是否正常运行\n2. Agent配置是否正确\n3. 工具是否已正确配置`);
+                finalizeAgentMessage();
+            }
+        }
+        
+        // 加载示例模板
+        async function loadExample(exampleType) {
+            // 清空当前画布
+            builderNodes = [];
+            builderEdges = [];
+            document.getElementById('builderCanvas').innerHTML = '<svg id="connectionSvg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></svg>';
+            
+            // 确保工具已加载
+            if (availableTools.length === 0) {
+                await loadTools();
+            }
+            
+            if (exampleType === 'weather') {
+                // 天气助手示例
+                addNode('planner', '规划器');
+                const plannerNode = builderNodes[builderNodes.length - 1];
+                plannerNode.data.prompt = '分析用户查询，提取城市名称，制定天气查询计划。';
+                
+                // 查找天气工具
+                const weatherTool = availableTools.find(t => t.name.includes('天气') || t.tool_type === 'builtin');
+                if (weatherTool) {
+                    addToolNode(weatherTool.id, weatherTool.name);
+                } else {
+                    addNode('tool_executor', '天气查询');
+                }
+                const weatherNode = builderNodes[builderNodes.length - 1];
+                
+                addNode('condition', '条件判断');
+                const conditionNode = builderNodes[builderNodes.length - 1];
+                conditionNode.data.conditionType = 'contains';
+                conditionNode.data.conditionValue = '雨';
+                
+                // 查找笔记工具
+                const noteTool = availableTools.find(t => t.name.includes('笔记') || t.name.includes('note'));
+                if (noteTool) {
+                    addToolNode(noteTool.id, noteTool.name);
+                } else {
+                    addNode('tool_executor', '写笔记');
+                }
+                const noteNode = builderNodes[builderNodes.length - 1];
+                
+                addNode('synthesizer', '合成器');
+                const synthNode = builderNodes[builderNodes.length - 1];
+                synthNode.data.prompt = '根据天气查询结果和是否创建了笔记，生成友好的回复给用户。';
+                
+                // 创建连接
+                builderEdges.push({ source: plannerNode.id, target: weatherNode.id });
+                builderEdges.push({ source: weatherNode.id, target: conditionNode.id });
+                builderEdges.push({ source: conditionNode.id, target: noteNode.id });
+                builderEdges.push({ source: conditionNode.id, target: synthNode.id }); // 条件分支
+                builderEdges.push({ source: noteNode.id, target: synthNode.id });
+                
+                updateConnections();
+                alert('✅ 已加载"天气助手"示例！\n\n流程：规划 → 天气查询 → 条件判断 → [写笔记/跳过] → 合成回复\n\n提示：双击节点创建连接，点击节点配置参数');
+                
+            } else if (exampleType === 'search') {
+                // 搜索总结示例
+                addNode('planner', '规划器');
+                const plannerNode = builderNodes[builderNodes.length - 1];
+                plannerNode.data.prompt = '提取用户查询中的关键词，准备进行网络搜索。';
+                
+                // 查找搜索工具
+                const searchTool = availableTools.find(t => t.name.includes('搜索') || t.name.includes('search'));
+                if (searchTool) {
+                    addToolNode(searchTool.id, searchTool.name);
+                } else {
+                    addNode('tool_executor', '网络搜索');
+                }
+                const searchNode = builderNodes[builderNodes.length - 1];
+                
+                addNode('llm_call', 'LLM总结');
+                const llmNode = builderNodes[builderNodes.length - 1];
+                llmNode.data.prompt = '基于以下搜索结果，总结关键信息：\n{{last_tool_result}}';
+                llmNode.data.temperature = 0.7;
+                llmNode.data.maxTokens = 1000;
+                
+                addNode('synthesizer', '合成器');
+                const synthNode = builderNodes[builderNodes.length - 1];
+                synthNode.data.prompt = '综合搜索和总结结果，生成详细的回答。';
+                
+                // 创建连接
+                builderEdges.push({ source: plannerNode.id, target: searchNode.id });
+                builderEdges.push({ source: searchNode.id, target: llmNode.id });
+                builderEdges.push({ source: llmNode.id, target: synthNode.id });
+                
+                updateConnections();
+                alert('✅ 已加载"搜索总结"示例！\n\n流程：规划 → 网络搜索 → LLM总结 → 合成回复\n\n提示：双击节点创建连接，点击节点配置参数');
             }
         }
 
