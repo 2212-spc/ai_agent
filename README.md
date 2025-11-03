@@ -1,10 +1,20 @@
 # 🤖 AI Agent - 智能对话助手
 
-一个功能强大的 AI Agent 平台，集成了 RAG（检索增强生成）、MCP 工具调用、上网搜索等能力，提供类似 ChatGPT 和 Coze 的专业级用户界面。
+一个功能强大的 AI Agent 平台，集成了 RAG（检索增强生成）、MCP 工具调用、上网搜索、长期记忆系统等能力，提供类似 ChatGPT 和 Coze 的专业级用户界面。
 
-![](https://img.shields.io/badge/Python-3.10-blue)
-![](https://img.shields.io/badge/FastAPI-0.110-green)
+![](https://img.shields.io/badge/Python-3.10+-blue)
+![](https://img.shields.io/badge/FastAPI-0.110+-green)
 ![](https://img.shields.io/badge/DeepSeek-API-orange)
+![](https://img.shields.io/badge/LangGraph-Agent-purple)
+
+## 🌟 核心特性
+
+- 🧠 **智能长期记忆** - 自动提取、去重、向量化检索，让 AI 真正记住用户
+- 📚 **会话管理** - 完整的对话历史检索、继续对话、记忆共享控制
+- 🔍 **向量化检索** - ChromaDB 支持，语义相似度搜索
+- 🤖 **LangGraph Agent** - 多步骤规划、智能路由、工具调用
+- 📄 **RAG 知识库** - 文档上传、向量检索、智能分块
+- 🌐 **上网能力** - 网页搜索、内容提取、天气查询
 
 ---
 
@@ -57,6 +67,21 @@
 - ✅ **示例模板** - 内置天气助手、搜索总结等示例模板
 - ✅ **性能优化** - 流畅的拖拽体验，硬件加速渲染
 - ✅ **保存与测试** - 一键保存Agent配置，即时测试执行效果
+
+### 🧠 长期记忆系统（新增）
+- ✅ **智能记忆提取** - 自动从对话中提取重要信息（事实、偏好、事件等）
+- ✅ **记忆去重与合并** - 自动检测并合并相似记忆，避免重复存储
+- ✅ **向量化检索** - 使用语义相似度搜索记忆，支持跨会话检索
+- ✅ **记忆分类** - 自动分类为 fact（事实）、preference（偏好）、event（事件）、relationship（关系）
+- ✅ **重要性评分** - 自动评估记忆的重要性（0-100），优先检索重要记忆
+- ✅ **访问统计** - 记录记忆的访问次数和最后访问时间
+
+### 📚 会话管理（新增）
+- ✅ **对话历史检索** - 查看所有历史对话，支持搜索和筛选
+- ✅ **继续对话** - 从历史记录中继续之前的对话
+- ✅ **会话删除** - 支持删除整个会话或单条消息
+- ✅ **记忆共享控制** - 可选择是否跨会话共享长期记忆
+- ✅ **会话设置** - 灵活配置每个会话的记忆共享策略
 
 ---
 
@@ -142,7 +167,9 @@ INFO:     Application startup complete.
 - **登录页面**：`frontend/login.html`
 - **注册页面**：`frontend/register.html`（或从登录页点击注册链接）
 - **聊天界面**：`frontend/chat.html`（登录后自动跳转）
-- **LangGraph Agent 界面**：`frontend/agent_chat.html`（登录后自动跳转）
+- **LangGraph Agent 界面**：`frontend/agent_chat.html`（推荐，登录后自动跳转）
+- **对话历史页面**：`frontend/conversation_history.html`（从聊天界面点击 📚 按钮访问）
+- **对话设置页面**：`frontend/conversation_settings.html`（从聊天界面点击 ⚙️ 按钮访问）
 
 或者使用 Live Server（VS Code 插件）打开 `frontend/login.html`
 
@@ -215,6 +242,52 @@ INFO:     Application startup complete.
 2. 判断是否下雨
 3. 如果需要，创建提醒笔记
 
+### 使用长期记忆系统
+
+**自动记忆提取：**
+系统会在每次对话后自动提取重要信息，例如：
+- 用户提到姓名、职业等事实信息 → 存储为 `fact` 类型
+- 用户表达偏好（喜欢、不喜欢） → 存储为 `preference` 类型
+- 用户提到事件、计划 → 存储为 `event` 类型
+
+**记忆自动去重：**
+系统会智能检测相似记忆并合并，例如：
+```
+第一次对话："我叫张三"
+第二次对话："我的名字是张三"
+→ 自动合并，避免重复存储
+```
+
+**记忆检索：**
+AI 会在回答问题时自动检索相关记忆：
+```
+用户："你还记得我的名字吗？"
+AI：根据记忆检索 → "当然记得，您叫张三"
+```
+
+### 使用会话管理
+
+**查看历史对话：**
+1. 点击聊天界面右上角的 **📚 对话历史** 按钮
+2. 查看所有历史会话列表
+3. 使用搜索框搜索特定对话内容
+
+**继续之前的对话：**
+1. 在历史记录中点击要继续的对话
+2. 系统自动加载历史消息
+3. 可以无缝继续之前的对话
+
+**删除会话：**
+1. 在历史记录页面点击 **🗑️** 按钮
+2. 确认删除后，该会话的所有消息将被永久删除
+
+**配置记忆共享：**
+1. 点击聊天界面右上角的 **⚙️ 会话设置** 按钮
+2. 切换 **跨会话共享记忆** 开关：
+   - **开启**：AI 可以访问所有会话中存储的长期记忆
+   - **关闭**：AI 只能访问当前会话的记忆（会话隔离）
+3. 设置会自动保存并生效
+
 ---
 
 ## 📁 项目结构
@@ -225,7 +298,9 @@ ai_agent/
 │   ├── app/
 │   │   ├── main.py            # FastAPI 应用入口
 │   │   ├── config.py          # 配置管理
-│   │   ├── database.py        # 数据库模型
+│   │   ├── database.py        # 数据库模型（含会话配置）
+│   │   ├── graph_agent.py     # LangGraph Agent 实现
+│   │   ├── memory_service.py  # 长期记忆系统
 │   │   ├── rag_service.py     # RAG 检索服务
 │   │   ├── tool_service.py    # 工具服务（含上网功能）
 │   │   ├── graph_agent.py      # LangGraph Agent 核心逻辑
@@ -243,7 +318,9 @@ ai_agent/
 │   ├── login.html             # 登录页面
 │   ├── register.html          # 注册页面
 │   ├── chat.html              # 传统聊天界面
-│   └── agent_chat.html        # LangGraph Agent 界面（推荐，包含构建器）
+│   ├── agent_chat.html        # LangGraph Agent 界面（推荐，包含构建器）
+│   ├── conversation_history.html  # 对话历史页面
+│   └── conversation_settings.html # 会话设置页面
 │
 ├── AGENT_BUILDER_EXAMPLE.md   # Agent构建器使用教程
 └── README.md                   # 本文件
@@ -258,11 +335,11 @@ ai_agent/
 - **DeepSeek API** - 大语言模型
 - **LangGraph** - Agent 工作流编排框架
 - **LangChain** - LLM 应用开发框架
-- **ChromaDB** - 向量数据库
-- **Sentence Transformers** - 文本嵌入模型
-- **SQLite** - 关系数据库
+- **ChromaDB** - 向量数据库（支持文档和记忆向量化）
+- **Sentence Transformers** - 文本嵌入模型（多语言支持）
+- **SQLite** - 关系数据库（存储对话历史、记忆、会话配置等）
 - **BeautifulSoup** - 网页解析
-- **httpx** - HTTP 客户端
+- **httpx** - HTTP 客户端（异步支持）
 - **rank-bm25** - BM25 关键词检索
 
 ### 前端
@@ -301,6 +378,15 @@ ai_agent/
 | GET | `/tools` | 列出工具 |
 | POST | `/tools` | 添加工具 |
 | GET | `/tool-logs` | 工具执行日志 |
+| GET | `/conversations` | 列出所有会话 |
+| GET | `/conversations/search` | 搜索会话 |
+| GET | `/conversation/{session_id}/history` | 获取会话历史 |
+| DELETE | `/conversation/{session_id}` | 删除会话 |
+| GET | `/conversation/{session_id}/config` | 获取会话配置 |
+| PUT | `/conversation/{session_id}/config` | 更新会话配置 |
+| GET | `/memory/search` | 搜索长期记忆 |
+| GET | `/memory/recent` | 获取最近记忆 |
+| GET | `/memory/context` | 获取记忆上下文 |
 
 ---
 
@@ -320,6 +406,13 @@ ai_agent/
 - **web_search** - 网页搜索（DuckDuckGo）
 - **fetch_webpage** - 获取网页内容（Jina Reader）
 - **get_weather** - 天气查询（wttr.in）
+
+### 记忆管理
+- **自动提取** - 从对话中提取重要信息
+- **智能去重** - 自动检测并合并相似记忆
+- **向量检索** - 语义相似度搜索记忆
+- **记忆分类** - fact、preference、event、relationship
+- **访问统计** - 记录访问次数和时间
 
 ---
 
@@ -343,6 +436,21 @@ ai_agent/
 ```
 ✅ "搜索最新的 AI 新闻，并总结保存为笔记"
 ✅ "查询北京天气，如果下雨提醒我带伞"
+```
+
+### 4. 长期记忆使用
+```
+✅ 告诉 AI 你的姓名、职业等信息，AI 会自动记住
+✅ 表达偏好："我喜欢 Python 编程"
+✅ 提及计划："我下周二要开会"
+→ AI 会在后续对话中自动使用这些记忆
+```
+
+### 5. 会话管理技巧
+```
+✅ 使用搜索功能快速找到之前的对话
+✅ 为不同主题创建不同的会话（如工作、学习、个人）
+✅ 使用记忆共享开关控制不同会话间的记忆隔离
 ```
 
 ---
@@ -370,6 +478,18 @@ A: 确保：
 2. 文件大小合理（< 100MB）
 3. 文件未加密
 
+### Q: 记忆没有被记住？
+A: 检查：
+1. 确保对话中包含明确的事实或偏好信息
+2. 记忆提取需要一定重要性，过于琐碎的信息可能不会被提取
+3. 查看会话设置，确认记忆共享开关是否开启
+
+### Q: 如何在会话间隔离记忆？
+A: 在会话设置中关闭"跨会话共享记忆"开关，AI 将只能访问当前会话的记忆。
+
+### Q: 如何删除对话历史？
+A: 访问对话历史页面，点击要删除的会话右侧的 🗑️ 按钮即可删除。
+
 ---
 
 ## 📝 开发计划
@@ -391,6 +511,8 @@ A: 确保：
 - [x] **自定义Agent构建器** - 可视化拖拽创建Agent工作流
 - [x] **节点类型扩展** - 支持延迟、变量、循环等高级节点
 - [x] **性能优化** - 流畅的拖拽体验，硬件加速渲染
+- [x] **长期记忆系统** - 智能记忆提取、去重、向量化检索
+- [x] **会话管理** - 对话历史检索、继续对话、记忆共享控制
 
 ### 计划中 🚧
 - [ ] Agent配置导入/导出（JSON格式）
@@ -400,7 +522,6 @@ A: 确保：
 - [ ] 真实用户认证系统（后端 API）
 - [ ] 多 Agent 协作
 - [ ] Prompt 模板管理
-- [ ] 长期记忆系统
 - [ ] 数据库连接器
 - [ ] 语音输入/输出
 - [ ] 文件上传支持更多格式（PPT、Excel 等）

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>对话历史 - AI Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #f7f7f8;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: white;
+            padding: 16px 24px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #202123;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: #10a37f;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0d8f6e;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .search-box {
+            background: white;
+            padding: 16px 24px;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .search-input {
+            width: 100%;
+            max-width: 600px;
+            padding: 10px 16px;
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #10a37f;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .conversation-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .conversation-item {
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .conversation-item:hover {
+            border-color: #10a37f;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .conversation-info {
+            flex: 1;
+        }
+
+        .conversation-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #202123;
+            margin-bottom: 4px;
+        }
+
+        .conversation-preview {
+            font-size: 14px;
+            color: #8e8ea0;
+            margin-bottom: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 600px;
+        }
+
+        .conversation-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: #8e8ea0;
+        }
+
+        .conversation-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            transition: all 0.2s;
+            font-size: 16px;
+        }
+
+        .btn-icon:hover {
+            background: #f0f0f0;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 64px 24px;
+            color: #8e8ea0;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 32px;
+            color: #8e8ea0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📚 对话历史</h1>
+        <div class="header-actions">
+            <a href="agent_chat.html" class="btn btn-primary">
+                ➕ 新建对话
+            </a>
+        </div>
+    </div>
+
+    <div class="search-box">
+        <input 
+            type="text" 
+            class="search-input" 
+            id="searchInput"
+            placeholder="🔍 搜索对话内容..."
+            onkeyup="handleSearch(event)"
+        >
+    </div>
+
+    <div class="container">
+        <div id="conversationList" class="conversation-list">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+        let allConversations = [];
+        let currentPage = 0;
+        const pageSize = 20;
+
+        // 获取用户信息
+        function getUserInfo() {
+            const userInfo = localStorage.getItem('userInfo');
+            return userInfo ? JSON.parse(userInfo) : null;
+        }
+
+        // 加载会话列表
+        async function loadConversations(searchQuery = '') {
+            const userInfo = getUserInfo();
+            const userId = userInfo?.user_id || null;
+
+            const listEl = document.getElementById('conversationList');
+            listEl.innerHTML = '<div class="loading">加载中...</div>';
+
+            try {
+                let url;
+                if (searchQuery) {
+                    url = `${API_BASE}/conversations/search?q=${encodeURIComponent(searchQuery)}&limit=${pageSize}`;
+                    if (userId) url += `&user_id=${userId}`;
+                } else {
+                    url = `${API_BASE}/conversations?limit=${pageSize}&offset=${currentPage * pageSize}`;
+                    if (userId) url += `&user_id=${userId}`;
+                }
+
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('加载失败');
+
+                const conversations = await response.json();
+                allConversations = conversations;
+                renderConversations(conversations);
+            } catch (error) {
+                console.error('加载会话失败:', error);
+                listEl.innerHTML = '<div class="empty-state">加载失败，请刷新重试</div>';
+            }
+        }
+
+        // 渲染会话列表
+        function renderConversations(conversations) {
+            const listEl = document.getElementById('conversationList');
+
+            if (conversations.length === 0) {
+                listEl.innerHTML = '<div class="empty-state">暂无对话记录</div>';
+                return;
+            }
+
+            listEl.innerHTML = conversations.map(conv => `
+                <div class="conversation-item" onclick="openConversation('${conv.session_id}')">
+                    <div class="conversation-info">
+                        <div class="conversation-title">${escapeHtml(conv.title)}</div>
+                        <div class="conversation-preview">${escapeHtml(conv.preview)}</div>
+                        <div class="conversation-meta">
+                            <span>💬 ${conv.message_count} 条消息</span>
+                            <span>🕐 ${formatTime(conv.last_message_time)}</span>
+                        </div>
+                    </div>
+                    <div class="conversation-actions" onclick="event.stopPropagation()">
+                        <button class="btn-icon" onclick="openConversation('${conv.session_id}')" title="继续对话">
+                            ▶️
+                        </button>
+                        <button class="btn-icon" onclick="openSettings('${conv.session_id}')" title="设置">
+                            ⚙️
+                        </button>
+                        <button class="btn-icon" onclick="deleteConversation('${conv.session_id}')" title="删除">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 打开对话（继续对话）
+        function openConversation(sessionId) {
+            window.location.href = `agent_chat.html?session_id=${sessionId}`;
+        }
+
+        // 打开设置
+        function openSettings(sessionId) {
+            window.location.href = `conversation_settings.html?session_id=${sessionId}`;
+        }
+
+        // 删除对话
+        async function deleteConversation(sessionId) {
+            if (!confirm('确定要删除这个对话吗？删除后将无法恢复。')) {
+                return;
+            }
+
+            const userInfo = getUserInfo();
+            const userId = userInfo?.user_id || null;
+
+            try {
+                let url = `${API_BASE}/conversation/${sessionId}`;
+                if (userId) url += `?user_id=${userId}`;
+
+                const response = await fetch(url, {
+                    method: 'DELETE',
+                });
+
+                if (!response.ok) throw new Error('删除失败');
+
+                alert('删除成功');
+                loadConversations();
+            } catch (error) {
+                console.error('删除失败:', error);
+                alert('删除失败，请重试');
+            }
+        }
+
+        // 搜索处理
+        let searchTimeout;
+        function handleSearch(event) {
+            if (event.key === 'Enter') {
+                const query = event.target.value.trim();
+                currentPage = 0;
+                loadConversations(query);
+            }
+        }
+
+        // 工具函数
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr) return '未知时间';
+            const date = new Date(timeStr);
+            const now = new Date();
+            const diff = now - date;
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            if (minutes < 1) return '刚刚';
+            if (minutes < 60) return `${minutes}分钟前`;
+            if (hours < 24) return `${hours}小时前`;
+            if (days < 7) return `${days}天前`;
+            return date.toLocaleDateString('zh-CN');
+        }
+
+        // 页面加载时初始化
+        window.addEventListener('load', () => {
+            loadConversations();
+        });
+    </script>
+</body>
+</html>

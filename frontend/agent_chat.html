@@ -1176,7 +1176,9 @@
                 </div>
             </div>
             <div class="header-actions">
-                <button class="icon-btn" onclick="window.open('knowledge_base.html', '_blank')" title="知识库管理">📚</button>
+                <button class="icon-btn" onclick="window.open('knowledge_base.html', '_blank')" title="知识库管理">📁</button>
+                <button class="icon-btn" onclick="openHistory()" title="对话历史">📚</button>
+                <button class="icon-btn" onclick="openSettings()" title="会话设置">⚙️</button>
                 <button class="icon-btn" onclick="toggleBuilder()" title="Agent构建器">🛠️</button>
                 <button class="toggle-timeline-btn" onclick="toggleTimeline()">
                     <span id="timelineToggleText">展开过程 →</span>
@@ -1783,6 +1785,7 @@
                             messages: [{role: 'user', content: message}],
                             use_knowledge_base: document.getElementById('useKB').checked,
                             use_tools: document.getElementById('useTools').checked,
+                            session_id: getCurrentSessionId(),
                         }),
                     });
                 }
@@ -2004,6 +2007,7 @@
         function logout() {
             if (confirm('确定要退出登录吗？')) {
                 localStorage.removeItem('userInfo');
+                localStorage.removeItem('currentSessionId');
                 window.location.href = 'login.html';
             }
         }
@@ -3083,6 +3087,82 @@
             }
         }
 
+        // 获取当前会话ID
+        function getCurrentSessionId() {
+            // 先从 URL 参数获取
+            const urlParams = new URLSearchParams(window.location.search);
+            let sessionId = urlParams.get('session_id');
+            
+            // 如果没有，从 localStorage 获取
+            if (!sessionId) {
+                sessionId = localStorage.getItem('currentSessionId');
+            }
+            
+            // 如果还是没有，生成新的
+            if (!sessionId) {
+                sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('currentSessionId', sessionId);
+            }
+            
+            return sessionId;
+        }
+
+        // 打开历史记录
+        function openHistory() {
+            window.location.href = 'conversation_history.html';
+        }
+
+        // 打开设置
+        function openSettings() {
+            const sessionId = getCurrentSessionId();
+            if (sessionId) {
+                window.location.href = `conversation_settings.html?session_id=${sessionId}`;
+            } else {
+                alert('当前没有活动的会话');
+            }
+        }
+
+        // 加载对话历史
+        async function loadConversationHistory(sessionId) {
+            if (!sessionId) return;
+
+            const userInfo = localStorage.getItem('userInfo');
+            const userId = userInfo ? JSON.parse(userInfo).user_id : null;
+
+            try {
+                let url = `${API_BASE}/conversation/${sessionId}/history?limit=50`;
+                if (userId) url += `&user_id=${userId}`;
+
+                const response = await fetch(url);
+                if (!response.ok) return;
+
+                const history = await response.json();
+                const container = document.getElementById('messagesContainer');
+                
+                // 清空当前消息（除了欢迎消息）
+                const existingMessages = container.querySelectorAll('.message');
+                existingMessages.forEach(msg => {
+                    if (!msg.querySelector('.example-prompts')) {
+                        msg.remove();
+                    }
+                });
+                
+                // 将历史消息添加到聊天界面
+                history.forEach(msg => {
+                    if (msg.role === 'user') {
+                        addUserMessage(msg.content);
+                    } else if (msg.role === 'assistant') {
+                        const agentDiv = createAgentMessage();
+                        updateAgentMessage(msg.content);
+                    }
+                });
+                
+                console.log(`✅ 已加载 ${history.length} 条历史消息`);
+            } catch (error) {
+                console.error('加载历史对话失败:', error);
+            }
+        }
+
         // 事件监听器设置
         document.addEventListener('DOMContentLoaded', function() {
             // 检查登录状态
@@ -3091,6 +3171,17 @@
                 // 未登录，跳转到登录页
                 window.location.href = 'login.html';
                 return;
+            }
+            
+            // 检查 URL 参数中是否有 session_id，如果有则加载历史对话
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            if (sessionId) {
+                localStorage.setItem('currentSessionId', sessionId);
+                loadConversationHistory(sessionId);
+            } else {
+                // 如果没有 session_id，确保有当前会话ID
+                getCurrentSessionId();
             }
             
             // 发送按钮点击事件

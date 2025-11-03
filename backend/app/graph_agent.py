@@ -23,6 +23,12 @@ from .config import Settings
 from .database import ToolRecord
 from .rag_service import retrieve_context
 from .tool_service import execute_tool, parse_tool_call
+from .memory_service import (
+    retrieve_relevant_memories,
+    save_conversation_and_extract_memories,
+    format_memories_for_context,
+    get_conversation_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +142,8 @@ class AgentState(TypedDict):
     # 基础信息
     user_query: str  # 用户原始问题
     conversation_history: Annotated[Sequence[Dict[str, str]], operator.add]  # 对话历史
+    session_id: Optional[str]  # 会话ID，用于长期记忆
+    user_id: Optional[str]  # 用户ID，用于多用户场景
     
     # 规划信息
     plan: Optional[str]  # Agent 生成的计划
@@ -177,6 +185,9 @@ async def planner_node(
     state: AgentState,
     settings: Settings,
     tool_records: List[ToolRecord],
+    session: Session = None,
+    session_id: str = None,
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     规划器节点：使用 LLM 分析用户问题，生成智能执行计划
@@ -186,14 +197,39 @@ async def planner_node(
     user_query = state["user_query"]
     use_knowledge_base = state.get("use_knowledge_base", False)
     
+    # 检索相关长期记忆
+    # 注意：即使没有 session_id，如果有 user_id，也应该检索记忆
+    # 这样可以确保跨会话也能使用记忆
+    relevant_memories = []
+    if session and (session_id or user_id):
+        try:
+            relevant_memories = await retrieve_relevant_memories(
+                session=session,
+                query=user_query,
+                settings=settings,
+                user_id=user_id,
+                max_memories=5,
+                session_id=session_id,
+            )
+            if relevant_memories:
+                logger.info(f"📚 在规划器中检索到 {len(relevant_memories)} 条相关记忆")
+                for mem in relevant_memories:
+                    logger.debug(f"  - [{mem.memory_type}] {mem.content} (重要性: {mem.importance_score})")
+        except Exception as e:
+            logger.warning(f"记忆检索失败: {e}")
+    
     # 格式化工具描述
     tools_desc = format_tools_description(tool_records)
     
     # 构建智能规划提示词
+    memory_context = ""
+    if relevant_memories:
+        memory_context = f"\n相关记忆：\n{format_memories_for_context(relevant_memories)}\n"
+    
     planning_prompt = f"""你是一个智能任务规划助手。请分析用户问题，制定执行计划。
 
 用户问题：{user_query}
-
+{memory_context}
 可用工具：
 {tools_desc}
 
@@ -299,10 +335,12 @@ async def router_node(
             "current_step": current_step + 1
         }
     
+    # 检测知识库是否已经搜索过
+    kb_searched = any("知识库" in obs for obs in observations)
+    kb_empty = kb_searched and not retrieved_contexts  # 搜索过但没有结果
+    
     # 如果第一步，先进行简单判断（优化性能）
     if current_step == 0:
-        kb_searched = any("知识库" in obs for obs in observations)
-        
         # 启用知识库但未检索
         if use_knowledge_base and not kb_searched:
             return {
@@ -319,6 +357,15 @@ async def router_node(
                 "current_step": current_step + 1
             }
     
+    # 如果知识库已搜索但为空，且没有需要工具的任务，直接进入合成阶段
+    if current_step >= 1 and kb_empty and not should_call_tool(state):
+        logger.info("⚠️ 知识库已搜索但为空，且无需工具，直接进入合成阶段")
+        return {
+            "next_action": "synthesize",
+            "thoughts": ["知识库为空且无需工具，直接生成答案"],
+            "current_step": current_step + 1
+        }
+    
     # 步骤 >= 1，使用 LLM 智能决策
     # 先检查是否已经检索过知识库，避免重复搜索
     kb_already_searched = len(retrieved_contexts) > 0 or any("知识库" in obs or "检索到" in obs for obs in observations)
@@ -332,7 +379,7 @@ async def router_node(
 - 用户问题：{user_query}
 - 执行步骤：{current_step}/{max_iterations}
 - 已调用工具数：{len(tool_calls_made)}
-- 知识库检索状态：{kb_status_detail}
+- 知识库检索：{"已检索但无结果" if kb_empty else ("已检索 " + str(len(retrieved_contexts)) + " 条" if retrieved_contexts else "未检索")}
 - 工具执行结果数：{len(tool_results)}
 
 最近观察：
@@ -344,12 +391,13 @@ B. tool_executor - 需要调用外部工具获取数据
 C. synthesize - 信息已足够，可以生成最终答案
 
 要求：
-1. 如果启用了知识库但还没检索（知识库检索状态显示"未检索"），优先选择 A
-2. 如果知识库已经检索过（知识库检索状态显示"已检索"），不要重复选择 A，应该选择 B 或 C
-3. 如果问题需要多个工具（如：搜索+绘图），必须执行完所有工具后再选择 C
-4. 如果问题需要实时数据（天气、搜索等），但还没调用相应工具，选择 B
-5. 如果已有足够信息且所有必要工具都已执行，选择 C
-6. 只回复一个字母（A/B/C），不要解释
+1. **重要**：如果知识库已经搜索过但无结果（已检索但无结果），不要选择 A，应该选择 C
+2. 如果启用了知识库但还没检索（知识库检索显示"未检索"），优先选择 A
+3. 如果知识库已经检索过（知识库检索显示"已检索"），不要重复选择 A，应该选择 B 或 C
+4. 如果问题需要多个工具（如：搜索+绘图），必须执行完所有工具后再选择 C
+5. 如果问题需要实时数据（天气、搜索等），但还没调用相应工具，选择 B
+6. 如果已有足够信息且所有必要工具都已执行，选择 C
+7. 只回复一个字母（A/B/C），不要解释
 """
         
         # 调用 LLM 决策
@@ -370,6 +418,12 @@ C. synthesize - 信息已足够，可以生成最终答案
         }
         
         next_action = action_map.get(decision, "synthesize")
+        
+        # 强制检查：如果知识库已搜索但为空，且选择了 search_kb，强制改为 synthesize
+        if kb_empty and next_action == "search_kb":
+            logger.warning("⚠️ 知识库已为空，强制改为 synthesize")
+            next_action = "synthesize"
+            decision = "C"
         
         # 防止重复搜索知识库：如果已经检索过，强制改为 synthesize 或 tool_executor
         if next_action == "search_kb" and kb_already_searched:
@@ -397,8 +451,11 @@ C. synthesize - 信息已足够，可以生成最终答案
         # 降级策略：使用简单规则
         kb_searched = len(retrieved_contexts) > 0 or any("知识库" in obs or "检索到" in obs for obs in observations)
         
-        # 防止重复搜索：如果已经检索过，不再选择 search_kb
-        if use_knowledge_base and not kb_searched and current_step < 2:
+        if kb_empty and not should_call_tool(state):
+            next_action = "synthesize"
+            thought = "降级决策：知识库为空，直接生成答案"
+        elif use_knowledge_base and not kb_searched and current_step < 2:
+            # 防止重复搜索：如果已经检索过，不再选择 search_kb
             next_action = "search_kb"
             thought = "降级决策：检索知识库"
         elif kb_searched and current_step >= 2:
@@ -739,6 +796,9 @@ def reflector_node(state: AgentState) -> Dict[str, Any]:
 async def synthesizer_node(
     state: AgentState,
     settings: Settings,
+    session: Session = None,
+    session_id: str = None,
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """合成器节点：使用 LLM 综合所有信息生成最终答案"""
     logger.info("✨ [合成器] 使用 LLM 生成最终答案...")
@@ -748,8 +808,31 @@ async def synthesizer_node(
     tool_results = state.get("tool_results", [])
     skipped_tasks = state.get("skipped_tasks", [])
 
+    # 检索相关长期记忆（在生成答案时也使用）
+    # 注意：即使没有 session_id，如果有 user_id，也应该检索记忆
+    relevant_memories = []
+    if session and (session_id or user_id):
+        try:
+            relevant_memories = await retrieve_relevant_memories(
+                session=session,
+                query=user_query,
+                settings=settings,
+                user_id=user_id,
+                max_memories=5,
+                session_id=session_id,
+            )
+            if relevant_memories:
+                logger.info(f"📚 在合成器中检索到 {len(relevant_memories)} 条相关记忆")
+        except Exception as e:
+            logger.warning(f"记忆检索失败: {e}")
+
     # 构建信息上下文
     context_parts: List[str] = []
+    
+    # 0. 添加长期记忆（如果有）
+    if relevant_memories:
+        memory_context = format_memories_for_context(relevant_memories)
+        context_parts.append(f"## 相关记忆\n{memory_context}")
     
     # 1. 添加知识库检索内容
     if retrieved_contexts:
@@ -776,15 +859,15 @@ async def synthesizer_node(
         ])
         context_parts.append(f"## 跳过的任务\n{skip_info}")
     
-    # 判断是否有足够信息
-    has_info = bool(retrieved_contexts or tool_results)
+    # 判断是否有足够信息（包括记忆）
+    has_info = bool(retrieved_contexts or tool_results or relevant_memories)
     
     try:
         if not has_info:
             # 没有任何额外信息，直接让 LLM 基于自身知识回答
             synthesis_prompt = f"""用户问题：{user_query}
 
-当前系统没有检索到知识库内容，也没有调用任何工具。
+当前系统没有检索到知识库内容，也没有调用任何工具，也没有相关记忆。
 请基于你自身的知识直接回答用户问题。
 
 要求：
@@ -802,14 +885,23 @@ async def synthesizer_node(
 
 {all_context}
 
-请基于以上信息，综合回答用户问题。
+请基于以上信息，自然地回答用户问题，就像和朋友对话一样。
 
 要求：
-1. 优先引用具体的信息来源（知识库或工具结果）
-2. 如果信息不完整，请说明缺少什么
-3. 保持客观准确，不要编造内容
-4. 回答要有条理，使用 Markdown 格式
-5. 如果有工具执行结果，请重点突出
+1. **重要**：如果记忆中有用户信息（如姓名），直接自然地使用，不要提到"记忆"、"记录"、"信息来源"等技术细节
+2. 回答要自然、流畅，就像你本来就记得这些信息一样
+3. 不要显示思考过程、信息来源或技术细节
+4. 如果记忆中有用户的名字，直接说："你是XXX"或"你是XXX，对吗？"，不要显示记忆来源
+5. 保持客观准确，不要编造内容
+6. 回答要有条理，使用 Markdown 格式
+7. **隐私保护**：不要让用户意识到他们的信息被存储，回答要像自然对话一样
+8. 如果有工具执行结果，可以提到，但不要过度强调技术细节
+
+示例：
+- ❌ 错误："根据我的记忆，你是杨博文。信息来源：记忆记录 #1..."
+- ✅ 正确："你好！你是杨博文，对吧？" 或 "我知道你是杨博文。"
+
+现在请自然地回答用户问题：
 """
         
         # 调用 LLM 生成最终答案
@@ -1419,13 +1511,17 @@ def create_agent_graph(
     
     # 创建异步节点包装器
     async def planner_wrapper(state: AgentState) -> Dict[str, Any]:
-        return await planner_node(state, settings, tool_records)
+        session_id = state.get("session_id")
+        user_id = state.get("user_id")
+        return await planner_node(state, settings, tool_records, session, session_id, user_id)
     
     async def router_wrapper(state: AgentState) -> Dict[str, Any]:
         return await router_node(state, settings)
     
     async def synthesizer_wrapper(state: AgentState) -> Dict[str, Any]:
-        return await synthesizer_node(state, settings)
+        session_id = state.get("session_id")
+        user_id = state.get("user_id")
+        return await synthesizer_node(state, settings, session, session_id, user_id)
     
     async def tool_executor_wrapper(state: AgentState) -> Dict[str, Any]:
         return await tool_executor_node(state, settings, session, tool_records)
@@ -1491,6 +1587,8 @@ async def run_agent(
     tool_records: List[ToolRecord],
     use_knowledge_base: bool = False,
     conversation_history: List[Dict[str, str]] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     运行 LangGraph Agent
@@ -1502,11 +1600,17 @@ async def run_agent(
         tool_records: 可用工具列表
         use_knowledge_base: 是否使用知识库
         conversation_history: 对话历史
+        session_id: 会话ID，用于长期记忆
+        user_id: 用户ID，用于多用户场景
     
     Returns:
         包含 Agent 完整执行过程的字典
     """
     logger.info(f"🚀 启动 LangGraph Agent 处理问题: {user_query}")
+    
+    # 如果没有提供 session_id，生成一个新的
+    if not session_id:
+        session_id = str(uuid.uuid4())
     
     # 构建工作流
     workflow = create_agent_graph(settings, session, tool_records)
@@ -1520,6 +1624,8 @@ async def run_agent(
     initial_state: AgentState = {
         "user_query": user_query,
         "conversation_history": conversation_history or [],
+        "session_id": session_id,
+        "user_id": user_id,
         "plan": None,
         "current_step": 0,
         "max_iterations": 10,
@@ -1551,9 +1657,30 @@ async def run_agent(
         
         logger.info("✅ LangGraph Agent 执行完成")
         
+        final_answer = final_state.get("final_answer", "未能生成答案")
+        
+        # 保存对话并提取记忆
+        try:
+            saved_memories = await save_conversation_and_extract_memories(
+                session=session,
+                session_id=session_id,
+                user_query=user_query,
+                assistant_reply=final_answer,
+                settings=settings,
+                user_id=user_id,
+                metadata={
+                    "thread_id": thread_id,
+                    "quality_score": final_state.get("quality_score", 0.0),
+                },
+            )
+            if saved_memories:
+                logger.info(f"💾 保存了 {len(saved_memories)} 条新记忆")
+        except Exception as e:
+            logger.warning(f"保存对话或提取记忆失败: {e}")
+        
         return {
             "success": True,
-            "final_answer": final_state.get("final_answer", "未能生成答案"),
+            "final_answer": final_answer,
             "thoughts": final_state.get("thoughts", []),
             "observations": final_state.get("observations", []),
             "tool_results": final_state.get("tool_results", []),
@@ -1562,6 +1689,7 @@ async def run_agent(
             "quality_score": final_state.get("quality_score", 0.0),
             "reflection": final_state.get("reflection", ""),
             "thread_id": thread_id,
+            "session_id": session_id,
             "error": final_state.get("error")
         }
     
@@ -1586,6 +1714,8 @@ async def stream_agent(
     tool_records: List[ToolRecord],
     use_knowledge_base: bool = False,
     conversation_history: List[Dict[str, str]] = None,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ):
     """
     流式运行 LangGraph Agent，实时返回每个节点的执行结果
@@ -1594,6 +1724,9 @@ async def stream_agent(
     """
     logger.info(f"🌊 启动流式 LangGraph Agent: {user_query}")
     
+    if not session_id:
+        session_id = str(uuid.uuid4())
+    
     workflow = create_agent_graph(settings, session, tool_records)
     checkpointer = MemorySaver()
     app = workflow.compile(checkpointer=checkpointer)
@@ -1601,6 +1734,8 @@ async def stream_agent(
     initial_state: AgentState = {
         "user_query": user_query,
         "conversation_history": conversation_history or [],
+        "session_id": session_id,
+        "user_id": user_id,
         "plan": None,
         "current_step": 0,
         "max_iterations": 10,

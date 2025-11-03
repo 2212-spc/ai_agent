@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
+import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Generator, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -12,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    func,
     select,
 )
 from sqlalchemy.engine import Engine
@@ -80,6 +83,54 @@ class AgentConfig(Base):
     description = Column(Text, nullable=True)
     config = Column(Text, nullable=False)  # JSON string: nodes, edges, settings
     is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class ConversationHistory(Base):
+    """对话历史记录 - 存储用户与AI的完整对话"""
+
+    __tablename__ = "conversation_history"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=True)  # 可选的用户ID，用于多用户场景
+    session_id = Column(String, nullable=False)  # 会话ID，用于区分不同对话会话
+    role = Column(String, nullable=False)  # "user" 或 "assistant"
+    content = Column(Text, nullable=False)  # 消息内容
+    extra_metadata = Column(Text, nullable=True)  # JSON string，存储额外信息（如工具调用、检索结果等）
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class LongTermMemory(Base):
+    """长期记忆 - 存储提取的重要信息、用户偏好、关键事实等"""
+
+    __tablename__ = "long_term_memory"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=True)  # 可选的用户ID
+    memory_type = Column(String, nullable=False)  # "fact", "preference", "event", "relationship" 等
+    content = Column(Text, nullable=False)  # 记忆内容
+    importance_score = Column(Integer, nullable=False, default=50)  # 重要性评分 0-100
+    source_conversation_id = Column(String, nullable=True)  # 来源对话ID
+    extra_metadata = Column(Text, nullable=True)  # JSON string，存储额外信息
+    access_count = Column(Integer, nullable=False, default=0)  # 访问次数
+    last_accessed_at = Column(DateTime, nullable=True)  # 最后访问时间
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class SessionConfig(Base):
+    """会话配置 - 控制记忆共享等设置"""
+
+    __tablename__ = "session_config"
+
+    session_id = Column(String, primary_key=True)  # 会话ID
+    user_id = Column(String, nullable=True)  # 用户ID
+    share_memory_across_sessions = Column(Boolean, nullable=False, default=True)  # 是否跨会话共享记忆
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -180,3 +231,527 @@ def list_agent_configs(session: Session, include_inactive: bool = False) -> list
     if not include_inactive:
         statement = statement.where(AgentConfig.is_active.is_(True))
     return list(session.execute(statement).scalars())
+
+
+def save_conversation_message(
+    session: Session,
+    session_id: str,
+    role: str,
+    content: str,
+    user_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> ConversationHistory:
+    """保存对话消息到历史记录"""
+    msg_id = str(uuid.uuid4())
+    record = ConversationHistory(
+        id=msg_id,
+        user_id=user_id,
+        session_id=session_id,
+        role=role,
+        content=content,
+        extra_metadata=json.dumps(metadata, ensure_ascii=False) if metadata else None,
+    )
+    session.add(record)
+    session.commit()
+    session.refresh(record)
+    return record
+
+
+def get_conversation_history(
+    session: Session,
+    session_id: str,
+    limit: int = 20,
+    user_id: Optional[str] = None,
+) -> list[ConversationHistory]:
+    """获取指定会话的对话历史"""
+    statement = (
+        select(ConversationHistory)
+        .where(ConversationHistory.session_id == session_id)
+        .order_by(ConversationHistory.created_at.asc())
+    )
+    if user_id:
+        statement = statement.where(ConversationHistory.user_id == user_id)
+    
+    if limit > 0:
+        # 获取最新的 limit 条记录
+        count_statement = select(func.count()).select_from(
+            select(ConversationHistory)
+            .where(ConversationHistory.session_id == session_id)
+            .subquery()
+        )
+        total = session.execute(count_statement).scalar() or 0
+        if total > limit:
+            offset = total - limit
+            statement = statement.offset(offset)
+    
+    return list(session.execute(statement).scalars())
+
+
+def save_long_term_memory(
+    session: Session,
+    memory_type: str,
+    content: str,
+    importance_score: int = 50,
+    user_id: Optional[str] = None,
+    source_conversation_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> LongTermMemory:
+    """保存长期记忆"""
+    memory_id = str(uuid.uuid4())
+    record = LongTermMemory(
+        id=memory_id,
+        user_id=user_id,
+        memory_type=memory_type,
+        content=content,
+        importance_score=max(0, min(100, importance_score)),
+        source_conversation_id=source_conversation_id,
+        extra_metadata=json.dumps(metadata, ensure_ascii=False) if metadata else None,
+    )
+    session.add(record)
+    session.commit()
+    session.refresh(record)
+    return record
+
+
+def search_long_term_memory(
+    session: Session,
+    query: str,
+    user_id: Optional[str] = None,
+    memory_types: Optional[list[str]] = None,
+    limit: int = 10,
+    min_importance: int = 0,
+) -> list[LongTermMemory]:
+    """搜索长期记忆（基于关键词匹配）"""
+    statement = select(LongTermMemory).where(
+        LongTermMemory.content.like(f"%{query}%")
+    )
+    
+    if user_id:
+        statement = statement.where(LongTermMemory.user_id == user_id)
+    
+    if memory_types:
+        statement = statement.where(LongTermMemory.memory_type.in_(memory_types))
+    
+    statement = statement.where(
+        LongTermMemory.importance_score >= min_importance
+    ).order_by(
+        LongTermMemory.importance_score.desc(),
+        LongTermMemory.last_accessed_at.desc().nullslast(),
+        LongTermMemory.created_at.desc()
+    ).limit(limit)
+    
+    return list(session.execute(statement).scalars())
+
+
+def get_recent_memories(
+    session: Session,
+    user_id: Optional[str] = None,
+    limit: int = 20,
+) -> list[LongTermMemory]:
+    """获取最近的记忆（按访问时间和重要性）"""
+    statement = select(LongTermMemory).order_by(
+        LongTermMemory.last_accessed_at.desc().nullslast(),
+        LongTermMemory.importance_score.desc(),
+        LongTermMemory.created_at.desc()
+    ).limit(limit)
+    
+    if user_id:
+        statement = statement.where(LongTermMemory.user_id == user_id)
+    
+    return list(session.execute(statement).scalars())
+
+
+def update_memory_access(
+    session: Session,
+    memory_id: str,
+) -> Optional[LongTermMemory]:
+    """更新记忆的访问信息"""
+    memory = session.get(LongTermMemory, memory_id)
+    if memory:
+        memory.access_count += 1
+        memory.last_accessed_at = datetime.utcnow()
+        session.commit()
+        session.refresh(memory)
+    return memory
+
+
+def get_similar_memories(
+    session: Session,
+    memory_type: str,
+    content: str,
+    user_id: Optional[str] = None,
+    limit: int = 10,
+) -> list[LongTermMemory]:
+    """
+    获取相似类型的记忆，用于去重检查
+    返回同一类型、同一用户的记忆列表
+    """
+    statement = select(LongTermMemory).where(
+        LongTermMemory.memory_type == memory_type
+    )
+    
+    if user_id:
+        statement = statement.where(LongTermMemory.user_id == user_id)
+    
+    statement = statement.order_by(
+        LongTermMemory.importance_score.desc(),
+        LongTermMemory.created_at.desc()
+    ).limit(limit)
+    
+    return list(session.execute(statement).scalars())
+
+
+def update_memory_content(
+    session: Session,
+    memory_id: str,
+    new_content: str,
+    new_importance_score: Optional[int] = None,
+    new_metadata: Optional[dict] = None,
+) -> Optional[LongTermMemory]:
+    """
+    更新记忆的内容、重要性评分和元数据
+    用于合并相似记忆
+    """
+    memory = session.get(LongTermMemory, memory_id)
+    if not memory:
+        return None
+    
+    memory.content = new_content
+    if new_importance_score is not None:
+        memory.importance_score = max(0, min(100, new_importance_score))
+    
+    # 合并元数据
+    if new_metadata:
+        existing_metadata = {}
+        if memory.extra_metadata:
+            try:
+                existing_metadata = json.loads(memory.extra_metadata)
+            except:
+                pass
+        
+        # 合并元数据
+        existing_metadata.update(new_metadata)
+        # 添加合并记录
+        if "merged_from" not in existing_metadata:
+            existing_metadata["merged_from"] = []
+        if isinstance(new_metadata.get("source_ids"), list):
+            existing_metadata["merged_from"].extend(new_metadata["source_ids"])
+        
+        memory.extra_metadata = json.dumps(existing_metadata, ensure_ascii=False)
+    
+    memory.updated_at = datetime.utcnow()
+    session.commit()
+    session.refresh(memory)
+    return memory
+
+
+def merge_memories(
+    session: Session,
+    target_memory_id: str,
+    source_memory_id: str,
+) -> Optional[LongTermMemory]:
+    """
+    合并两个记忆
+    将 source_memory 的信息合并到 target_memory，然后删除 source_memory
+    
+    Returns:
+        合并后的目标记忆
+    """
+    target = session.get(LongTermMemory, target_memory_id)
+    source = session.get(LongTermMemory, source_memory_id)
+    
+    if not target or not source:
+        return None
+    
+    # 合并访问统计
+    target.access_count += source.access_count
+    
+    # 更新最后访问时间为最近的
+    if source.last_accessed_at:
+        if not target.last_accessed_at or source.last_accessed_at > target.last_accessed_at:
+            target.last_accessed_at = source.last_accessed_at
+    
+    # 更新重要性评分为更高的
+    if source.importance_score > target.importance_score:
+        target.importance_score = source.importance_score
+    
+    # 合并元数据
+    target_metadata = {}
+    if target.extra_metadata:
+        try:
+            target_metadata = json.loads(target.extra_metadata)
+        except:
+            pass
+    
+    source_metadata = {}
+    if source.extra_metadata:
+        try:
+            source_metadata = json.loads(source.extra_metadata)
+        except:
+            pass
+    
+    # 记录合并历史
+    if "merged_from" not in target_metadata:
+        target_metadata["merged_from"] = []
+    target_metadata["merged_from"].append(source.id)
+    target_metadata["merged_at"] = datetime.utcnow().isoformat()
+    
+    # 保留两个记忆的元数据信息
+    if source_metadata:
+        target_metadata["source_metadata"] = source_metadata
+    
+    target.extra_metadata = json.dumps(target_metadata, ensure_ascii=False)
+    target.updated_at = datetime.utcnow()
+    
+    # 删除源记忆
+    session.delete(source)
+    session.commit()
+    session.refresh(target)
+    
+    return target
+
+
+def get_session_config(
+    session: Session,
+    session_id: str,
+) -> Optional[SessionConfig]:
+    """获取会话配置"""
+    return session.get(SessionConfig, session_id)
+
+
+def create_or_update_session_config(
+    session: Session,
+    session_id: str,
+    share_memory_across_sessions: bool = True,
+    user_id: Optional[str] = None,
+) -> SessionConfig:
+    """创建或更新会话配置"""
+    config = session.get(SessionConfig, session_id)
+    if not config:
+        config = SessionConfig(
+            session_id=session_id,
+            user_id=user_id,
+            share_memory_across_sessions=share_memory_across_sessions,
+        )
+        session.add(config)
+    else:
+        config.share_memory_across_sessions = share_memory_across_sessions
+        if user_id:
+            config.user_id = user_id
+        config.updated_at = datetime.utcnow()
+    
+    session.commit()
+    session.refresh(config)
+    return config
+
+
+def list_conversation_sessions(
+    session: Session,
+    user_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """
+    列出所有会话列表（按最后更新时间排序）
+    返回每个会话的摘要信息
+    """
+    from sqlalchemy import func, distinct
+    
+    # 查询所有唯一的 session_id
+    statement = (
+        select(
+            ConversationHistory.session_id,
+            func.max(ConversationHistory.created_at).label("last_message_time"),
+            func.count(ConversationHistory.id).label("message_count"),
+            func.min(ConversationHistory.created_at).label("first_message_time"),
+        )
+        .group_by(ConversationHistory.session_id)
+    )
+    
+    if user_id:
+        statement = statement.where(ConversationHistory.user_id == user_id)
+    
+    # 按最后消息时间排序
+    statement = statement.order_by(func.max(ConversationHistory.created_at).desc())
+    
+    # 分页
+    statement = statement.offset(offset).limit(limit)
+    
+    results = session.execute(statement).all()
+    
+    # 获取每个会话的第一条和最后一条消息作为摘要
+    sessions = []
+    for row in results:
+        session_id = row.session_id
+        
+        # 获取会话的第一条用户消息作为标题
+        first_msg_statement = (
+            select(ConversationHistory)
+            .where(
+                ConversationHistory.session_id == session_id,
+                ConversationHistory.role == "user"
+            )
+            .order_by(ConversationHistory.created_at.asc())
+            .limit(1)
+        )
+        first_msg = session.execute(first_msg_statement).scalar_one_or_none()
+        
+        # 获取最后一条消息
+        last_msg_statement = (
+            select(ConversationHistory)
+            .where(ConversationHistory.session_id == session_id)
+            .order_by(ConversationHistory.created_at.desc())
+            .limit(1)
+        )
+        last_msg = session.execute(last_msg_statement).scalar_one_or_none()
+        
+        title = (first_msg.content[:50] + "...") if first_msg and len(first_msg.content) > 50 else (first_msg.content if first_msg else "新对话")
+        preview = (last_msg.content[:100] + "...") if last_msg and len(last_msg.content) > 100 else (last_msg.content if last_msg else "")
+        
+        sessions.append({
+            "session_id": session_id,
+            "title": title,
+            "message_count": row.message_count,
+            "first_message_time": row.first_message_time.isoformat() if row.first_message_time else None,
+            "last_message_time": row.last_message_time.isoformat() if row.last_message_time else None,
+            "preview": preview,
+        })
+    
+    return sessions
+
+
+def search_conversation_sessions(
+    session: Session,
+    query: str,
+    user_id: Optional[str] = None,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    """
+    搜索会话（基于对话内容）
+    """
+    from sqlalchemy import distinct
+    
+    # 查找包含关键词的会话
+    statement = (
+        select(distinct(ConversationHistory.session_id))
+        .where(ConversationHistory.content.like(f"%{query}%"))
+    )
+    
+    if user_id:
+        statement = statement.where(ConversationHistory.user_id == user_id)
+    
+    statement = statement.limit(limit)
+    
+    session_ids = [row[0] for row in session.execute(statement).all()]
+    
+    if not session_ids:
+        return []
+    
+    # 获取这些会话的详细信息
+    from sqlalchemy import func
+    statement = (
+        select(
+            ConversationHistory.session_id,
+            func.max(ConversationHistory.created_at).label("last_message_time"),
+            func.count(ConversationHistory.id).label("message_count"),
+            func.min(ConversationHistory.created_at).label("first_message_time"),
+        )
+        .where(ConversationHistory.session_id.in_(session_ids))
+        .group_by(ConversationHistory.session_id)
+        .order_by(func.max(ConversationHistory.created_at).desc())
+    )
+    
+    results = session.execute(statement).all()
+    
+    sessions = []
+    for row in results:
+        session_id = row.session_id
+        
+        first_msg_statement = (
+            select(ConversationHistory)
+            .where(
+                ConversationHistory.session_id == session_id,
+                ConversationHistory.role == "user"
+            )
+            .order_by(ConversationHistory.created_at.asc())
+            .limit(1)
+        )
+        first_msg = session.execute(first_msg_statement).scalar_one_or_none()
+        
+        last_msg_statement = (
+            select(ConversationHistory)
+            .where(ConversationHistory.session_id == session_id)
+            .order_by(ConversationHistory.created_at.desc())
+            .limit(1)
+        )
+        last_msg = session.execute(last_msg_statement).scalar_one_or_none()
+        
+        title = (first_msg.content[:50] + "...") if first_msg and len(first_msg.content) > 50 else (first_msg.content if first_msg else "新对话")
+        preview = (last_msg.content[:100] + "...") if last_msg and len(last_msg.content) > 100 else (last_msg.content if last_msg else "")
+        
+        sessions.append({
+            "session_id": session_id,
+            "title": title,
+            "message_count": row.message_count,
+            "first_message_time": row.first_message_time.isoformat() if row.first_message_time else None,
+            "last_message_time": row.last_message_time.isoformat() if row.last_message_time else None,
+            "preview": preview,
+        })
+    
+    return sessions
+
+
+def delete_conversation_session(
+    session: Session,
+    session_id: str,
+    user_id: Optional[str] = None,
+) -> int:
+    """
+    删除整个会话的所有消息
+    
+    Returns:
+        删除的消息数量
+    """
+    statement = select(ConversationHistory).where(
+        ConversationHistory.session_id == session_id
+    )
+    
+    if user_id:
+        statement = statement.where(ConversationHistory.user_id == user_id)
+    
+    messages = list(session.execute(statement).scalars())
+    
+    count = len(messages)
+    for msg in messages:
+        session.delete(msg)
+    
+    # 同时删除会话配置
+    config = session.get(SessionConfig, session_id)
+    if config:
+        session.delete(config)
+    
+    session.commit()
+    return count
+
+
+def delete_conversation_message(
+    session: Session,
+    message_id: str,
+    user_id: Optional[str] = None,
+) -> bool:
+    """
+    删除单条消息
+    
+    Returns:
+        是否删除成功
+    """
+    message = session.get(ConversationHistory, message_id)
+    if not message:
+        return False
+    
+    if user_id and message.user_id != user_id:
+        return False
+    
+    session.delete(message)
+    session.commit()
+    return True
