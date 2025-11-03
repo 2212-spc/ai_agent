@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>对话设置 - AI Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #f7f7f8;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: white;
+            padding: 16px 24px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .back-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            background: #f0f0f0;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #202123;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .settings-card {
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+
+        .settings-card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #202123;
+            margin-bottom: 16px;
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .setting-item:last-child {
+            border-bottom: none;
+        }
+
+        .setting-info {
+            flex: 1;
+        }
+
+        .setting-title {
+            font-size: 16px;
+            font-weight: 500;
+            color: #202123;
+            margin-bottom: 4px;
+        }
+
+        .setting-desc {
+            font-size: 14px;
+            color: #8e8ea0;
+        }
+
+        /* Toggle Switch 样式 */
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: #10a37f;
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        .save-status {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .save-status.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .save-status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="back-btn" onclick="goBack()">←</button>
+        <h1>⚙️ 对话设置</h1>
+    </div>
+
+    <div class="container">
+        <div class="settings-card">
+            <h2>记忆共享设置</h2>
+            
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-title">跨会话共享记忆</div>
+                    <div class="setting-desc">
+                        开启后，AI 可以访问其他对话会话中存储的长期记忆。
+                        关闭后，AI 只能访问当前对话会话的记忆。
+                    </div>
+                </div>
+                <label class="toggle-switch">
+                    <input 
+                        type="checkbox" 
+                        id="shareMemoryToggle"
+                        onchange="handleToggleChange()"
+                    >
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <div id="saveStatus"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+
+        if (!sessionId) {
+            alert('缺少会话ID');
+            window.location.href = 'conversation_history.html';
+        }
+
+        // 加载配置
+        async function loadConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/conversation/${sessionId}/config`);
+                if (!response.ok) throw new Error('加载配置失败');
+
+                const config = await response.json();
+                document.getElementById('shareMemoryToggle').checked = config.share_memory_across_sessions;
+            } catch (error) {
+                console.error('加载配置失败:', error);
+                // 默认开启
+                document.getElementById('shareMemoryToggle').checked = true;
+            }
+        }
+
+        // 保存配置
+        let saveTimeout;
+        async function saveConfig() {
+            const shareMemory = document.getElementById('shareMemoryToggle').checked;
+            const statusEl = document.getElementById('saveStatus');
+
+            // 获取用户信息
+            const userInfo = localStorage.getItem('userInfo');
+            const userId = userInfo ? JSON.parse(userInfo).user_id : null;
+
+            try {
+                const url = `${API_BASE}/conversation/${sessionId}/config`;
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        share_memory_across_sessions: shareMemory,
+                        user_id: userId,
+                    }),
+                });
+
+                if (!response.ok) throw new Error('保存失败');
+
+                const config = await response.json();
+                
+                // 显示成功提示
+                statusEl.innerHTML = '<div class="save-status success">✅ 设置已保存</div>';
+                setTimeout(() => {
+                    statusEl.innerHTML = '';
+                }, 2000);
+
+            } catch (error) {
+                console.error('保存配置失败:', error);
+                statusEl.innerHTML = '<div class="save-status error">❌ 保存失败，请重试</div>';
+            }
+        }
+
+        // 切换处理（防抖）
+        function handleToggleChange() {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                saveConfig();
+            }, 500);
+        }
+
+        // 返回
+        function goBack() {
+            if (document.referrer) {
+                window.history.back();
+            } else {
+                window.location.href = 'conversation_history.html';
+            }
+        }
+
+        // 页面加载时初始化
+        window.addEventListener('load', () => {
+            loadConfig();
+        });
+    </script>
+</body>
+</html>

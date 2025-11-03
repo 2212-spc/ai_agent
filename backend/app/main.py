@@ -42,7 +42,27 @@ from .graph_agent import run_agent, stream_agent
 from .file_processor import FileProcessor, chunk_text
 from .rag_service import ingest_text_chunk
 from .agent_builder import execute_custom_agent, stream_custom_agent
-from .database import AgentConfig, get_agent_config_by_id, list_agent_configs
+from .memory_service import (
+    retrieve_relevant_memories,
+    format_memories_for_context,
+    get_conversation_context,
+)
+from .database import (
+    AgentConfig,
+    ConversationHistory,
+    LongTermMemory,
+    get_agent_config_by_id,
+    list_agent_configs,
+    get_conversation_history,
+    get_recent_memories,
+    search_long_term_memory,
+    list_conversation_sessions,
+    search_conversation_sessions,
+    delete_conversation_session,
+    delete_conversation_message,
+    get_session_config,
+    create_or_update_session_config,
+)
 
 
 logging.basicConfig(
@@ -94,6 +114,12 @@ class ChatRequest(BaseModel):
     )
     tool_ids: Optional[List[str]] = Field(
         default=None, description="可选，限制可用的工具 ID 列表。"
+    )
+    session_id: Optional[str] = Field(
+        default=None, description="会话ID，用于长期记忆和对话历史。"
+    )
+    user_id: Optional[str] = Field(
+        default=None, description="用户ID，用于多用户场景。"
     )
 
 
@@ -853,6 +879,7 @@ async def chat_with_langgraph_agent(
     - 智能工具选择
     - 状态持久化
     - 反思与优化
+    - 长期记忆系统
     """
     logger.info("🤖 [LangGraph Agent] 开始处理请求")
     
@@ -867,6 +894,8 @@ async def chat_with_langgraph_agent(
         tool_records=tool_records,
         use_knowledge_base=payload.use_knowledge_base,
         conversation_history=[msg.model_dump() for msg in payload.messages],
+        session_id=payload.session_id,
+        user_id=payload.user_id,
     )
     
     # 构建响应
@@ -969,6 +998,9 @@ async def chat_with_langgraph_agent_stream(
     
     tool_records = select_tool_records(payload, session)
     
+    # 获取或生成 session_id
+    session_id = payload.session_id or str(uuid.uuid4())
+    
     async def event_generator() -> AsyncGenerator[bytes, None]:
         try:
             yield format_sse("status", {"stage": "started", "mode": "langgraph_agent"})
@@ -981,6 +1013,8 @@ async def chat_with_langgraph_agent_stream(
                 tool_records=tool_records,
                 use_knowledge_base=payload.use_knowledge_base,
                 conversation_history=[msg.model_dump() for msg in payload.messages],
+                session_id=session_id,
+                user_id=payload.user_id,
             ):
                 event_type = event.get("event", "unknown")
                 
@@ -1032,6 +1066,23 @@ async def chat_with_langgraph_agent_stream(
                             "content": node_data["final_answer"]
                         })
                         logger.info(f"📤 已发送最终答案到前端，长度: {len(node_data['final_answer'])}")
+                        
+                        # 保存对话并提取记忆（异步进行，不阻塞流式响应）
+                        try:
+                            from .memory_service import save_conversation_and_extract_memories
+                            user_query = payload.messages[-1].content if payload.messages else ""
+                            saved_memories = await save_conversation_and_extract_memories(
+                                session=session,
+                                session_id=session_id,
+                                user_query=user_query,
+                                assistant_reply=node_data["final_answer"],
+                                settings=settings,
+                                user_id=payload.user_id,
+                            )
+                            if saved_memories:
+                                logger.info(f"💾 流式对话保存了 {len(saved_memories)} 条新记忆")
+                        except Exception as e:
+                            logger.warning(f"流式对话保存记忆失败: {e}")
                 
                 elif event_type == "completed":
                     # Agent 执行完成
@@ -1497,3 +1548,273 @@ async def chat_with_files_stream(
             yield format_sse("error", {"message": str(e)})
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+# ==================== 长期记忆系统 API ====================
+
+class MemoryItem(BaseModel):
+    """记忆项模型"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str
+    user_id: Optional[str]
+    memory_type: str
+    content: str
+    importance_score: int
+    source_conversation_id: Optional[str]
+    access_count: int
+    last_accessed_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationMessage(BaseModel):
+    """对话消息模型"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str
+    user_id: Optional[str]
+    session_id: str
+    role: str
+    content: str
+    created_at: datetime
+
+
+@app.get("/memory/search", response_model=List[MemoryItem])
+async def search_memories(
+    query: str,
+    user_id: Optional[str] = None,
+    memory_types: Optional[List[str]] = None,
+    limit: int = 10,
+    session: Session = Depends(get_db_session),
+) -> List[MemoryItem]:
+    """
+    搜索长期记忆
+    
+    Args:
+        query: 搜索关键词
+        user_id: 用户ID（可选）
+        memory_types: 记忆类型过滤（可选）
+        limit: 返回数量限制
+    """
+    memories = search_long_term_memory(
+        session=session,
+        query=query,
+        user_id=user_id,
+        memory_types=memory_types,
+        limit=limit,
+    )
+    return [MemoryItem.model_validate(mem) for mem in memories]
+
+
+@app.get("/memory/recent", response_model=List[MemoryItem])
+async def get_recent_memories_api(
+    user_id: Optional[str] = None,
+    limit: int = 20,
+    session: Session = Depends(get_db_session),
+) -> List[MemoryItem]:
+    """
+    获取最近的记忆
+    """
+    memories = get_recent_memories(
+        session=session,
+        user_id=user_id,
+        limit=limit,
+    )
+    return [MemoryItem.model_validate(mem) for mem in memories]
+
+
+@app.get("/conversation/{session_id}/history", response_model=List[ConversationMessage])
+async def get_conversation_history_api(
+    session_id: str,
+    user_id: Optional[str] = None,
+    limit: int = 20,
+    session: Session = Depends(get_db_session),
+) -> List[ConversationMessage]:
+    """
+    获取指定会话的对话历史
+    """
+    history = get_conversation_history(
+        session=session,
+        session_id=session_id,
+        limit=limit,
+        user_id=user_id,
+    )
+    return [ConversationMessage.model_validate(msg) for msg in history]
+
+
+@app.get("/memory/context")
+async def get_memory_context(
+    query: str,
+    user_id: Optional[str] = None,
+    max_memories: int = 5,
+    session_id: Optional[str] = None,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """
+    获取与查询相关的记忆上下文（用于在对话中使用）
+    """
+    memories = await retrieve_relevant_memories(
+        session=session,
+        query=query,
+        settings=settings,
+        user_id=user_id,
+        max_memories=max_memories,
+        session_id=session_id,
+    )
+    
+    context_text = format_memories_for_context(memories)
+    
+    return {
+        "memories": [MemoryItem.model_validate(mem) for mem in memories],
+        "context_text": context_text,
+        "count": len(memories),
+    }
+
+
+# ==================== 会话管理 API ====================
+
+class ConversationSession(BaseModel):
+    """会话摘要信息"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    session_id: str
+    title: str
+    message_count: int
+    first_message_time: Optional[str]
+    last_message_time: Optional[str]
+    preview: str
+
+
+class SessionConfigModel(BaseModel):
+    """会话配置模型"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    session_id: str
+    user_id: Optional[str] = None
+    share_memory_across_sessions: bool = True
+
+
+@app.get("/conversations", response_model=List[ConversationSession])
+async def list_conversations(
+    user_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    session: Session = Depends(get_db_session),
+) -> List[ConversationSession]:
+    """
+    列出所有会话列表（按时间排序）
+    """
+    sessions = list_conversation_sessions(
+        session=session,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    
+    return [ConversationSession.model_validate(s) for s in sessions]
+
+
+@app.get("/conversations/search", response_model=List[ConversationSession])
+async def search_conversations(
+    q: str,
+    user_id: Optional[str] = None,
+    limit: int = 20,
+    session: Session = Depends(get_db_session),
+) -> List[ConversationSession]:
+    """
+    搜索会话（基于对话内容）
+    """
+    sessions = search_conversation_sessions(
+        session=session,
+        query=q,
+        user_id=user_id,
+        limit=limit,
+    )
+    
+    return [ConversationSession.model_validate(s) for s in sessions]
+
+
+@app.delete("/conversation/{session_id}")
+async def delete_conversation_api(
+    session_id: str,
+    user_id: Optional[str] = None,
+    session: Session = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """
+    删除整个会话
+    """
+    count = delete_conversation_session(
+        session=session,
+        session_id=session_id,
+        user_id=user_id,
+    )
+    
+    return {
+        "success": True,
+        "deleted_count": count,
+        "session_id": session_id,
+    }
+
+
+@app.delete("/conversation/message/{message_id}")
+async def delete_message_api(
+    message_id: str,
+    user_id: Optional[str] = None,
+    session: Session = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """
+    删除单条消息
+    """
+    success = delete_conversation_message(
+        session=session,
+        message_id=message_id,
+        user_id=user_id,
+    )
+    
+    return {
+        "success": success,
+        "message_id": message_id,
+    }
+
+
+@app.get("/conversation/{session_id}/config", response_model=SessionConfigModel)
+async def get_session_config_api(
+    session_id: str,
+    session: Session = Depends(get_db_session),
+) -> SessionConfigModel:
+    """
+    获取会话配置
+    """
+    config = get_session_config(session, session_id)
+    
+    if not config:
+        # 创建默认配置
+        config = create_or_update_session_config(
+            session=session,
+            session_id=session_id,
+            share_memory_across_sessions=True,
+        )
+    
+    return SessionConfigModel.model_validate(config)
+
+
+@app.put("/conversation/{session_id}/config", response_model=SessionConfigModel)
+async def update_session_config_api(
+    session_id: str,
+    config_data: SessionConfigModel,
+    user_id: Optional[str] = None,
+    session: Session = Depends(get_db_session),
+) -> SessionConfigModel:
+    """
+    更新会话配置（包括记忆共享设置）
+    """
+    config = create_or_update_session_config(
+        session=session,
+        session_id=session_id,
+        share_memory_across_sessions=config_data.share_memory_across_sessions,
+        user_id=user_id or config_data.user_id,
+    )
+    
+    return SessionConfigModel.model_validate(config)

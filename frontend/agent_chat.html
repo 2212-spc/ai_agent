@@ -1644,7 +1644,9 @@
                 </div>
             </div>
             <div class="header-actions">
-                <button class="icon-btn" onclick="window.open('knowledge_base.html', '_blank')" title="知识库管理">📚</button>
+                <button class="icon-btn" onclick="window.open('knowledge_base.html', '_blank')" title="知识库管理">📁</button>
+                <button class="icon-btn" onclick="openHistory()" title="对话历史">📚</button>
+                <button class="icon-btn" onclick="openSettings()" title="会话设置">⚙️</button>
                 <button class="icon-btn" onclick="toggleBuilder()" title="Agent构建器">🛠️</button>
                 <button class="toggle-timeline-btn" onclick="toggleTimeline()">
                     <span id="timelineToggleText">展开过程 →</span>
@@ -2527,6 +2529,7 @@
                             messages: [{role: 'user', content: message}],
                             use_knowledge_base: document.getElementById('useKB').checked,
                             use_tools: document.getElementById('useTools').checked,
+                            session_id: getCurrentSessionId(),
                         }),
                     });
                     
@@ -2749,6 +2752,7 @@
         function logout() {
             if (confirm('确定要退出登录吗？')) {
                 localStorage.removeItem('userInfo');
+                localStorage.removeItem('currentSessionId');
                 window.location.href = 'login.html';
             }
         }
