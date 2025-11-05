@@ -2114,6 +2114,7 @@
         let isSendingMessage = false;
         let attachedFiles = [];
         let isTimelineOpen = false;
+        let currentSessionId = null; // 当前会话ID
         
         // Agent构建器状态
         let builderNodes = [];
@@ -2160,6 +2161,27 @@
                 tertiaryColor: '#e5e5e5'
             }
         });
+
+        // 生成唯一的会话ID
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+        }
+
+        // 获取当前会话ID（如果没有则创建新的）
+        function getCurrentSessionId() {
+            if (!currentSessionId) {
+                currentSessionId = generateSessionId();
+                console.log('🆕 创建新会话:', currentSessionId);
+            }
+            return currentSessionId;
+        }
+
+        // 开始新会话
+        function startNewSession() {
+            currentSessionId = generateSessionId();
+            console.log('🔄 开始新会话:', currentSessionId);
+            return currentSessionId;
+        }
 
         function useExample(text) {
             document.getElementById('messageInput').value = text;
@@ -2666,6 +2688,26 @@
 
         // escapeHtml已移至utils对象中
         
+        // 打开对话历史
+        function openHistory() {
+            // 方式1: 跳转到对话历史页面
+            window.open('conversation_history.html', '_blank');
+            
+            // 方式2: 如果需要在当前页面显示，可以使用模态框（暂未实现）
+            // showModal('对话历史', historyContent);
+        }
+        
+        // 打开会话设置
+        function openSettings() {
+            // 获取当前会话ID
+            const sessionId = getCurrentSessionId();
+            
+            // 跳转到设置页面，并传递会话ID
+            window.open(`conversation_settings.html?session_id=${sessionId}`, '_blank');
+            
+            console.log('🔧 打开会话设置，会话ID:', sessionId);
+        }
+        
         function clearChat() {
             if (confirm('确定要清空对话吗？此操作不可恢复。')) {
                 const container = document.getElementById('messagesContainer');
@@ -2704,12 +2746,19 @@
                 document.getElementById('timelineContent').innerHTML = '<p style="color: #9ca3af; text-align: center; padding: 40px 20px; font-size: 13px;">等待任务开始...</p>';
                 document.getElementById('statsBar').style.display = 'none';
                 
-                // 重置计数器
+                // 重置计数器和会话
                 nodeCount = 0;
                 toolCount = 0;
                 currentThreadId = null;
+                attachedFiles = []; // 清空附件
                 
-                console.log('✅ 对话已清空');
+                // 开始新会话
+                startNewSession();
+                
+                // 清空附件显示
+                renderAttachedFiles();
+                
+                console.log('✅ 对话已清空，已创建新会话');
             }
         }
         
