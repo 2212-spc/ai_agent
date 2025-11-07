@@ -1003,7 +1003,12 @@ async def chat_with_langgraph_agent_stream(
     
     async def event_generator() -> AsyncGenerator[bytes, None]:
         try:
-            yield format_sse("status", {"stage": "started", "mode": "langgraph_agent"})
+            # 发送状态事件，包含 session_id 以便前端保存
+            yield format_sse("status", {
+                "stage": "started", 
+                "mode": "langgraph_agent",
+                "session_id": session_id
+            })
             
             # 流式执行 LangGraph Agent
             async for event in stream_agent(
@@ -1345,6 +1350,8 @@ async def chat_with_files_stream(
     message: str = Form(""),
     use_knowledge_base: bool = Form(True),
     use_tools: bool = Form(True),
+    session_id: Optional[str] = Form(None),
+    user_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(...),
     settings: Settings = Depends(get_settings),
     session: Session = Depends(get_db_session),
@@ -1360,9 +1367,16 @@ async def chat_with_files_stream(
     logger.info(f"📚 使用知识库: {use_knowledge_base}")
     logger.info(f"🔧 使用工具: {use_tools}")
     logger.info(f"📁 文件数量: {len(files)}")
+    logger.info(f"🆔 会话ID: {session_id}")
+    logger.info(f"👤 用户ID: {user_id}")
     for idx, f in enumerate(files, 1):
         logger.info(f"   文件 {idx}: {f.filename} ({f.content_type})")
     logger.info(f"=" * 80)
+    
+    # 获取或生成 session_id
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        logger.info(f"🆔 生成新的 session_id: {session_id}")
     
     file_processor = FileProcessor()
     processed_files = []
@@ -1467,7 +1481,12 @@ async def chat_with_files_stream(
                 "total": len(files)
             })
             
-            yield format_sse("status", {"stage": "started", "mode": "langgraph_agent_with_files"})
+            # 发送状态事件，包含 session_id 以便前端保存
+            yield format_sse("status", {
+                "stage": "started", 
+                "mode": "langgraph_agent_with_files",
+                "session_id": session_id
+            })
             
             # 流式执行 LangGraph Agent（强制启用知识库）
             async for event in stream_agent(
@@ -1477,6 +1496,8 @@ async def chat_with_files_stream(
                 tool_records=tool_records,
                 use_knowledge_base=True,  # 强制启用，因为文件已存入知识库
                 conversation_history=[{"role": "user", "content": user_query}],
+                session_id=session_id,
+                user_id=user_id,
             ):
                 event_type = event.get("event", "unknown")
                 
@@ -1526,11 +1547,44 @@ async def chat_with_files_stream(
                         yield format_sse("assistant_final", {
                             "content": node_data["final_answer"]
                         })
+                        
+                        # 保存对话并提取记忆（异步进行，不阻塞流式响应）
+                        try:
+                            from .memory_service import save_conversation_and_extract_memories
+                            saved_memories = await save_conversation_and_extract_memories(
+                                session=session,
+                                session_id=session_id,
+                                user_query=user_query,
+                                assistant_reply=node_data["final_answer"],
+                                settings=settings,
+                                user_id=user_id,
+                            )
+                            if saved_memories:
+                                logger.info(f"💾 文件对话保存了 {len(saved_memories)} 条新记忆")
+                        except Exception as e:
+                            logger.warning(f"文件对话保存记忆失败: {e}")
                 
                 elif event_type == "final_answer":
+                    final_content = event.get("content", "")
                     yield format_sse("assistant_final", {
-                        "content": event.get("content", "")
+                        "content": final_content
                     })
+                    
+                    # 保存对话并提取记忆（异步进行，不阻塞流式响应）
+                    try:
+                        from .memory_service import save_conversation_and_extract_memories
+                        saved_memories = await save_conversation_and_extract_memories(
+                            session=session,
+                            session_id=session_id,
+                            user_query=user_query,
+                            assistant_reply=final_content,
+                            settings=settings,
+                            user_id=user_id,
+                        )
+                        if saved_memories:
+                            logger.info(f"💾 文件对话保存了 {len(saved_memories)} 条新记忆")
+                    except Exception as e:
+                        logger.warning(f"文件对话保存记忆失败: {e}")
                 
                 elif event_type == "error":
                     yield format_sse("error", {

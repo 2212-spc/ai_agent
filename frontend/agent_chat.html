@@ -1746,6 +1746,7 @@
                     formData.append('message', message || '请分析这些文件');
                     formData.append('use_knowledge_base', document.getElementById('useKB').checked);
                     formData.append('use_tools', document.getElementById('useTools').checked);
+                    formData.append('session_id', getCurrentSessionId());
                     
                     // 添加所有文件
                     attachedFiles.forEach((file, index) => {
@@ -1759,6 +1760,7 @@
                         message: formData.get('message'),
                         use_knowledge_base: formData.get('use_knowledge_base'),
                         use_tools: formData.get('use_tools'),
+                        session_id: formData.get('session_id'),
                         files_count: attachedFiles.length
                     });
                     
@@ -1857,8 +1859,17 @@
 
             switch (eventType) {
                 case 'status':
-                    if (data.mode === 'langgraph_agent') {
+                    if (data.mode === 'langgraph_agent' || data.mode === 'langgraph_agent_with_files') {
                         console.log('🚀 LangGraph Agent 模式启动');
+                        // 如果后端返回了 session_id，保存到 localStorage
+                        if (data.session_id) {
+                            const currentSessionId = getCurrentSessionId();
+                            // 如果当前没有 session_id 或与后端返回的不一致，更新它
+                            if (!currentSessionId || currentSessionId !== data.session_id) {
+                                localStorage.setItem('currentSessionId', data.session_id);
+                                console.log('💾 已保存 session_id:', data.session_id);
+                            }
+                        }
                     }
                     break;
 
