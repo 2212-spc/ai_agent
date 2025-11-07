@@ -112,6 +112,76 @@
             background: #e0e0e0;
         }
         
+        /* 多智能体模式开关 */
+        .mode-switch-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            background: #f0f0f0;
+            border-radius: 6px;
+        }
+        
+        .mode-switch-label {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .mode-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+        
+        .mode-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .mode-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .3s;
+            border-radius: 20px;
+        }
+        
+        .mode-slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        
+        .mode-switch input:checked + .mode-slider {
+            background-color: #10a37f;
+        }
+        
+        .mode-switch input:checked + .mode-slider:before {
+            transform: translateX(20px);
+        }
+        
+        .mode-indicator {
+            font-size: 13px;
+            font-weight: 600;
+            color: #202123;
+        }
+        
+        .mode-indicator.multi-agent {
+            color: #10a37f;
+        }
+        
         .message-time {
             margin-left: auto;
             font-size: 12px;
@@ -135,16 +205,16 @@
         .messages-container {
             flex: 1;
             overflow-y: auto;
-            padding: 16px 0;
-            background: white;
-            max-width: 800px;
+            padding: 24px 0;
+            background: #fafafa;
+            max-width: 900px;
             margin: 0 auto;
             width: 100%;
         }
 
         .message {
-            margin-bottom: 20px;
-            padding: 0 16px;
+            margin-bottom: 24px;
+            padding: 0 24px;
             animation: slideIn 0.3s ease-out;
         }
 
@@ -193,18 +263,91 @@
 
         .message-content {
             margin-left: 36px;
-            padding: 0;
-            line-height: 1.6;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            line-height: 1.7;
             color: #374151;
             font-size: 15px;
         }
         
         .user-message .message-content {
+            background: #f3f4f6;
+            border-left: 3px solid #10a37f;
             color: #374151;
         }
         
         .agent-message .message-content {
             color: #374151;
+        }
+        
+        /* Markdown标题样式 */
+        .message-content h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 28px 0 16px 0;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e5e5e5;
+            color: #111827;
+            line-height: 1.3;
+        }
+        
+        .message-content h1:first-child {
+            margin-top: 0;
+        }
+        
+        .message-content h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin: 24px 0 12px 0;
+            color: #1f2937;
+            line-height: 1.4;
+        }
+        
+        .message-content h2:first-child {
+            margin-top: 0;
+        }
+        
+        .message-content h3 {
+            font-size: 17px;
+            font-weight: 600;
+            margin: 20px 0 10px 0;
+            color: #374151;
+            line-height: 1.4;
+        }
+        
+        .message-content h3:first-child {
+            margin-top: 0;
+        }
+        
+        .message-content h4 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 16px 0 8px 0;
+            color: #4b5563;
+        }
+        
+        .message-content p {
+            margin: 12px 0;
+            line-height: 1.7;
+        }
+        
+        .message-content blockquote {
+            border-left: 3px solid #10a37f;
+            padding-left: 16px;
+            margin: 16px 0;
+            color: #6b7280;
+            font-style: italic;
+            background: #f9fafb;
+            padding: 12px 16px;
+            border-radius: 4px;
+        }
+        
+        .message-content hr {
+            border: none;
+            border-top: 1px solid #e5e7eb;
+            margin: 24px 0;
         }
         
         /* 代码块样式 */
@@ -438,11 +581,17 @@
         
         /* 列表样式优化 */
         .message-content ul, .message-content ol {
-            margin: 12px 0;
-            padding-left: 24px;
+            margin: 16px 0;
+            padding-left: 28px;
         }
         
         .message-content li {
+            margin: 10px 0;
+            line-height: 1.7;
+        }
+        
+        .message-content ul ul, .message-content ol ol,
+        .message-content ul ol, .message-content ol ul {
             margin: 8px 0;
         }
         
@@ -663,6 +812,26 @@
             position: relative;
         }
 
+        /* 展开全文按钮 */
+        .read-more-btn {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 8px 16px;
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            color: #374151;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .read-more-btn:hover {
+            background: #e5e7eb;
+            border-color: #10a37f;
+            color: #10a37f;
+        }
+        
         .input-box {
             display: flex;
             gap: 8px;
@@ -1281,8 +1450,23 @@
         .builder-canvas {
             flex: 1;
             position: relative;
-            background: #fafafa;
-            overflow: auto;
+            background: 
+                linear-gradient(90deg, #f0f0f0 1px, transparent 1px),
+                linear-gradient(#f0f0f0 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-color: #fafafa;
+            overflow: hidden;
+            cursor: grab;
+            user-select: none;
+        }
+        
+        .builder-canvas:active {
+            cursor: grabbing;
+        }
+        
+        .builder-canvas.panning {
+            cursor: grabbing;
+            user-select: none;
         }
         
         .node-palette {
@@ -1588,8 +1772,8 @@
         /* 画布控制 */
         .canvas-controls {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
+            bottom: 16px;
+            right: 16px;
             display: flex;
             flex-direction: column;
             gap: 8px;
@@ -1597,23 +1781,53 @@
         }
         
         .canvas-control-btn {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
             background: white;
-            border: 1px solid #d1d5db;
+            border: 1px solid #e5e5e5;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 18px;
             transition: all 0.2s;
+            user-select: none;
         }
         
         .canvas-control-btn:hover {
-            background: #f3f4f6;
-            transform: scale(1.1);
+            background: #f9fafb;
+            border-color: #10a37f;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .canvas-control-btn:active {
+            transform: translateY(0);
+        }
+        
+        /* 缩放指示器 */
+        .zoom-indicator {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #374151;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 99;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .zoom-indicator.show {
+            opacity: 1;
         }
         
         /* 提示信息 */
@@ -1631,6 +1845,32 @@
         .builder-hint.hidden {
             display: none;
         }
+        
+        /* 画布使用提示 */
+        .canvas-usage-hint {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            background: rgba(16, 163, 127, 0.1);
+            border: 1px solid rgba(16, 163, 127, 0.3);
+            border-radius: 8px;
+            font-size: 12px;
+            color: #10a37f;
+            pointer-events: none;
+            z-index: 98;
+            opacity: 0.8;
+            white-space: nowrap;
+        }
+        
+        .canvas-usage-hint code {
+            background: rgba(16, 163, 127, 0.15);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 11px;
+        }
     </style>
 </head>
 <body>
@@ -1644,6 +1884,14 @@
                 </div>
             </div>
             <div class="header-actions">
+                <div class="mode-switch-container" title="切换单/多智能体模式">
+                    <span class="mode-switch-label">模式:</span>
+                    <label class="mode-switch">
+                        <input type="checkbox" id="multiAgentToggle" onchange="toggleMultiAgentMode()">
+                        <span class="mode-slider"></span>
+                    </label>
+                    <span class="mode-indicator" id="modeIndicator">单智能体</span>
+                </div>
                 <button class="icon-btn" onclick="window.open('knowledge_base.html', '_blank')" title="知识库管理">📁</button>
                 <button class="icon-btn" onclick="openHistory()" title="对话历史">📚</button>
                 <button class="icon-btn" onclick="openSettings()" title="会话设置">⚙️</button>
@@ -1828,17 +2076,27 @@
                     </div>
                 </div>
                 <div class="builder-canvas" id="builderCanvas">
-                    <div class="builder-hint" id="builderHint">
-                        <div style="font-size: 24px; margin-bottom: 8px;">🎨</div>
-                        <div>从左侧拖拽节点到画布</div>
-                        <div style="font-size: 12px; margin-top: 4px; color: #9ca3af;">或点击节点类型快速添加</div>
+                    <!-- 画布内容层（会被缩放和平移） -->
+                    <div id="canvasContentLayer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; will-change: transform;">
+                        <div class="builder-hint" id="builderHint">
+                            <div style="font-size: 24px; margin-bottom: 8px;">🎨</div>
+                            <div>从左侧拖拽节点到画布</div>
+                            <div style="font-size: 12px; margin-top: 4px; color: #9ca3af;">或点击节点类型快速添加</div>
+                        </div>
+                        <svg id="connectionSvg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                        </svg>
                     </div>
-                    <svg id="connectionSvg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
-                    </svg>
+                    <!-- 固定层（不会被缩放） -->
+                    <div class="canvas-usage-hint" id="canvasUsageHint">
+                        💡 拖拽画布：<code>空格+拖动</code> 或 <code>Shift+拖动</code> 或 <code>中键拖动</code> | 缩放：<code>滚轮</code>
+                    </div>
                     <div class="canvas-controls">
+                        <div class="canvas-control-btn" onclick="zoomIn()" title="放大 (滚轮向上)">🔍+</div>
+                        <div class="canvas-control-btn" onclick="zoomOut()" title="缩小 (滚轮向下)">🔍-</div>
+                        <div class="canvas-control-btn" onclick="resetCanvasView()" title="重置视图">⟲</div>
                         <div class="canvas-control-btn" onclick="centerCanvas()" title="居中画布">🎯</div>
-                        <div class="canvas-control-btn" onclick="fitToScreen()" title="适应屏幕">📐</div>
                     </div>
+                    <div class="zoom-indicator" id="zoomIndicator">100%</div>
                 </div>
                 <div class="config-panel" id="configPanel">
                     <div class="config-title">节点配置</div>
@@ -1856,6 +2114,179 @@
     </div>
 
     <script>
+        // ========== 画布管理器 ==========
+        class CanvasManager {
+            constructor() {
+                this.scale = 1;
+                this.offsetX = 0;
+                this.offsetY = 0;
+                this.isDragging = false;
+                this.lastX = 0;
+                this.lastY = 0;
+                this.canvas = null;
+                this.contentLayer = null;
+            }
+            
+            init() {
+                this.canvas = document.getElementById('builderCanvas');
+                this.contentLayer = document.getElementById('canvasContentLayer');
+                
+                if (!this.canvas || !this.contentLayer) {
+                    console.warn('画布元素未找到');
+                    return;
+                }
+                
+                console.log('✅ 画布管理器初始化成功');
+                
+                // 鼠标滚轮缩放
+                this.canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                    const oldScale = this.scale;
+                    this.scale = Math.max(0.3, Math.min(3, this.scale * delta));
+                    
+                    // 以鼠标位置为中心缩放
+                    const rect = this.canvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+                    
+                    this.offsetX = mouseX - (mouseX - this.offsetX) * (this.scale / oldScale);
+                    this.offsetY = mouseY - (mouseY - this.offsetY) * (this.scale / oldScale);
+                    
+                    this.updateTransform();
+                    console.log(`🔍 缩放: ${this.scale.toFixed(2)}x`);
+                }, { passive: false });
+                
+                // 画布拖拽（中键、Shift+左键、空格+左键）
+                let spacePressed = false;
+                
+                // 监听空格键
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                        spacePressed = true;
+                        this.canvas.style.cursor = 'grab';
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        spacePressed = false;
+                        if (!this.isDragging) {
+                            this.canvas.style.cursor = 'grab';
+                        }
+                    }
+                });
+                
+                this.canvas.addEventListener('mousedown', (e) => {
+                    // 中键、Shift+左键、空格+左键都可以拖拽
+                    const canPan = e.button === 1 || (e.button === 0 && (e.shiftKey || spacePressed));
+                    
+                    if (canPan) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.isDragging = true;
+                        this.lastX = e.clientX;
+                        this.lastY = e.clientY;
+                        this.canvas.classList.add('panning');
+                        console.log('🖐️ 开始拖拽画布');
+                    }
+                }, true);  // 使用捕获阶段
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (this.isDragging) {
+                        e.preventDefault();
+                        const dx = e.clientX - this.lastX;
+                        const dy = e.clientY - this.lastY;
+                        this.offsetX += dx;
+                        this.offsetY += dy;
+                        this.lastX = e.clientX;
+                        this.lastY = e.clientY;
+                        this.updateTransform();
+                    }
+                });
+                
+                const stopDragging = () => {
+                    if (this.isDragging) {
+                        this.isDragging = false;
+                        this.canvas.classList.remove('panning');
+                        console.log('🖐️ 停止拖拽');
+                    }
+                };
+                
+                document.addEventListener('mouseup', stopDragging);
+            }
+            
+            updateTransform() {
+                if (!this.contentLayer) return;
+                // 使用 requestAnimationFrame 优化性能
+                if (this.rafId) {
+                    cancelAnimationFrame(this.rafId);
+                }
+                this.rafId = requestAnimationFrame(() => {
+                    this.contentLayer.style.transform = 
+                        `translate(${this.offsetX}px, ${this.offsetY}px) scale(${this.scale})`;
+                    this.showZoomIndicator();
+                });
+            }
+            
+            showZoomIndicator() {
+                const indicator = document.getElementById('zoomIndicator');
+                if (!indicator) return;
+                
+                indicator.textContent = `${Math.round(this.scale * 100)}%`;
+                indicator.classList.add('show');
+                
+                // 2秒后自动隐藏
+                clearTimeout(this.hideIndicatorTimeout);
+                this.hideIndicatorTimeout = setTimeout(() => {
+                    indicator.classList.remove('show');
+                }, 2000);
+            }
+            
+            zoomIn() {
+                const oldScale = this.scale;
+                this.scale = Math.min(3, this.scale * 1.2);
+                
+                // 以画布中心为缩放中心
+                const rect = this.canvas.getBoundingClientRect();
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                
+                this.offsetX = centerX - (centerX - this.offsetX) * (this.scale / oldScale);
+                this.offsetY = centerY - (centerY - this.offsetY) * (this.scale / oldScale);
+                
+                this.updateTransform();
+                console.log(`🔍+ 放大: ${this.scale.toFixed(2)}x`);
+            }
+            
+            zoomOut() {
+                const oldScale = this.scale;
+                this.scale = Math.max(0.3, this.scale * 0.8);
+                
+                // 以画布中心为缩放中心
+                const rect = this.canvas.getBoundingClientRect();
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                
+                this.offsetX = centerX - (centerX - this.offsetX) * (this.scale / oldScale);
+                this.offsetY = centerY - (centerY - this.offsetY) * (this.scale / oldScale);
+                
+                this.updateTransform();
+                console.log(`🔍- 缩小: ${this.scale.toFixed(2)}x`);
+            }
+            
+            resetView() {
+                this.scale = 1;
+                this.offsetX = 0;
+                this.offsetY = 0;
+                this.updateTransform();
+                console.log('⟲ 重置视图');
+            }
+        }
+        
+        // 全局画布管理器实例
+        let canvasManager = null;
+        
         // ========== 状态管理器 ==========
         class StateManager {
             constructor() {
@@ -2115,6 +2546,7 @@
         let attachedFiles = [];
         let isTimelineOpen = false;
         let currentSessionId = null; // 当前会话ID
+        let isMultiAgentMode = false; // 是否使用多智能体模式
         
         // Agent构建器状态
         let builderNodes = [];
@@ -2282,6 +2714,56 @@
             return messageDiv;
         }
 
+        // 自动折叠超过1000字的报告
+        function addReadMoreButton(contentDiv) {
+            const textLength = contentDiv.textContent.length;
+            if (textLength > 1000) {
+                const fullHTML = contentDiv.innerHTML;
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = fullHTML;
+                
+                // 截取前800字符的文本内容
+                let charCount = 0;
+                let truncatedHTML = '';
+                const walker = document.createTreeWalker(tempDiv, NodeFilter.SHOW_TEXT);
+                let node;
+                
+                while (node = walker.nextNode()) {
+                    const remaining = 800 - charCount;
+                    if (remaining <= 0) break;
+                    
+                    if (node.textContent.length <= remaining) {
+                        charCount += node.textContent.length;
+                    } else {
+                        node.textContent = node.textContent.substring(0, remaining) + '...';
+                        charCount = 800;
+                        break;
+                    }
+                }
+                
+                truncatedHTML = tempDiv.innerHTML;
+                
+                // 创建展开按钮
+                const readMoreBtn = document.createElement('button');
+                readMoreBtn.textContent = '展开全文 ▼';
+                readMoreBtn.className = 'read-more-btn';
+                readMoreBtn.onclick = function() {
+                    contentDiv.innerHTML = fullHTML;
+                    // 重新应用代码高亮
+                    if (typeof hljs !== 'undefined') {
+                        contentDiv.querySelectorAll('pre code').forEach(block => {
+                            try {
+                                hljs.highlightElement(block);
+                            } catch (e) {}
+                        });
+                    }
+                };
+                
+                contentDiv.innerHTML = truncatedHTML;
+                contentDiv.appendChild(readMoreBtn);
+            }
+        }
+        
         function updateAgentMessage(content) {
             const messageDiv = document.getElementById('currentAgentMessage');
             if (messageDiv) {
@@ -2542,7 +3024,14 @@
                     }
                 } else {
                     // 无附件，使用 JSON
-                    response = await fetch(`${API_BASE}/chat/agent/stream`, {
+                    // 根据模式选择不同的API端点
+                    const apiEndpoint = isMultiAgentMode 
+                        ? `${API_BASE}/chat/multi-agent/stream` 
+                        : `${API_BASE}/chat/agent/stream`;
+                    
+                    console.log(`🚀 使用 ${isMultiAgentMode ? '多智能体' : '单智能体'} API: ${apiEndpoint}`);
+                    
+                    response = await fetch(apiEndpoint, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -2552,6 +3041,7 @@
                             use_knowledge_base: document.getElementById('useKB').checked,
                             use_tools: document.getElementById('useTools').checked,
                             session_id: getCurrentSessionId(),
+                            execution_mode: 'sequential', // 多智能体执行模式: sequential 或 parallel
                         }),
                     });
                     
@@ -2610,6 +3100,16 @@
             } finally {
                 // 完成消息处理
                 finalizeAgentMessage();
+                
+                // 添加长报告折叠功能
+                const currentMsg = document.getElementById('currentAgentMessage');
+                if (currentMsg) {
+                    const contentDiv = currentMsg.querySelector('.message-content');
+                    if (contentDiv) {
+                        addReadMoreButton(contentDiv);
+                    }
+                }
+                
                 sendBtn.disabled = false;
                 sendBtn.innerHTML = '↑';
                 sendBtn.setAttribute('aria-label', '发送消息');
@@ -2633,6 +3133,32 @@
                     }
                     break;
 
+                case 'orchestrator_plan':
+                    // 多智能体专属：显示协调器规划
+                    if (data.plan) {
+                        addTimelineNode('orchestrator', 'completed');
+                        addObservation('orchestrator', `📋 任务规划完成\n${data.plan}`);
+                    }
+                    break;
+
+                case 'agent_execution':
+                    // 多智能体专属：显示智能体执行
+                    completeCurrentNode();
+                    addTimelineNode(data.agent || 'unknown_agent', 'completed');
+                    
+                    if (data.data && data.data.thoughts) {
+                        data.data.thoughts.forEach(thought => {
+                            addThought(data.agent, thought);
+                        });
+                    }
+                    
+                    if (data.data && data.data.observations) {
+                        data.data.observations.forEach(obs => {
+                            addObservation(data.agent, obs);
+                        });
+                    }
+                    break;
+                
                 case 'agent_node':
                     completeCurrentNode();
                     addTimelineNode(data.node, data.status);
@@ -2708,6 +3234,24 @@
             console.log('🔧 打开会话设置，会话ID:', sessionId);
         }
         
+        // 切换多智能体模式
+        function toggleMultiAgentMode() {
+            isMultiAgentMode = document.getElementById('multiAgentToggle').checked;
+            const modeIndicator = document.getElementById('modeIndicator');
+            
+            if (isMultiAgentMode) {
+                modeIndicator.textContent = '多智能体🤖🤖🤖';
+                modeIndicator.classList.add('multi-agent');
+                addSystemMessage('✨ 已切换到多智能体模式！将由多个专家智能体协作处理您的问题。');
+            } else {
+                modeIndicator.textContent = '单智能体';
+                modeIndicator.classList.remove('multi-agent');
+                addSystemMessage('✨ 已切换到单智能体模式。');
+            }
+            
+            console.log(`模式切换: ${isMultiAgentMode ? '多智能体' : '单智能体'}`);
+        }
+        
         function clearChat() {
             if (confirm('确定要清空对话吗？此操作不可恢复。')) {
                 const container = document.getElementById('messagesContainer');
@@ -2760,6 +3304,17 @@
                 
                 console.log('✅ 对话已清空，已创建新会话');
             }
+        }
+        
+        // 添加系统消息
+        function addSystemMessage(message) {
+            const container = document.getElementById('messagesContainer');
+            const systemMsg = document.createElement('div');
+            systemMsg.className = 'system-message';
+            systemMsg.style.cssText = 'text-align: center; padding: 8px; color: #666; font-size: 13px; background: #f0f9ff; border-radius: 8px; margin: 8px 0;';
+            systemMsg.textContent = message;
+            container.appendChild(systemMsg);
+            container.scrollTop = container.scrollHeight;
         }
         
         function exportChat() {
@@ -2901,7 +3456,7 @@
         }
         
         function renderNode(node) {
-            const canvas = document.getElementById('builderCanvas');
+            const contentLayer = document.getElementById('canvasContentLayer') || document.getElementById('builderCanvas');
             
             // 如果节点已存在，先删除
             const existing = document.getElementById(node.id);
@@ -2995,7 +3550,7 @@
             // 确保拖拽结束后移除dragging类
             const originalStyle = nodeDiv.style.transform;
             
-            canvas.appendChild(nodeDiv);
+            contentLayer.appendChild(nodeDiv);
             
             // 隐藏提示
             const hint = document.getElementById('builderHint');
@@ -3519,6 +4074,25 @@
             canvas.style.transformOrigin = 'top left';
         }
         
+        // 画布缩放控制函数
+        function zoomIn() {
+            if (canvasManager) {
+                canvasManager.zoomIn();
+            }
+        }
+        
+        function zoomOut() {
+            if (canvasManager) {
+                canvasManager.zoomOut();
+            }
+        }
+        
+        function resetCanvasView() {
+            if (canvasManager) {
+                canvasManager.resetView();
+            }
+        }
+        
         function centerCanvas() {
             if (builderNodes.length === 0) return;
             
@@ -3943,6 +4517,10 @@
                 window.location.href = 'login.html';
                 return;
             }
+            
+            // 初始化画布管理器
+            canvasManager = new CanvasManager();
+            canvasManager.init();
             
             // 订阅状态变化
             stateManager.subscribe((state) => {

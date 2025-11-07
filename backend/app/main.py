@@ -1818,3 +1818,165 @@ async def update_session_config_api(
     )
     
     return SessionConfigModel.model_validate(config)
+
+
+# ==================== 多智能体系统 API ====================
+
+class MultiAgentChatRequest(BaseModel):
+    """多智能体对话请求"""
+    messages: List[Message]
+    use_knowledge_base: bool = Field(default=True, description="是否使用知识库")
+    use_tools: bool = Field(default=True, description="是否使用工具")
+    execution_mode: str = Field(default="sequential", description="执行模式：sequential 或 parallel")
+    session_id: Optional[str] = Field(default=None, description="会话ID")
+    user_id: Optional[str] = Field(default=None, description="用户ID")
+
+
+class MultiAgentChatResponse(BaseModel):
+    """多智能体对话响应"""
+    reply: str
+    orchestrator_plan: str
+    sub_tasks: List[Dict[str, Any]] = Field(default_factory=list)
+    agent_results: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    thoughts: List[str] = Field(default_factory=list)
+    observations: List[str] = Field(default_factory=list)
+    quality_score: float = 0.0
+    thread_id: str
+    session_id: str
+
+
+@app.post("/chat/multi-agent", response_model=MultiAgentChatResponse)
+async def chat_with_multi_agent(
+    payload: MultiAgentChatRequest,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> MultiAgentChatResponse:
+    """
+    使用多智能体系统处理对话
+    
+    特点：
+    - 多个专家智能体协作
+    - 任务自动分解
+    - 并行/串行执行
+    - 结果智能汇总
+    """
+    logger.info("🤖🤖🤖 [多智能体系统] 开始处理请求")
+    
+    # 导入多智能体模块
+    from .multi_agent import run_multi_agent
+    
+    # 获取可用工具
+    tool_records = []
+    if payload.use_tools:
+        tool_records = list_tools(session, include_inactive=False)
+    
+    # 运行多智能体系统
+    result = await run_multi_agent(
+        user_query=payload.messages[-1].content if payload.messages else "",
+        settings=settings,
+        session=session,
+        tool_records=tool_records,
+        use_knowledge_base=payload.use_knowledge_base,
+        conversation_history=[msg.model_dump() for msg in payload.messages],
+        session_id=payload.session_id,
+        user_id=payload.user_id,
+        execution_mode=payload.execution_mode,
+    )
+    
+    return MultiAgentChatResponse(
+        reply=result.get("final_answer", "未能生成答案"),
+        orchestrator_plan=result.get("orchestrator_plan", ""),
+        sub_tasks=result.get("sub_tasks", []),
+        agent_results=result.get("agent_results", {}),
+        thoughts=result.get("thoughts", []),
+        observations=result.get("observations", []),
+        quality_score=result.get("quality_score", 0.0),
+        thread_id=result.get("thread_id", ""),
+        session_id=result.get("session_id", ""),
+    )
+
+
+@app.post("/chat/multi-agent/stream")
+async def chat_with_multi_agent_stream(
+    payload: MultiAgentChatRequest,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    """
+    使用多智能体系统处理对话（流式）
+    
+    实时返回各智能体的执行过程
+    """
+    logger.info("🌊🤖🤖🤖 [多智能体系统-流式] 开始处理")
+    
+    from .multi_agent import stream_multi_agent
+    
+    tool_records = []
+    if payload.use_tools:
+        tool_records = list_tools(session, include_inactive=False)
+    
+    session_id = payload.session_id or str(uuid.uuid4())
+    
+    async def event_generator() -> AsyncGenerator[bytes, None]:
+        try:
+            yield format_sse("status", {"stage": "started", "mode": "multi_agent"})
+            
+            # 流式执行多智能体系统
+            async for event in stream_multi_agent(
+                user_query=payload.messages[-1].content if payload.messages else "",
+                settings=settings,
+                session=session,
+                tool_records=tool_records,
+                use_knowledge_base=payload.use_knowledge_base,
+                conversation_history=[msg.model_dump() for msg in payload.messages],
+                session_id=session_id,
+                user_id=payload.user_id,
+                execution_mode=payload.execution_mode,
+            ):
+                event_type = event.get("event", "unknown")
+                
+                # 协调器事件
+                if event_type == "orchestrator_plan":
+                    yield format_sse("orchestrator_plan", {
+                        "plan": event.get("data", {}).get("orchestrator_plan", ""),
+                        "timestamp": event.get("timestamp"),
+                    })
+                
+                # 智能体执行事件
+                elif event_type == "agent_execution":
+                    node_name = event.get("node", "")
+                    node_data = event.get("data", {})
+                    
+                    yield format_sse("agent_execution", {
+                        "agent": node_name,
+                        "data": node_data,
+                        "timestamp": event.get("timestamp"),
+                    })
+                    
+                    # 如果有最终答案，发送
+                    if "final_answer" in node_data and node_data["final_answer"]:
+                        yield format_sse("assistant_final", {
+                            "content": node_data["final_answer"],
+                        })
+                
+                # 完成事件
+                elif event_type == "completed":
+                    yield format_sse("completed", {
+                        "thread_id": event.get("thread_id"),
+                        "timestamp": event.get("timestamp"),
+                    })
+            
+        except Exception as e:
+            logger.error(f"多智能体系统流式执行失败: {e}", exc_info=True)
+            yield format_sse("error", {"message": str(e)})
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/multi-agent/agents")
+async def list_multi_agent_agents() -> List[Dict[str, Any]]:
+    """
+    列出所有可用的智能体
+    """
+    from .agent_roles import list_available_agents
+    return list_available_agents()

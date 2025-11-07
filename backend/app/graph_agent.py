@@ -69,7 +69,7 @@ async def invoke_llm(
     endpoint = f"{settings.deepseek_base_url.rstrip('/')}/chat/completions"
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:  # 增加到120秒
             response = await client.post(endpoint, json=payload, headers=headers)
 
         if response.status_code != 200:
@@ -82,8 +82,11 @@ async def invoke_llm(
         reply = data["choices"][0]["message"]["content"]
         return reply, data
     
+    except httpx.TimeoutException as e:
+        logger.error(f"LLM 调用超时（120秒）: {e}")
+        return f"LLM 调用超时，请稍后重试", {}
     except Exception as e:
-        logger.error(f"LLM 调用异常: {e}")
+        logger.error(f"LLM 调用异常: {e}", exc_info=True)
         return f"LLM 调用失败: {str(e)}", {}
 
 
