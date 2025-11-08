@@ -10,13 +10,90 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from .config import Settings
-from .database import ToolRecord
+from .database import ToolRecord, get_active_prompt_for_agent
 from .graph_agent import invoke_llm, parse_json_from_llm
 from .rag_service import retrieve_context
 from .shared_workspace import MultiAgentState, SharedWorkspace
 from .tool_service import execute_tool
 
 logger = logging.getLogger(__name__)
+
+
+# ==================== Prompt管理辅助函数 ====================
+
+def get_agent_prompt(
+    agent_id: str,
+    session: Session,
+    default_prompt: str,
+    **kwargs
+) -> str:
+    """
+    获取智能体的激活prompt模板
+    
+    Args:
+        agent_id: 智能体ID
+        session: 数据库会话
+        default_prompt: 默认prompt（如果数据库中没有激活的模板，使用这个）
+        **kwargs: 用于替换prompt中的占位符，如 user_query, task_description 等
+    
+    Returns:
+        处理后的prompt字符串
+    """
+    try:
+        # 尝试从数据库获取激活的prompt
+        template = get_active_prompt_for_agent(session, agent_id)
+        
+        if template and template.is_active:
+            prompt = template.content
+            logger.info(f"✅ [Prompt管理] 使用数据库中的激活模板: {template.name} (ID: {template.id})")
+        else:
+            prompt = default_prompt
+            logger.info(f"ℹ️ [Prompt管理] 使用默认硬编码prompt (智能体: {agent_id})")
+    except Exception as e:
+        logger.warning(f"⚠️ [Prompt管理] 获取prompt失败，使用默认prompt: {e}")
+        prompt = default_prompt
+    
+    # 替换占位符（增强版）
+    try:
+        import re
+        
+        # 1. 先替换双花括号为单花括号（兼容性处理）
+        # 处理 {{variable}} 格式（Python f-string 转义）
+        prompt = prompt.replace("{{", "{").replace("}}", "}")
+        
+        # 2. 替换常见的占位符
+        prompt = prompt.replace("{user_query}", kwargs.get("user_query", ""))
+        prompt = prompt.replace("{task_description}", kwargs.get("task_description", ""))
+        prompt = prompt.replace("{analysis_context}", kwargs.get("analysis_context", ""))
+        prompt = prompt.replace("{full_context}", kwargs.get("full_context", ""))
+        prompt = prompt.replace("{final_answer}", kwargs.get("final_answer", ""))
+        
+        # 3. 替换其他自定义占位符
+        for key, value in kwargs.items():
+            placeholder = f"{{{key}}}"
+            if placeholder in prompt:
+                prompt = prompt.replace(placeholder, str(value))
+        
+        # 4. 检查未替换的占位符（警告）
+        unmatched = re.findall(r'\{(\w+)\}', prompt)
+        if unmatched:
+            # 过滤掉已经替换的占位符
+            replaced_placeholders = ["user_query", "task_description", "analysis_context", 
+                                   "full_context", "final_answer"] + list(kwargs.keys())
+            truly_unmatched = [p for p in unmatched if p not in replaced_placeholders]
+            
+            if truly_unmatched:
+                logger.warning(f"⚠️ [Prompt管理] 未替换的占位符: {truly_unmatched}")
+                # 可以选择移除未替换的占位符，或保留（这里选择保留并记录警告）
+                for var in truly_unmatched:
+                    # 保留占位符，但添加警告标记（可选）
+                    # prompt = prompt.replace(f"{{{var}}}", f"[占位符{var}未定义]")
+                    pass
+        
+    except Exception as e:
+        logger.warning(f"⚠️ [Prompt管理] 替换占位符时出错: {e}")
+    
+    return prompt
 
 
 # ==================== 检索专家（Retrieval Specialist） ====================
@@ -286,6 +363,7 @@ async def retrieval_specialist_node(
 async def analysis_specialist_node(
     state: MultiAgentState,
     settings: Settings,
+    session: Session,
 ) -> Dict[str, Any]:
     """
     分析专家智能体
@@ -350,7 +428,8 @@ async def analysis_specialist_node(
         current_subtask = workspace.get_current_subtask()
         task_description = current_subtask.description if current_subtask else "深度分析内容"
         
-        analysis_prompt = f"""你是一个资深的技术分析专家和研究顾问。请对以下内容进行深度、系统化的分析。
+        # 默认prompt（如果数据库中没有激活的模板，使用这个）
+        default_analysis_prompt = f"""你是一个资深的技术分析专家和研究顾问。请对以下内容进行深度、系统化的分析。
 
 【任务要求】：{task_description}
 
@@ -426,6 +505,16 @@ async def analysis_specialist_node(
 只返回 JSON，不要其他解释。
 """
         
+        # 从数据库获取激活的prompt，如果没有则使用默认prompt
+        analysis_prompt = get_agent_prompt(
+            agent_id="analysis_specialist",
+            session=session,
+            default_prompt=default_analysis_prompt,
+            user_query=user_query,
+            task_description=task_description,
+            analysis_context=analysis_context
+        )
+        
         llm_response, _ = await invoke_llm(
             messages=[{"role": "user", "content": analysis_prompt}],
             settings=settings,
@@ -487,6 +576,7 @@ async def analysis_specialist_node(
 async def summarization_specialist_node(
     state: MultiAgentState,
     settings: Settings,
+    session: Session,
 ) -> Dict[str, Any]:
     """
     总结专家智能体
@@ -599,7 +689,10 @@ async def summarization_specialist_node(
         else:
             info_quality_note = "⚠️ 检索信息有限，请基于自身知识合理回答，并说明信息来源的局限性"
         
-        summarization_prompt = f"""你是一个资深的智能助手。请基于以下信息，为用户生成清晰、准确的回答。
+        # 默认prompt（如果数据库中没有激活的模板，使用这个）
+        default_summarization_prompt = f"""你是一个资深的智能助手。请基于以下信息，为用户生成清晰、准确的回答。
+
+【任务要求】：{task_description}
 
 【用户问题】：{user_query}
 
@@ -642,6 +735,18 @@ async def summarization_specialist_node(
 
 现在请直接、准确地回答用户问题：
 """
+        
+        # 从数据库获取激活的prompt，如果没有则使用默认prompt
+        summarization_prompt = get_agent_prompt(
+            agent_id="summarization_specialist",
+            session=session,
+            default_prompt=default_summarization_prompt,
+            user_query=user_query,
+            task_description=task_description,
+            full_context=full_context if full_context else "（未检索到特定信息）",
+            info_quality_note=info_quality_note,
+            has_deep_analysis="已有深度分析结果，请充分利用分析专家提供的洞察" if has_deep_analysis else ""
+        )
         
         final_answer, _ = await invoke_llm(
             messages=[{"role": "user", "content": summarization_prompt}],
@@ -726,6 +831,7 @@ async def summarization_specialist_node(
 async def verification_specialist_node(
     state: MultiAgentState,
     settings: Settings,
+    session: Session,
 ) -> Dict[str, Any]:
     """
     验证专家智能体（可选）
@@ -764,7 +870,8 @@ async def verification_specialist_node(
         # 2. 使用 LLM 进行质量评估
         logger.info("🔍 使用 LLM 进行质量验证...")
         
-        verification_prompt = f"""请评估以下回答的质量：
+        # 默认prompt（如果数据库中没有激活的模板，使用这个）
+        default_verification_prompt = f"""请评估以下回答的质量：
 
 回答内容：
 {final_answer}
@@ -789,6 +896,14 @@ async def verification_specialist_node(
 
 只返回 JSON，不要其他解释。
 """
+        
+        # 从数据库获取激活的prompt，如果没有则使用默认prompt
+        verification_prompt = get_agent_prompt(
+            agent_id="verification_specialist",
+            session=session,
+            default_prompt=default_verification_prompt,
+            final_answer=final_answer
+        )
         
         llm_response, _ = await invoke_llm(
             messages=[{"role": "user", "content": verification_prompt}],
@@ -891,5 +1006,215 @@ def list_available_agents() -> List[Dict[str, Any]]:
             "capabilities": info["capabilities"],
         }
         for agent_id, info in AGENT_REGISTRY.items()
+    ]
+
+
+def get_default_prompts() -> List[Dict[str, Any]]:
+    """获取所有默认的prompt模板（硬编码的原始prompt）"""
+    return [
+        {
+            "agent_id": "retrieval_specialist",
+            "name": "检索专家-默认模板",
+            "description": "系统默认的检索专家说明模板，作为示例参考（检索专家主要执行检索操作，不直接使用LLM）",
+            "content": """检索专家智能体职责说明：
+
+【智能体角色】：检索专家（Retrieval Specialist）
+
+【主要职责】：
+1. 知识库检索（RAG）
+   - 使用向量检索从知识库中查找相关内容
+   - 支持语义搜索和关键词匹配
+   - 返回最相关的文档片段
+
+2. 网络搜索
+   - 当用户查询包含搜索关键词时，执行网络搜索
+   - 获取最新的网络信息
+   - 整合搜索结果
+
+3. 文档查找
+   - 分析用户查询，确定需要检索的文档类型
+   - 执行相应的检索策略
+
+【工作流程】：
+1. 接收用户查询：{user_query}
+2. 判断是否需要知识库检索（根据use_knowledge_base标志）
+3. 判断是否需要网络搜索（根据查询关键词）
+4. 执行相应的检索操作
+5. 整理检索结果并返回给协调器
+
+【输出格式】：
+检索结果以结构化格式返回，包括：
+- knowledge_base: 知识库检索结果列表
+- web_search: 网络搜索结果（如果执行了搜索）
+
+【注意事项】：
+- 检索专家主要负责信息检索，不进行内容分析
+- 检索结果会传递给分析专家进行进一步处理
+- 确保检索结果的准确性和相关性"""
+        },
+        {
+            "agent_id": "analysis_specialist",
+            "name": "分析专家-默认模板",
+            "description": "系统默认的分析专家prompt，作为示例参考",
+            "content": """你是一个资深的技术分析专家和研究顾问。请对以下内容进行深度、系统化的分析。
+
+【任务要求】：{task_description}
+
+【用户问题】：{user_query}
+
+【待分析内容】：
+{analysis_context}
+
+【分析维度】请从以下多个维度进行深入分析：
+
+1. **核心概念识别**：
+   - 识别并解释核心技术概念、术语
+   - 区分基础概念与高级概念
+
+2. **关键信息提取**：
+   - 提取重要事实、数据、统计信息
+   - 识别关键论点和结论
+   - 标注信息来源（如有）
+
+3. **技术原理分析**（如适用）：
+   - 解释技术实现原理
+   - 分析技术架构和设计思路
+   - 对比不同技术方案的优劣
+
+4. **关联性分析**：
+   - 发现概念之间的逻辑关系
+   - 识别因果关系、演进关系
+   - 构建知识图谱式的关联
+
+5. **趋势与洞察**：
+   - 识别技术演进趋势
+   - 发现潜在问题和挑战
+   - 预测未来发展方向
+
+6. **批判性思考**：
+   - 指出信息的局限性
+   - 识别可能存在的偏见或争议
+   - 提出需要进一步验证的点
+
+以 JSON 格式输出分析结果：
+{{
+  "core_concepts": [
+    {{"concept": "概念名称", "explanation": "详细解释", "importance": "high|medium|low"}}
+  ],
+  "key_facts": [
+    {{"fact": "事实描述", "source": "来源（如有）", "confidence": "high|medium|low"}}
+  ],
+  "key_data": [
+    {{"data_point": "数据点", "value": "具体数值或描述", "context": "背景说明"}}
+  ],
+  "technical_principles": [
+    {{"principle": "原理名称", "explanation": "原理解释", "advantages": ["优势1"], "limitations": ["局限1"]}}
+  ],
+  "relationships": [
+    {{"from": "概念A", "to": "概念B", "relationship_type": "因果|演进|对比|补充", "description": "关系描述"}}
+  ],
+  "trends_insights": [
+    {{"trend": "趋势描述", "evidence": "支持证据", "implications": "影响分析"}}
+  ],
+  "critical_notes": [
+    {{"note_type": "局限性|争议点|待验证", "description": "详细说明"}}
+  ],
+  "analysis_summary": "全面的分析总结（300-500字）",
+  "confidence_score": 0.0-1.0
+}}
+
+要求：
+- 分析要深入、系统、全面
+- 保持客观，避免主观臆断
+- 优先使用提供的内容，标注推理部分
+- 长度：500-1000字的深度分析
+
+只返回 JSON，不要其他解释。"""
+        },
+        {
+            "agent_id": "summarization_specialist",
+            "name": "总结专家-默认模板",
+            "description": "系统默认的总结专家prompt，作为示例参考",
+            "content": """你是一个资深的研究报告撰写专家。请基于以下信息，为用户生成一份高质量、结构化的研究报告或答案。
+
+【任务要求】：{task_description}
+
+【用户问题】：{user_query}
+
+【收集到的信息】：
+{full_context}
+
+【报告撰写要求】：
+
+1. **结构化组织**：
+   - 使用清晰的 Markdown 格式
+   - 合理的标题层级（# ## ### ）
+   - 如果是研究报告，包含：引言、主要内容、结论
+   - 如果是技术分析，包含：概述、技术原理、应用案例、趋势分析
+
+2. **内容深度**：
+   - 不要只是罗列信息，要进行深度整合和提炼
+   - 建立不同信息点之间的逻辑联系
+   - 提供清晰的论证和推理过程
+   - 突出关键发现和核心洞察
+
+3. **表达质量**：
+   - 语言流畅、专业、准确
+   - 避免重复和冗余
+   - 使用具体的数据和案例支撑论点
+   - 适当使用列表、表格等形式
+
+4. **信息来源**：
+   - 优先使用提供的检索结果和分析结果
+   - 如果引用具体数据或观点，可注明来源
+   - 区分事实陈述和推理结论
+
+5. **完整性**：
+   - 全面回答用户提出的所有问题点
+   - 不遗漏关键信息
+   - 如果信息不足，明确指出
+
+6. **长度要求**：
+   - 简单问题：300-600字
+   - 中等复杂度：600-1200字
+   - 复杂研究报告：1200-2000字
+
+【特别注意】：
+- 这是多智能体协作的最终输出，要体现高质量
+- 整合所有前序智能体的工作成果
+- 确保报告的专业性和可读性
+{has_deep_analysis}
+
+现在请生成最终报告："""
+        },
+        {
+            "agent_id": "verification_specialist",
+            "name": "验证专家-默认模板",
+            "description": "系统默认的验证专家prompt，作为示例参考",
+            "content": """请评估以下回答的质量：
+
+回答内容：
+{final_answer}
+
+请从以下维度评估（0-10分）：
+1. 准确性：信息是否准确可靠
+2. 完整性：是否全面回答了问题
+3. 清晰度：表达是否清晰易懂
+4. 相关性：是否与问题相关
+
+以 JSON 格式输出评估结果：
+{{
+  "accuracy_score": 0-10,
+  "completeness_score": 0-10,
+  "clarity_score": 0-10,
+  "relevance_score": 0-10,
+  "overall_score": 0-10,
+  "issues": ["问题1", "问题2", ...],
+  "suggestions": ["建议1", "建议2", ...],
+  "verdict": "通过" 或 "需要改进"
+}}
+
+只返回 JSON，不要其他解释。"""
+        },
     ]
 

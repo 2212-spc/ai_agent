@@ -137,6 +137,24 @@ class SessionConfig(Base):
     )
 
 
+class PromptTemplate(Base):
+    """Prompt模板 - 存储智能体的prompt模板"""
+    
+    __tablename__ = "prompt_templates"
+    
+    id = Column(String, primary_key=True)  # 模板ID
+    name = Column(String, nullable=False)  # 模板名称
+    agent_id = Column(String, nullable=False)  # 关联的智能体ID (如: analysis_specialist)
+    content = Column(Text, nullable=False)  # Prompt内容
+    description = Column(Text, nullable=True)  # 模板描述
+    is_default = Column(Boolean, nullable=False, default=False)  # 是否为默认模板（系统预设，不推荐修改）
+    is_active = Column(Boolean, nullable=False, default=True)  # 是否激活（当前是否被使用）
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 _engine: Optional[Engine] = None
 _SessionLocal: Optional[sessionmaker[Session]] = None
 
@@ -753,5 +771,134 @@ def delete_conversation_message(
         return False
     
     session.delete(message)
+    session.commit()
+    return True
+
+
+# ==================== Prompt模板相关函数 ====================
+
+def get_prompt_template_by_id(session: Session, template_id: str) -> PromptTemplate | None:
+    """根据ID获取prompt模板"""
+    return session.get(PromptTemplate, template_id)
+
+
+def get_active_prompt_for_agent(session: Session, agent_id: str) -> PromptTemplate | None:
+    """获取指定智能体当前激活的prompt模板"""
+    statement = select(PromptTemplate).where(
+        PromptTemplate.agent_id == agent_id,
+        PromptTemplate.is_active.is_(True)
+    ).order_by(PromptTemplate.created_at.desc()).limit(1)
+    return session.execute(statement).scalar_one_or_none()
+
+
+def list_prompt_templates(
+    session: Session,
+    agent_id: Optional[str] = None,
+    include_inactive: bool = False,
+) -> list[PromptTemplate]:
+    """列出prompt模板"""
+    statement = select(PromptTemplate)
+    
+    if agent_id:
+        statement = statement.where(PromptTemplate.agent_id == agent_id)
+    
+    if not include_inactive:
+        statement = statement.where(PromptTemplate.is_active.is_(True))
+    
+    statement = statement.order_by(
+        PromptTemplate.is_default.desc(),  # 默认模板排在前面
+        PromptTemplate.created_at.desc()
+    )
+    
+    return list(session.execute(statement).scalars())
+
+
+def create_prompt_template(
+    session: Session,
+    name: str,
+    agent_id: str,
+    content: str,
+    description: Optional[str] = None,
+    is_default: bool = False,
+) -> PromptTemplate:
+    """创建新的prompt模板"""
+    template_id = str(uuid.uuid4())
+    template = PromptTemplate(
+        id=template_id,
+        name=name,
+        agent_id=agent_id,
+        content=content,
+        description=description,
+        is_default=is_default,
+        is_active=True,
+    )
+    session.add(template)
+    session.commit()
+    session.refresh(template)
+    return template
+
+
+def update_prompt_template(
+    session: Session,
+    template_id: str,
+    name: Optional[str] = None,
+    content: Optional[str] = None,
+    description: Optional[str] = None,
+    is_active: Optional[bool] = None,
+) -> PromptTemplate | None:
+    """更新prompt模板"""
+    template = session.get(PromptTemplate, template_id)
+    if not template:
+        return None
+    
+    if name is not None:
+        template.name = name
+    if content is not None:
+        template.content = content
+    if description is not None:
+        template.description = description
+    if is_active is not None:
+        template.is_active = is_active
+    
+    template.updated_at = datetime.utcnow()
+    session.commit()
+    session.refresh(template)
+    return template
+
+
+def activate_prompt_template(session: Session, template_id: str, agent_id: str) -> PromptTemplate | None:
+    """激活指定的prompt模板（同时将同一智能体的其他模板设为非激活）"""
+    template = session.get(PromptTemplate, template_id)
+    if not template or template.agent_id != agent_id:
+        return None
+    
+    # 将同一智能体的所有模板设为非激活
+    statement = select(PromptTemplate).where(
+        PromptTemplate.agent_id == agent_id
+    )
+    other_templates = list(session.execute(statement).scalars())
+    for t in other_templates:
+        t.is_active = False
+    
+    # 激活指定的模板
+    template.is_active = True
+    template.updated_at = datetime.utcnow()
+    
+    session.commit()
+    session.refresh(template)
+    return template
+
+
+def delete_prompt_template(session: Session, template_id: str) -> bool:
+    """删除prompt模板（不能删除默认模板）"""
+    template = session.get(PromptTemplate, template_id)
+    if not template:
+        return False
+    
+    # 不允许删除默认模板
+    if template.is_default:
+        return False
+    
+    session.delete(template)
     session.commit()
     return True

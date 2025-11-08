@@ -2038,6 +2038,7 @@
                     <span class="mode-indicator" id="modeIndicator">单智能体</span>
                 </div>
                 <button class="icon-btn" onclick="window.open('knowledge_base.html', '_blank')" title="知识库管理">📁</button>
+                <button class="icon-btn" onclick="window.open('prompt_management.html', '_blank')" title="Prompt模板管理">📝</button>
                 <button class="icon-btn" onclick="openHistory()" title="对话历史">📚</button>
                 <button class="icon-btn" onclick="openSettings()" title="会话设置">⚙️</button>
                 <button class="icon-btn" onclick="toggleBuilder()" title="Agent构建器">🛠️</button>
@@ -3585,12 +3586,21 @@
                     formData.append('message', message || '请分析这些文件');
                     formData.append('use_knowledge_base', document.getElementById('useKB').checked);
                     formData.append('use_tools', document.getElementById('useTools').checked);
+                    formData.append('session_id', getCurrentSessionId());
                     
                     attachedFiles.forEach((file) => {
                         formData.append('files', file);
                     });
                     
                     const uploadUrl = `${API_BASE}/chat/agent/stream-with-files`;
+                    console.log('📤 上传到:', uploadUrl);
+                    console.log('📦 FormData 内容:', {
+                        message: formData.get('message'),
+                        use_knowledge_base: formData.get('use_knowledge_base'),
+                        use_tools: formData.get('use_tools'),
+                        session_id: formData.get('session_id'),
+                        files_count: attachedFiles.length
+                    });
                     
                     response = await fetch(uploadUrl, {
                         method: 'POST',
@@ -3853,8 +3863,17 @@
 
             switch (eventType) {
                 case 'status':
-                    if (data.mode === 'langgraph_agent') {
+                    if (data.mode === 'langgraph_agent' || data.mode === 'langgraph_agent_with_files') {
                         console.log('🚀 LangGraph Agent 模式启动');
+                        // 如果后端返回了 session_id，保存到 localStorage
+                        if (data.session_id) {
+                            const currentSessionId = getCurrentSessionId();
+                            // 如果当前没有 session_id 或与后端返回的不一致，更新它
+                            if (!currentSessionId || currentSessionId !== data.session_id) {
+                                localStorage.setItem('currentSessionId', data.session_id);
+                                console.log('💾 已保存 session_id:', data.session_id);
+                            }
+                        }
                     }
                     break;
 
@@ -5241,6 +5260,47 @@
             }
         }
 
+        // 加载对话历史
+        async function loadConversationHistory(sessionId) {
+            if (!sessionId) return;
+
+            const userInfo = localStorage.getItem('userInfo');
+            const userId = userInfo ? JSON.parse(userInfo).user_id : null;
+
+            try {
+                let url = `${API_BASE}/conversation/${sessionId}/history?limit=50`;
+                if (userId) url += `&user_id=${userId}`;
+
+                const response = await fetch(url);
+                if (!response.ok) return;
+
+                const history = await response.json();
+                const container = document.getElementById('messagesContainer');
+                
+                // 清空当前消息（除了欢迎消息）
+                const existingMessages = container.querySelectorAll('.message');
+                existingMessages.forEach(msg => {
+                    if (!msg.querySelector('.example-prompts')) {
+                        msg.remove();
+                    }
+                });
+                
+                // 将历史消息添加到聊天界面
+                history.forEach(msg => {
+                    if (msg.role === 'user') {
+                        addUserMessage(msg.content);
+                    } else if (msg.role === 'assistant') {
+                        const agentDiv = createAgentMessage();
+                        updateAgentMessage(msg.content);
+                    }
+                });
+                
+                console.log(`✅ 已加载 ${history.length} 条历史消息`);
+            } catch (error) {
+                console.error('加载历史对话失败:', error);
+            }
+        }
+
         // ========== 事件监听器设置和初始化 ==========
         document.addEventListener('DOMContentLoaded', async function() {
             // 检查登录状态
@@ -5249,6 +5309,17 @@
                 // 未登录，跳转到登录页
                 window.location.href = 'login.html';
                 return;
+            }
+            
+            // 检查 URL 参数中是否有 session_id，如果有则加载历史对话
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            if (sessionId) {
+                localStorage.setItem('currentSessionId', sessionId);
+                loadConversationHistory(sessionId);
+            } else {
+                // 如果没有 session_id，确保有当前会话ID
+                getCurrentSessionId();
             }
             
             // 初始化画布管理器

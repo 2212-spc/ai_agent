@@ -392,13 +392,13 @@ def create_multi_agent_graph(
         return await retrieval_specialist_node(state, settings, session, tool_records)
     
     async def analysis_wrapper(state: MultiAgentState) -> Dict[str, Any]:
-        return await analysis_specialist_node(state, settings)
+        return await analysis_specialist_node(state, settings, session)
     
     async def summarization_wrapper(state: MultiAgentState) -> Dict[str, Any]:
-        return await summarization_specialist_node(state, settings)
+        return await summarization_specialist_node(state, settings, session)
     
     async def verification_wrapper(state: MultiAgentState) -> Dict[str, Any]:
-        return await verification_specialist_node(state, settings)
+        return await verification_specialist_node(state, settings, session)
     
     workflow.add_node("retrieval_specialist", retrieval_wrapper)
     workflow.add_node("analysis_specialist", analysis_wrapper)
