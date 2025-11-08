@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LangGraph Agent - 智能体演示</title>
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css">
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/es/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
@@ -112,6 +112,76 @@
             background: #e0e0e0;
         }
         
+        /* 多智能体模式开关 */
+        .mode-switch-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            background: #f0f0f0;
+            border-radius: 6px;
+        }
+        
+        .mode-switch-label {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .mode-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+        
+        .mode-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .mode-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .3s;
+            border-radius: 20px;
+        }
+        
+        .mode-slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        
+        .mode-switch input:checked + .mode-slider {
+            background-color: #10a37f;
+        }
+        
+        .mode-switch input:checked + .mode-slider:before {
+            transform: translateX(20px);
+        }
+        
+        .mode-indicator {
+            font-size: 13px;
+            font-weight: 600;
+            color: #202123;
+        }
+        
+        .mode-indicator.multi-agent {
+            color: #10a37f;
+        }
+        
         .message-time {
             margin-left: auto;
             font-size: 12px;
@@ -135,16 +205,16 @@
         .messages-container {
             flex: 1;
             overflow-y: auto;
-            padding: 16px 0;
-            background: white;
-            max-width: 800px;
+            padding: 24px 0;
+            background: #fafafa;
+            max-width: 900px;
             margin: 0 auto;
             width: 100%;
         }
 
         .message {
-            margin-bottom: 20px;
-            padding: 0 16px;
+            margin-bottom: 24px;
+            padding: 0 24px;
             animation: slideIn 0.3s ease-out;
         }
 
@@ -193,13 +263,18 @@
 
         .message-content {
             margin-left: 36px;
-            padding: 0;
-            line-height: 1.6;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            line-height: 1.7;
             color: #374151;
             font-size: 15px;
         }
         
         .user-message .message-content {
+            background: #f3f4f6;
+            border-left: 3px solid #10a37f;
             color: #374151;
         }
         
@@ -207,19 +282,258 @@
             color: #374151;
         }
         
+        /* Markdown标题样式 */
+        .message-content h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 28px 0 16px 0;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e5e5e5;
+            color: #111827;
+            line-height: 1.3;
+        }
+        
+        .message-content h1:first-child {
+            margin-top: 0;
+        }
+        
+        .message-content h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin: 24px 0 12px 0;
+            color: #1f2937;
+            line-height: 1.4;
+        }
+        
+        .message-content h2:first-child {
+            margin-top: 0;
+        }
+        
+        .message-content h3 {
+            font-size: 17px;
+            font-weight: 600;
+            margin: 20px 0 10px 0;
+            color: #374151;
+            line-height: 1.4;
+        }
+        
+        .message-content h3:first-child {
+            margin-top: 0;
+        }
+        
+        .message-content h4 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 16px 0 8px 0;
+            color: #4b5563;
+        }
+        
+        .message-content p {
+            margin: 12px 0;
+            line-height: 1.7;
+        }
+        
+        .message-content blockquote {
+            border-left: 3px solid #10a37f;
+            padding-left: 16px;
+            margin: 16px 0;
+            color: #6b7280;
+            font-style: italic;
+            background: #f9fafb;
+            padding: 12px 16px;
+            border-radius: 4px;
+        }
+        
+        .message-content hr {
+            border: none;
+            border-top: 1px solid #e5e7eb;
+            margin: 24px 0;
+        }
+        
         /* 代码块样式 */
         .message-content pre {
-            background: #000;
+            background: #282c34 !important;
             padding: 12px 16px;
             border-radius: 6px;
             overflow-x: auto;
             margin: 12px 0;
             position: relative;
+            border: 1px solid #3e4451;
         }
         
-        .message-content code {
+        .message-content pre code {
             font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
             font-size: 13px;
+            color: #abb2bf !important;
+            background: transparent !important;
+        }
+        
+        /* 增强代码高亮对比度 */
+        .message-content pre code.hljs {
+            display: block;
+            overflow-x: auto;
+            padding: 0;
+            background: transparent !important;
+        }
+        
+        /* ========== 增强的语法高亮 - 更鲜艳的颜色 ========== */
+        
+        /* 关键字 - 紫色加粗，更醒目 */
+        .message-content pre code .hljs-keyword,
+        .message-content pre code .hljs-selector-tag,
+        .message-content pre code .hljs-built_in,
+        .message-content pre code .hljs-name,
+        .message-content pre code .hljs-selector-id,
+        .message-content pre code .hljs-selector-class {
+            color: #ff79c6 !important;
+            font-weight: 700 !important;
+        }
+        
+        /* Python特定关键字 */
+        .message-content pre code .hljs-keyword.hljs-built_in {
+            color: #bd93f9 !important;
+        }
+        
+        /* 字符串 - 鲜艳绿色 */
+        .message-content pre code .hljs-string,
+        .message-content pre code .hljs-attr,
+        .message-content pre code .hljs-attribute {
+            color: #50fa7b !important;
+            font-weight: 500 !important;
+        }
+        
+        /* 注释 - 灰色斜体，保持较低对比度 */
+        .message-content pre code .hljs-comment,
+        .message-content pre code .hljs-quote {
+            color: #6272a4 !important;
+            font-style: italic !important;
+            opacity: 0.9;
+        }
+        
+        /* 数字和字面量 - 鲜艳橙色 */
+        .message-content pre code .hljs-number,
+        .message-content pre code .hljs-literal {
+            color: #ffb86c !important;
+            font-weight: 600 !important;
+        }
+        
+        /* 布尔值 - 特殊亮绿色 */
+        .message-content pre code .hljs-literal.hljs-boolean {
+            color: #50fa7b !important;
+            font-weight: 700 !important;
+        }
+        
+        /* None/null - 特殊红色 */
+        .message-content pre code .hljs-literal.hljs-null {
+            color: #ff5555 !important;
+            font-weight: 700 !important;
+        }
+        
+        /* 函数名和标题 - 明亮蓝色 */
+        .message-content pre code .hljs-function,
+        .message-content pre code .hljs-title,
+        .message-content pre code .hljs-title.function_ {
+            color: #8be9fd !important;
+            font-weight: 600 !important;
+        }
+        
+        /* 内置函数 - 更亮的青色 */
+        .message-content pre code .hljs-built_in.hljs-function {
+            color: #66d9ef !important;
+            font-weight: 600 !important;
+        }
+        
+        /* 类型和类 - 金黄色 */
+        .message-content pre code .hljs-type,
+        .message-content pre code .hljs-class,
+        .message-content pre code .hljs-title.class_ {
+            color: #f1fa8c !important;
+            font-weight: 600 !important;
+        }
+        
+        /* 变量名 - 亮红色，更明显 */
+        .message-content pre code .hljs-variable,
+        .message-content pre code .hljs-symbol {
+            color: #ff79c6 !important;
+            font-weight: 500 !important;
+        }
+        
+        /* 参数 - 亮粉色 */
+        .message-content pre code .hljs-params {
+            color: #ff79c6 !important;
+            font-weight: 500 !important;
+        }
+        
+        /* 运算符 - 亮青色 */
+        .message-content pre code .hljs-operator {
+            color: #66d9ef !important;
+            font-weight: 600 !important;
+        }
+        
+        /* 标点符号 - 中等亮度 */
+        .message-content pre code .hljs-punctuation {
+            color: #f8f8f2 !important;
+        }
+        
+        /* 装饰器 - 特殊紫色 */
+        .message-content pre code .hljs-meta,
+        .message-content pre code .hljs-meta.hljs-keyword {
+            color: #bd93f9 !important;
+            font-weight: 600 !important;
+        }
+        
+        /* 导入语句 - 特殊蓝色 */
+        .message-content pre code .hljs-import,
+        .message-content pre code .hljs-keyword.hljs-import {
+            color: #8be9fd !important;
+            font-weight: 700 !important;
+        }
+        
+        /* 常量 - 大写变量名，特殊颜色 */
+        .message-content pre code .hljs-variable.hljs-constant {
+            color: #bd93f9 !important;
+            font-weight: 700 !important;
+        }
+        
+        /* 正则表达式 - 特殊绿色 */
+        .message-content pre code .hljs-regexp {
+            color: #50fa7b !important;
+            font-weight: 500 !important;
+        }
+        
+        /* 标签和选择器 - 特殊颜色 */
+        .message-content pre code .hljs-tag,
+        .message-content pre code .hljs-tag .hljs-name {
+            color: #ff79c6 !important;
+            font-weight: 600 !important;
+        }
+        
+        /* 属性名 - 特殊颜色 */
+        .message-content pre code .hljs-attr {
+            color: #50fa7b !important;
+        }
+        
+        /* 模板字符串/插值 - 特殊高亮 */
+        .message-content pre code .hljs-subst,
+        .message-content pre code .hljs-template-variable {
+            color: #ffb86c !important;
+            font-weight: 600 !important;
+        }
+        
+        /* 强调/重要代码 - 背景高亮 */
+        .message-content pre code .hljs-emphasis {
+            font-style: italic;
+            color: #ff79c6 !important;
+        }
+        
+        .message-content pre code .hljs-strong {
+            font-weight: 700 !important;
+            color: #ff79c6 !important;
+        }
+        
+        /* 代码块整体文字默认颜色 - 更亮的白色 */
+        .message-content pre code {
+            color: #f8f8f2 !important;
         }
         
         /* 行内代码 */
@@ -236,19 +550,23 @@
             position: absolute;
             top: 8px;
             right: 8px;
-            padding: 4px 10px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 6px 12px;
+            background: #3e4451 !important;
+            border: 1px solid #5c6370;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 11px;
+            font-size: 12px;
             transition: all 0.2s;
             z-index: 10;
-            color: #d1d5db;
+            color: #abb2bf !important;
+            font-weight: 500;
         }
         
         .copy-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
+            background: #4e5564 !important;
+            border-color: #6c737f;
+            color: #ffffff !important;
+            transform: translateY(-1px);
         }
         
         /* Mermaid 图表样式 */
@@ -263,11 +581,17 @@
         
         /* 列表样式优化 */
         .message-content ul, .message-content ol {
-            margin: 12px 0;
-            padding-left: 24px;
+            margin: 16px 0;
+            padding-left: 28px;
         }
         
         .message-content li {
+            margin: 10px 0;
+            line-height: 1.7;
+        }
+        
+        .message-content ul ul, .message-content ol ol,
+        .message-content ul ol, .message-content ol ul {
             margin: 8px 0;
         }
         
@@ -488,6 +812,26 @@
             position: relative;
         }
 
+        /* 展开全文按钮 */
+        .read-more-btn {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 8px 16px;
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            color: #374151;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .read-more-btn:hover {
+            background: #e5e7eb;
+            border-color: #10a37f;
+            color: #10a37f;
+        }
+        
         .input-box {
             display: flex;
             gap: 8px;
@@ -761,6 +1105,299 @@
             }
         }
         
+        /* ========== 立即实施：骨架屏和加载状态 ========== */
+        .skeleton-message {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 0 16px;
+            animation: skeleton-pulse 1.5s ease-in-out infinite;
+        }
+
+        .skeleton-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            flex-shrink: 0;
+        }
+
+        .skeleton-content {
+            flex: 1;
+        }
+
+        .skeleton-line {
+            height: 16px;
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .skeleton-line.short {
+            width: 60%;
+        }
+
+        @keyframes skeleton-pulse {
+            0% {
+                background-position: 200% 0;
+            }
+            100% {
+                background-position: -200% 0;
+            }
+        }
+
+        /* 改进的加载动画 */
+        .loading-enhanced {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+
+        .loading-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e5e7eb;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 通知提示 */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 300px;
+            animation: slideInRight 0.3s ease-out;
+            max-width: 90vw;
+        }
+
+        .notification.error {
+            border-left: 4px solid #ef4444;
+        }
+
+        .notification.success {
+            border-left: 4px solid #10a37f;
+        }
+
+        .notification.warning {
+            border-left: 4px solid #f59e0b;
+        }
+
+        .notification.info {
+            border-left: 4px solid #3b82f6;
+        }
+
+        .notification-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .notification-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+            color: #1f2937;
+        }
+
+        .notification-message {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .notification-close {
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            color: #9ca3af;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .notification-close:hover {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* ========== 移动端响应式优化 ========== */
+        @media (max-width: 1024px) {
+            .builder-panel {
+                width: 100%;
+                height: 100vh;
+                position: fixed;
+                top: 0;
+                left: 0;
+                z-index: 2000;
+            }
+            
+            .builder-content {
+                flex-direction: column;
+            }
+            
+            .builder-sidebar {
+                width: 100%;
+                max-height: 40vh;
+                border-right: none;
+                border-bottom: 1px solid #e5e5e5;
+            }
+            
+            .builder-canvas-container {
+                flex: 1;
+                overflow: auto;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .notification {
+                top: 10px;
+                right: 10px;
+                left: 10px;
+                min-width: auto;
+            }
+            
+            .header-actions {
+                gap: 4px;
+            }
+            
+            .icon-btn {
+                width: 28px;
+                height: 28px;
+                font-size: 14px;
+            }
+            
+            .message-content {
+                font-size: 14px;
+            }
+            
+            .input-box {
+                padding: 8px 10px;
+                font-size: 16px; /* 防止iOS自动缩放 */
+            }
+            
+            .builder-toolbar {
+                flex-wrap: wrap;
+                gap: 4px;
+            }
+            
+            .toolbar-btn {
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+        }
+
+        @media (hover: none) {
+            .node-item {
+                touch-action: pan-x pan-y;
+            }
+            
+            .icon-btn:active {
+                background: #e0e0e0;
+            }
+        }
+
+        /* ========== 可访问性优化 ========== */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border-width: 0;
+        }
+
+        .node-item:focus,
+        .icon-btn:focus,
+        .toolbar-btn:focus {
+            outline: 2px solid #667eea;
+            outline-offset: 2px;
+        }
+
+        /* 键盘导航提示 */
+        .keyboard-hint {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-top: 4px;
+        }
+
+        /* ========== 虚拟滚动容器 ========== */
+        .virtual-scroll-container {
+            position: relative;
+            overflow-y: auto;
+            will-change: scroll-position;
+        }
+
+        .virtual-scroll-content {
+            position: relative;
+        }
+
+        /* ========== 撤销/重做按钮 ========== */
+        .history-controls {
+            display: flex;
+            gap: 4px;
+            margin-left: auto;
+        }
+
+        .history-btn {
+            padding: 4px 8px;
+            background: #f3f4f6;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .history-btn:hover:not(:disabled) {
+            background: #e5e7eb;
+        }
+
+        .history-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
         /* Agent构建器样式 */
         .builder-panel {
             position: fixed;
@@ -813,8 +1450,23 @@
         .builder-canvas {
             flex: 1;
             position: relative;
-            background: #fafafa;
-            overflow: auto;
+            background: 
+                linear-gradient(90deg, #f0f0f0 1px, transparent 1px),
+                linear-gradient(#f0f0f0 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-color: #fafafa;
+            overflow: hidden;
+            cursor: grab;
+            user-select: none;
+        }
+        
+        .builder-canvas:active {
+            cursor: grabbing;
+        }
+        
+        .builder-canvas.panning {
+            cursor: grabbing;
+            user-select: none;
         }
         
         .node-palette {
@@ -1120,8 +1772,8 @@
         /* 画布控制 */
         .canvas-controls {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
+            bottom: 16px;
+            right: 16px;
             display: flex;
             flex-direction: column;
             gap: 8px;
@@ -1129,23 +1781,53 @@
         }
         
         .canvas-control-btn {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
             background: white;
-            border: 1px solid #d1d5db;
+            border: 1px solid #e5e5e5;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 18px;
             transition: all 0.2s;
+            user-select: none;
         }
         
         .canvas-control-btn:hover {
-            background: #f3f4f6;
-            transform: scale(1.1);
+            background: #f9fafb;
+            border-color: #10a37f;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .canvas-control-btn:active {
+            transform: translateY(0);
+        }
+        
+        /* 缩放指示器 */
+        .zoom-indicator {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #374151;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 99;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .zoom-indicator.show {
+            opacity: 1;
         }
         
         /* 提示信息 */
@@ -1163,6 +1845,32 @@
         .builder-hint.hidden {
             display: none;
         }
+        
+        /* 画布使用提示 */
+        .canvas-usage-hint {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            background: rgba(16, 163, 127, 0.1);
+            border: 1px solid rgba(16, 163, 127, 0.3);
+            border-radius: 8px;
+            font-size: 12px;
+            color: #10a37f;
+            pointer-events: none;
+            z-index: 98;
+            opacity: 0.8;
+            white-space: nowrap;
+        }
+        
+        .canvas-usage-hint code {
+            background: rgba(16, 163, 127, 0.15);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 11px;
+        }
     </style>
 </head>
 <body>
@@ -1176,7 +1884,16 @@
                 </div>
             </div>
             <div class="header-actions">
+                <div class="mode-switch-container" title="切换单/多智能体模式">
+                    <span class="mode-switch-label">模式:</span>
+                    <label class="mode-switch">
+                        <input type="checkbox" id="multiAgentToggle" onchange="toggleMultiAgentMode()">
+                        <span class="mode-slider"></span>
+                    </label>
+                    <span class="mode-indicator" id="modeIndicator">单智能体</span>
+                </div>
                 <button class="icon-btn" onclick="window.open('knowledge_base.html', '_blank')" title="知识库管理">📁</button>
+                <button class="icon-btn" onclick="window.open('prompt_management.html', '_blank')" title="Prompt模板管理">📝</button>
                 <button class="icon-btn" onclick="openHistory()" title="对话历史">📚</button>
                 <button class="icon-btn" onclick="openSettings()" title="会话设置">⚙️</button>
                 <button class="icon-btn" onclick="toggleBuilder()" title="Agent构建器">🛠️</button>
@@ -1310,6 +2027,26 @@
                     <span>🔍</span> 重置
                 </div>
                 <div style="flex: 1;"></div>
+                <div class="history-controls">
+                    <button 
+                        class="history-btn" 
+                        id="undoBtn" 
+                        onclick="undoBuilder()"
+                        aria-label="撤销"
+                        title="撤销 (Ctrl+Z)"
+                    >
+                        ↶ 撤销
+                    </button>
+                    <button 
+                        class="history-btn" 
+                        id="redoBtn" 
+                        onclick="redoBuilder()"
+                        aria-label="重做"
+                        title="重做 (Ctrl+Y)"
+                    >
+                        ↷ 重做
+                    </button>
+                </div>
                 <div style="font-size: 12px; color: #6b7280;">
                     提示：拖拽节点移动 | 双击节点连接 | 右键删除 | Delete键删除选中节点
                 </div>
@@ -1340,17 +2077,27 @@
                     </div>
                 </div>
                 <div class="builder-canvas" id="builderCanvas">
-                    <div class="builder-hint" id="builderHint">
-                        <div style="font-size: 24px; margin-bottom: 8px;">🎨</div>
-                        <div>从左侧拖拽节点到画布</div>
-                        <div style="font-size: 12px; margin-top: 4px; color: #9ca3af;">或点击节点类型快速添加</div>
+                    <!-- 画布内容层（会被缩放和平移） -->
+                    <div id="canvasContentLayer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; will-change: transform;">
+                        <div class="builder-hint" id="builderHint">
+                            <div style="font-size: 24px; margin-bottom: 8px;">🎨</div>
+                            <div>从左侧拖拽节点到画布</div>
+                            <div style="font-size: 12px; margin-top: 4px; color: #9ca3af;">或点击节点类型快速添加</div>
+                        </div>
+                        <svg id="connectionSvg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                        </svg>
                     </div>
-                    <svg id="connectionSvg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
-                    </svg>
+                    <!-- 固定层（不会被缩放） -->
+                    <div class="canvas-usage-hint" id="canvasUsageHint">
+                        💡 拖拽画布：<code>空格+拖动</code> 或 <code>Shift+拖动</code> 或 <code>中键拖动</code> | 缩放：<code>滚轮</code>
+                    </div>
                     <div class="canvas-controls">
+                        <div class="canvas-control-btn" onclick="zoomIn()" title="放大 (滚轮向上)">🔍+</div>
+                        <div class="canvas-control-btn" onclick="zoomOut()" title="缩小 (滚轮向下)">🔍-</div>
+                        <div class="canvas-control-btn" onclick="resetCanvasView()" title="重置视图">⟲</div>
                         <div class="canvas-control-btn" onclick="centerCanvas()" title="居中画布">🎯</div>
-                        <div class="canvas-control-btn" onclick="fitToScreen()" title="适应屏幕">📐</div>
                     </div>
+                    <div class="zoom-indicator" id="zoomIndicator">100%</div>
                 </div>
                 <div class="config-panel" id="configPanel">
                     <div class="config-title">节点配置</div>
@@ -1368,6 +2115,430 @@
     </div>
 
     <script>
+        // ========== 画布管理器 ==========
+        class CanvasManager {
+            constructor() {
+                this.scale = 1;
+                this.offsetX = 0;
+                this.offsetY = 0;
+                this.isDragging = false;
+                this.lastX = 0;
+                this.lastY = 0;
+                this.canvas = null;
+                this.contentLayer = null;
+            }
+            
+            init() {
+                this.canvas = document.getElementById('builderCanvas');
+                this.contentLayer = document.getElementById('canvasContentLayer');
+                
+                if (!this.canvas || !this.contentLayer) {
+                    console.warn('画布元素未找到');
+                    return;
+                }
+                
+                console.log('✅ 画布管理器初始化成功');
+                
+                // 鼠标滚轮缩放
+                this.canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                    const oldScale = this.scale;
+                    this.scale = Math.max(0.3, Math.min(3, this.scale * delta));
+                    
+                    // 以鼠标位置为中心缩放
+                    const rect = this.canvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+                    
+                    this.offsetX = mouseX - (mouseX - this.offsetX) * (this.scale / oldScale);
+                    this.offsetY = mouseY - (mouseY - this.offsetY) * (this.scale / oldScale);
+                    
+                    this.updateTransform();
+                    console.log(`🔍 缩放: ${this.scale.toFixed(2)}x`);
+                }, { passive: false });
+                
+                // 画布拖拽（中键、Shift+左键、空格+左键）
+                let spacePressed = false;
+                
+                // 监听空格键
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                        spacePressed = true;
+                        this.canvas.style.cursor = 'grab';
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        spacePressed = false;
+                        if (!this.isDragging) {
+                            this.canvas.style.cursor = 'grab';
+                        }
+                    }
+                });
+                
+                this.canvas.addEventListener('mousedown', (e) => {
+                    // 中键、Shift+左键、空格+左键都可以拖拽
+                    const canPan = e.button === 1 || (e.button === 0 && (e.shiftKey || spacePressed));
+                    
+                    if (canPan) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.isDragging = true;
+                        this.lastX = e.clientX;
+                        this.lastY = e.clientY;
+                        this.canvas.classList.add('panning');
+                        console.log('🖐️ 开始拖拽画布');
+                    }
+                }, true);  // 使用捕获阶段
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (this.isDragging) {
+                        e.preventDefault();
+                        const dx = e.clientX - this.lastX;
+                        const dy = e.clientY - this.lastY;
+                        this.offsetX += dx;
+                        this.offsetY += dy;
+                        this.lastX = e.clientX;
+                        this.lastY = e.clientY;
+                        this.updateTransform();
+                    }
+                });
+                
+                const stopDragging = () => {
+                    if (this.isDragging) {
+                        this.isDragging = false;
+                        this.canvas.classList.remove('panning');
+                        console.log('🖐️ 停止拖拽');
+                    }
+                };
+                
+                document.addEventListener('mouseup', stopDragging);
+            }
+            
+            updateTransform() {
+                if (!this.contentLayer) return;
+                // 使用 requestAnimationFrame 优化性能
+                if (this.rafId) {
+                    cancelAnimationFrame(this.rafId);
+                }
+                this.rafId = requestAnimationFrame(() => {
+                    this.contentLayer.style.transform = 
+                        `translate(${this.offsetX}px, ${this.offsetY}px) scale(${this.scale})`;
+                    this.showZoomIndicator();
+                });
+            }
+            
+            showZoomIndicator() {
+                const indicator = document.getElementById('zoomIndicator');
+                if (!indicator) return;
+                
+                indicator.textContent = `${Math.round(this.scale * 100)}%`;
+                indicator.classList.add('show');
+                
+                // 2秒后自动隐藏
+                clearTimeout(this.hideIndicatorTimeout);
+                this.hideIndicatorTimeout = setTimeout(() => {
+                    indicator.classList.remove('show');
+                }, 2000);
+            }
+            
+            zoomIn() {
+                const oldScale = this.scale;
+                this.scale = Math.min(3, this.scale * 1.2);
+                
+                // 以画布中心为缩放中心
+                const rect = this.canvas.getBoundingClientRect();
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                
+                this.offsetX = centerX - (centerX - this.offsetX) * (this.scale / oldScale);
+                this.offsetY = centerY - (centerY - this.offsetY) * (this.scale / oldScale);
+                
+                this.updateTransform();
+                console.log(`🔍+ 放大: ${this.scale.toFixed(2)}x`);
+            }
+            
+            zoomOut() {
+                const oldScale = this.scale;
+                this.scale = Math.max(0.3, this.scale * 0.8);
+                
+                // 以画布中心为缩放中心
+                const rect = this.canvas.getBoundingClientRect();
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                
+                this.offsetX = centerX - (centerX - this.offsetX) * (this.scale / oldScale);
+                this.offsetY = centerY - (centerY - this.offsetY) * (this.scale / oldScale);
+                
+                this.updateTransform();
+                console.log(`🔍- 缩小: ${this.scale.toFixed(2)}x`);
+            }
+            
+            resetView() {
+                this.scale = 1;
+                this.offsetX = 0;
+                this.offsetY = 0;
+                this.updateTransform();
+                console.log('⟲ 重置视图');
+            }
+        }
+        
+        // 全局画布管理器实例
+        let canvasManager = null;
+        
+        // ========== 状态管理器 ==========
+        class StateManager {
+            constructor() {
+                this.state = {
+                    nodes: [],
+                    edges: [],
+                    selectedNode: null,
+                    zoom: 1,
+                    offset: { x: 0, y: 0 }
+                };
+                this.history = [];
+                this.historyIndex = -1;
+                this.maxHistorySize = 50;
+                this.listeners = [];
+            }
+            
+            setState(updates) {
+                const prevState = JSON.parse(JSON.stringify(this.state));
+                this.state = { ...this.state, ...updates };
+                this.notify();
+                
+                // 保存历史记录
+                if (updates.nodes !== undefined || updates.edges !== undefined) {
+                    this.saveToHistory();
+                }
+            }
+            
+            saveToHistory() {
+                // 移除当前位置之后的历史
+                this.history = this.history.slice(0, this.historyIndex + 1);
+                
+                // 添加新状态
+                this.history.push({
+                    nodes: JSON.parse(JSON.stringify(this.state.nodes)),
+                    edges: JSON.parse(JSON.stringify(this.state.edges)),
+                    timestamp: Date.now()
+                });
+                
+                // 限制历史记录大小
+                if (this.history.length > this.maxHistorySize) {
+                    this.history.shift();
+                } else {
+                    this.historyIndex++;
+                }
+            }
+            
+            undo() {
+                if (this.historyIndex > 0) {
+                    this.historyIndex--;
+                    const state = this.history[this.historyIndex];
+                    this.state.nodes = JSON.parse(JSON.stringify(state.nodes));
+                    this.state.edges = JSON.parse(JSON.stringify(state.edges));
+                    this.notify();
+                    return true;
+                }
+                return false;
+            }
+            
+            redo() {
+                if (this.historyIndex < this.history.length - 1) {
+                    this.historyIndex++;
+                    const state = this.history[this.historyIndex];
+                    this.state.nodes = JSON.parse(JSON.stringify(state.nodes));
+                    this.state.edges = JSON.parse(JSON.stringify(state.edges));
+                    this.notify();
+                    return true;
+                }
+                return false;
+            }
+            
+            canUndo() {
+                return this.historyIndex > 0;
+            }
+            
+            canRedo() {
+                return this.historyIndex < this.history.length - 1;
+            }
+            
+            subscribe(listener) {
+                this.listeners.push(listener);
+                return () => {
+                    this.listeners = this.listeners.filter(l => l !== listener);
+                };
+            }
+            
+            notify() {
+                this.listeners.forEach(listener => listener(this.state));
+            }
+        }
+
+        // 创建全局状态管理器
+        const stateManager = new StateManager();
+
+        // ========== 通知系统 ==========
+        class NotificationManager {
+            constructor() {
+                this.container = null;
+                this.init();
+            }
+            
+            init() {
+                this.container = document.createElement('div');
+                this.container.id = 'notificationContainer';
+                this.container.style.cssText = 'position: fixed; top: 0; right: 0; z-index: 10000; pointer-events: none;';
+                document.body.appendChild(this.container);
+            }
+            
+            show(message, type = 'info', duration = 3000) {
+                const notification = document.createElement('div');
+                notification.className = `notification ${type}`;
+                notification.style.pointerEvents = 'auto';
+                
+                const icons = {
+                    error: '❌',
+                    success: '✅',
+                    warning: '⚠️',
+                    info: 'ℹ️'
+                };
+                
+                const titles = {
+                    error: '错误',
+                    success: '成功',
+                    warning: '警告',
+                    info: '提示'
+                };
+                
+                notification.innerHTML = `
+                    <div class="notification-icon">${icons[type] || icons.info}</div>
+                    <div class="notification-content">
+                        <div class="notification-title">${titles[type] || titles.info}</div>
+                        <div class="notification-message">${message}</div>
+                    </div>
+                    <button class="notification-close" aria-label="关闭">×</button>
+                `;
+                
+                const closeBtn = notification.querySelector('.notification-close');
+                const close = () => {
+                    notification.style.animation = 'slideInRight 0.3s ease-out reverse';
+                    setTimeout(() => notification.remove(), 300);
+                };
+                
+                closeBtn.onclick = close;
+                
+                this.container.appendChild(notification);
+                
+                if (duration > 0) {
+                    setTimeout(close, duration);
+                }
+                
+                return notification;
+            }
+        }
+
+        const notificationManager = new NotificationManager();
+
+        // ========== 全局错误处理 ==========
+        window.addEventListener('error', (event) => {
+            console.error('全局错误:', event.error);
+            notificationManager.show(
+                `发生错误: ${event.error?.message || '未知错误'}`,
+                'error',
+                5000
+            );
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('未处理的Promise拒绝:', event.reason);
+            notificationManager.show(
+                `请求失败: ${event.reason?.message || '网络错误'}`,
+                'error',
+                5000
+            );
+        });
+
+        // ========== 工具函数 ==========
+        const utils = {
+            // 防抖
+            debounce(func, wait) {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => {
+                        clearTimeout(timeout);
+                        func(...args);
+                    };
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                };
+            },
+            
+            // 节流
+            throttle(func, limit) {
+                let inThrottle;
+                return function(...args) {
+                    if (!inThrottle) {
+                        func.apply(this, args);
+                        inThrottle = true;
+                        setTimeout(() => inThrottle = false, limit);
+                    }
+                };
+            },
+            
+            // 转义HTML
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            },
+            
+            // 检测移动设备
+            isMobile() {
+                return window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            },
+            
+            // 格式化错误消息
+            formatError(error) {
+                if (error instanceof TypeError) {
+                    return '类型错误，请检查代码';
+                } else if (error.message && error.message.includes('fetch')) {
+                    return '网络连接失败，请检查网络设置';
+                } else if (error.message && error.message.includes('404')) {
+                    return '请求的资源不存在';
+                } else if (error.message && error.message.includes('500')) {
+                    return '服务器内部错误，请稍后重试';
+                }
+                return error.message || '未知错误';
+            }
+        };
+
+        // ========== 骨架屏生成器 ==========
+        function createSkeletonMessage() {
+            return `
+                <div class="skeleton-message">
+                    <div class="skeleton-avatar"></div>
+                    <div class="skeleton-content">
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line"></div>
+                        <div class="skeleton-line short"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function createLoadingMessage() {
+            return `
+                <div class="loading-enhanced">
+                    <div class="loading-spinner"></div>
+                    <span>AI正在思考中...</span>
+                </div>
+            `;
+        }
+
         const API_BASE = 'http://127.0.0.1:8000';
         let nodeCount = 0;
         let toolCount = 0;
@@ -1375,6 +2546,8 @@
         let isSendingMessage = false;
         let attachedFiles = [];
         let isTimelineOpen = false;
+        let currentSessionId = null; // 当前会话ID
+        let isMultiAgentMode = false; // 是否使用多智能体模式
         
         // Agent构建器状态
         let builderNodes = [];
@@ -1421,6 +2594,27 @@
                 tertiaryColor: '#e5e5e5'
             }
         });
+
+        // 生成唯一的会话ID
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+        }
+
+        // 获取当前会话ID（如果没有则创建新的）
+        function getCurrentSessionId() {
+            if (!currentSessionId) {
+                currentSessionId = generateSessionId();
+                console.log('🆕 创建新会话:', currentSessionId);
+            }
+            return currentSessionId;
+        }
+
+        // 开始新会话
+        function startNewSession() {
+            currentSessionId = generateSessionId();
+            console.log('🔄 开始新会话:', currentSessionId);
+            return currentSessionId;
+        }
 
         function useExample(text) {
             document.getElementById('messageInput').value = text;
@@ -1490,7 +2684,7 @@
                     <div class="message-role">你</div>
                     <div class="message-time">${time}</div>
                 </div>
-                <div class="message-content">${escapeHtml(content)}</div>
+                <div class="message-content">${utils.escapeHtml(content)}</div>
             `;
             container.appendChild(messageDiv);
             container.scrollTop = container.scrollHeight;
@@ -1508,16 +2702,12 @@
             messageDiv.id = 'currentAgentMessage';
             messageDiv.innerHTML = `
                 <div class="message-header">
-                    <div class="avatar">🤖</div>
+                    <div class="avatar" aria-label="AI助手">🤖</div>
                     <div class="message-role">LangGraph Agent</div>
                     <div class="message-time">${time}</div>
                 </div>
                 <div class="message-content">
-                    <div class="loading">
-                        <div class="loading-dot"></div>
-                        <div class="loading-dot"></div>
-                        <div class="loading-dot"></div>
-                    </div>
+                    ${createLoadingMessage()}
                 </div>
             `;
             container.appendChild(messageDiv);
@@ -1525,6 +2715,56 @@
             return messageDiv;
         }
 
+        // 自动折叠超过1000字的报告
+        function addReadMoreButton(contentDiv) {
+            const textLength = contentDiv.textContent.length;
+            if (textLength > 1000) {
+                const fullHTML = contentDiv.innerHTML;
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = fullHTML;
+                
+                // 截取前800字符的文本内容
+                let charCount = 0;
+                let truncatedHTML = '';
+                const walker = document.createTreeWalker(tempDiv, NodeFilter.SHOW_TEXT);
+                let node;
+                
+                while (node = walker.nextNode()) {
+                    const remaining = 800 - charCount;
+                    if (remaining <= 0) break;
+                    
+                    if (node.textContent.length <= remaining) {
+                        charCount += node.textContent.length;
+                    } else {
+                        node.textContent = node.textContent.substring(0, remaining) + '...';
+                        charCount = 800;
+                        break;
+                    }
+                }
+                
+                truncatedHTML = tempDiv.innerHTML;
+                
+                // 创建展开按钮
+                const readMoreBtn = document.createElement('button');
+                readMoreBtn.textContent = '展开全文 ▼';
+                readMoreBtn.className = 'read-more-btn';
+                readMoreBtn.onclick = function() {
+                    contentDiv.innerHTML = fullHTML;
+                    // 重新应用代码高亮
+                    if (typeof hljs !== 'undefined') {
+                        contentDiv.querySelectorAll('pre code').forEach(block => {
+                            try {
+                                hljs.highlightElement(block);
+                            } catch (e) {}
+                        });
+                    }
+                };
+                
+                contentDiv.innerHTML = truncatedHTML;
+                contentDiv.appendChild(readMoreBtn);
+            }
+        }
+        
         function updateAgentMessage(content) {
             const messageDiv = document.getElementById('currentAgentMessage');
             if (messageDiv) {
@@ -1537,11 +2777,28 @@
                     contentDiv.textContent = content;
                 }
                 
-                // 2. 代码高亮（如果 hljs 可用）
+                // 2. 代码高亮（如果 hljs 可用）- 增强版
                 if (typeof hljs !== 'undefined') {
                     contentDiv.querySelectorAll('pre code').forEach((block) => {
                         try {
+                            // 尝试自动检测语言
+                            if (!block.className.includes('language-')) {
+                                // 如果没有指定语言，尝试自动检测
+                                const text = block.textContent || block.innerText;
+                                if (text.includes('def ') || text.includes('import ') || text.includes('print(') || text.includes('=') && text.includes(':')) {
+                                    block.className = 'language-python';
+                                } else if (text.includes('function') || text.includes('const ') || text.includes('let ')) {
+                                    block.className = 'language-javascript';
+                                } else if (text.includes('public ') || text.includes('class ') && text.includes('{')) {
+                                    block.className = 'language-java';
+                                }
+                            }
+                            
+                            // 高亮代码
                             hljs.highlightElement(block);
+                            
+                            // 添加特殊标记以增强渲染
+                            block.classList.add('enhanced-highlight');
                         } catch (e) {
                             console.warn('代码高亮失败:', e);
                         }
@@ -1656,7 +2913,7 @@
             if (nodeDiv) {
                 const thoughtBox = document.createElement('div');
                 thoughtBox.className = 'thought-box';
-                thoughtBox.innerHTML = `💭 ${escapeHtml(thought)}`;
+                thoughtBox.innerHTML = `💭 ${utils.escapeHtml(thought)}`;
                 nodeDiv.appendChild(thoughtBox);
             }
         }
@@ -1666,7 +2923,7 @@
             if (nodeDiv) {
                 const obsBox = document.createElement('div');
                 obsBox.className = 'observation-box';
-                obsBox.innerHTML = `👁️ ${escapeHtml(observation)}`;
+                obsBox.innerHTML = `👁️ ${utils.escapeHtml(observation)}`;
                 nodeDiv.appendChild(obsBox);
             }
         }
@@ -1677,8 +2934,8 @@
                 const toolBox = document.createElement('div');
                 toolBox.className = 'tool-call-box';
                 toolBox.innerHTML = `
-                    <div style="font-weight: 600; margin-bottom: 6px;">🔧 ${escapeHtml(toolName)}</div>
-                    <div style="font-size: 12px; color: #666;">${escapeHtml(output.substring(0, 200))}${output.length > 200 ? '...' : ''}</div>
+                    <div style="font-weight: 600; margin-bottom: 6px;">🔧 ${utils.escapeHtml(toolName)}</div>
+                    <div style="font-size: 12px; color: #666;">${utils.escapeHtml(output.substring(0, 200))}${output.length > 200 ? '...' : ''}</div>
                 `;
                 nodeDiv.appendChild(toolBox);
                 toolCount++;
@@ -1706,7 +2963,10 @@
             const input = document.getElementById('messageInput');
             const message = input.value.trim();
             
-            if (!message && attachedFiles.length === 0) return;
+            if (!message && attachedFiles.length === 0) {
+                notificationManager.show('请输入消息或添加文件', 'warning');
+                return;
+            }
 
             // 标记开始发送消息
             isSendingMessage = true;
@@ -1729,13 +2989,14 @@
             addUserMessage(displayMessage);
             input.value = '';
 
-            // 创建 Agent 消息占位符
+            // 创建 Agent 消息占位符（使用骨架屏）
             const agentMessageDiv = createAgentMessage();
 
             // 禁用发送按钮
             const sendBtn = document.getElementById('sendBtn');
             sendBtn.disabled = true;
             sendBtn.innerHTML = '⏳';
+            sendBtn.setAttribute('aria-label', '发送中，请稍候');
 
             try {
                 let response;
@@ -1748,10 +3009,8 @@
                     formData.append('use_tools', document.getElementById('useTools').checked);
                     formData.append('session_id', getCurrentSessionId());
                     
-                    // 添加所有文件
-                    attachedFiles.forEach((file, index) => {
+                    attachedFiles.forEach((file) => {
                         formData.append('files', file);
-                        console.log(`📎 添加文件 ${index + 1}: ${file.name} (${file.size} bytes)`);
                     });
                     
                     const uploadUrl = `${API_BASE}/chat/agent/stream-with-files`;
@@ -1769,16 +3028,20 @@
                         body: formData,
                     });
                     
-                    console.log('📨 响应状态:', response.status, response.statusText);
-                    
                     if (!response.ok) {
                         const errorText = await response.text();
-                        console.error('❌ 服务器错误:', errorText);
                         throw new Error(`服务器错误: ${response.status} ${errorText}`);
                     }
                 } else {
                     // 无附件，使用 JSON
-                    response = await fetch(`${API_BASE}/chat/agent/stream`, {
+                    // 根据模式选择不同的API端点
+                    const apiEndpoint = isMultiAgentMode 
+                        ? `${API_BASE}/chat/multi-agent/stream` 
+                        : `${API_BASE}/chat/agent/stream`;
+                    
+                    console.log(`🚀 使用 ${isMultiAgentMode ? '多智能体' : '单智能体'} API: ${apiEndpoint}`);
+                    
+                    response = await fetch(apiEndpoint, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -1788,16 +3051,19 @@
                             use_knowledge_base: document.getElementById('useKB').checked,
                             use_tools: document.getElementById('useTools').checked,
                             session_id: getCurrentSessionId(),
+                            execution_mode: 'sequential', // 多智能体执行模式: sequential 或 parallel
                         }),
                     });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
                 }
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '';
                 let eventCount = 0;
-
-                console.log('📡 开始接收流式数据...');
 
                 while (true) {
                     const {done, value} = await reader.read();
@@ -1838,12 +3104,25 @@
 
             } catch (error) {
                 console.error('发送失败:', error);
-                updateAgentMessage(`❌ 抱歉，发生了错误：${error.message}\n\n请检查：\n1. 后端服务是否正常运行\n2. API Key 是否配置正确\n3. 网络连接是否正常`);
+                const errorMsg = utils.formatError(error);
+                updateAgentMessage(`❌ **错误**\n\n${errorMsg}\n\n**建议检查：**\n1. 后端服务是否正常运行\n2. API Key 是否配置正确\n3. 网络连接是否正常`);
+                notificationManager.show(errorMsg, 'error', 5000);
             } finally {
                 // 完成消息处理
                 finalizeAgentMessage();
+                
+                // 添加长报告折叠功能
+                const currentMsg = document.getElementById('currentAgentMessage');
+                if (currentMsg) {
+                    const contentDiv = currentMsg.querySelector('.message-content');
+                    if (contentDiv) {
+                        addReadMoreButton(contentDiv);
+                    }
+                }
+                
                 sendBtn.disabled = false;
                 sendBtn.innerHTML = '↑';
+                sendBtn.setAttribute('aria-label', '发送消息');
                 completeCurrentNode();
                 isSendingMessage = false;
                 console.log('✅ 消息处理完成');
@@ -1873,6 +3152,32 @@
                     }
                     break;
 
+                case 'orchestrator_plan':
+                    // 多智能体专属：显示协调器规划
+                    if (data.plan) {
+                        addTimelineNode('orchestrator', 'completed');
+                        addObservation('orchestrator', `📋 任务规划完成\n${data.plan}`);
+                    }
+                    break;
+
+                case 'agent_execution':
+                    // 多智能体专属：显示智能体执行
+                    completeCurrentNode();
+                    addTimelineNode(data.agent || 'unknown_agent', 'completed');
+                    
+                    if (data.data && data.data.thoughts) {
+                        data.data.thoughts.forEach(thought => {
+                            addThought(data.agent, thought);
+                        });
+                    }
+                    
+                    if (data.data && data.data.observations) {
+                        data.data.observations.forEach(obs => {
+                            addObservation(data.agent, obs);
+                        });
+                    }
+                    break;
+                
                 case 'agent_node':
                     completeCurrentNode();
                     addTimelineNode(data.node, data.status);
@@ -1926,10 +3231,44 @@
             }
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+        // escapeHtml已移至utils对象中
+        
+        // 打开对话历史
+        function openHistory() {
+            // 方式1: 跳转到对话历史页面
+            window.open('conversation_history.html', '_blank');
+            
+            // 方式2: 如果需要在当前页面显示，可以使用模态框（暂未实现）
+            // showModal('对话历史', historyContent);
+        }
+        
+        // 打开会话设置
+        function openSettings() {
+            // 获取当前会话ID
+            const sessionId = getCurrentSessionId();
+            
+            // 跳转到设置页面，并传递会话ID
+            window.open(`conversation_settings.html?session_id=${sessionId}`, '_blank');
+            
+            console.log('🔧 打开会话设置，会话ID:', sessionId);
+        }
+        
+        // 切换多智能体模式
+        function toggleMultiAgentMode() {
+            isMultiAgentMode = document.getElementById('multiAgentToggle').checked;
+            const modeIndicator = document.getElementById('modeIndicator');
+            
+            if (isMultiAgentMode) {
+                modeIndicator.textContent = '多智能体🤖🤖🤖';
+                modeIndicator.classList.add('multi-agent');
+                addSystemMessage('✨ 已切换到多智能体模式！将由多个专家智能体协作处理您的问题。');
+            } else {
+                modeIndicator.textContent = '单智能体';
+                modeIndicator.classList.remove('multi-agent');
+                addSystemMessage('✨ 已切换到单智能体模式。');
+            }
+            
+            console.log(`模式切换: ${isMultiAgentMode ? '多智能体' : '单智能体'}`);
         }
         
         function clearChat() {
@@ -1970,13 +3309,31 @@
                 document.getElementById('timelineContent').innerHTML = '<p style="color: #9ca3af; text-align: center; padding: 40px 20px; font-size: 13px;">等待任务开始...</p>';
                 document.getElementById('statsBar').style.display = 'none';
                 
-                // 重置计数器
+                // 重置计数器和会话
                 nodeCount = 0;
                 toolCount = 0;
                 currentThreadId = null;
+                attachedFiles = []; // 清空附件
                 
-                console.log('✅ 对话已清空');
+                // 开始新会话
+                startNewSession();
+                
+                // 清空附件显示
+                renderAttachedFiles();
+                
+                console.log('✅ 对话已清空，已创建新会话');
             }
+        }
+        
+        // 添加系统消息
+        function addSystemMessage(message) {
+            const container = document.getElementById('messagesContainer');
+            const systemMsg = document.createElement('div');
+            systemMsg.className = 'system-message';
+            systemMsg.style.cssText = 'text-align: center; padding: 8px; color: #666; font-size: 13px; background: #f0f9ff; border-radius: 8px; margin: 8px 0;';
+            systemMsg.textContent = message;
+            container.appendChild(systemMsg);
+            container.scrollTop = container.scrollHeight;
         }
         
         function exportChat() {
@@ -2072,7 +3429,9 @@
             };
             
             builderNodes.push(node);
+            stateManager.setState({ nodes: builderNodes, edges: builderEdges });
             renderNode(node);
+            updateHistoryButtons();
         }
         
         function addToolNode(toolId, toolName) {
@@ -2095,7 +3454,9 @@
             };
             
             builderNodes.push(node);
+            stateManager.setState({ nodes: builderNodes, edges: builderEdges });
             renderNode(node);
+            updateHistoryButtons();
         }
         
         function getDefaultNodeData(type) {
@@ -2114,7 +3475,7 @@
         }
         
         function renderNode(node) {
-            const canvas = document.getElementById('builderCanvas');
+            const contentLayer = document.getElementById('canvasContentLayer') || document.getElementById('builderCanvas');
             
             // 如果节点已存在，先删除
             const existing = document.getElementById(node.id);
@@ -2208,7 +3569,7 @@
             // 确保拖拽结束后移除dragging类
             const originalStyle = nodeDiv.style.transform;
             
-            canvas.appendChild(nodeDiv);
+            contentLayer.appendChild(nodeDiv);
             
             // 隐藏提示
             const hint = document.getElementById('builderHint');
@@ -2318,6 +3679,8 @@
             const node = builderNodes.find(n => n.id === nodeId);
             if (node) {
                 node.data[key] = value;
+                stateManager.setState({ nodes: builderNodes, edges: builderEdges });
+                updateHistoryButtons();
             }
         }
         
@@ -2496,7 +3859,9 @@
         function deleteEdge(edgeIndex) {
             if (confirm('确定要删除这条连线吗？')) {
                 builderEdges.splice(edgeIndex, 1);
+                stateManager.setState({ nodes: builderNodes, edges: builderEdges });
                 updateConnections();
+                updateHistoryButtons();
             }
         }
         
@@ -2526,7 +3891,9 @@
                     '<div style="color: #9ca3af; font-size: 13px;">选择一个节点进行配置</div>';
             }
             
+            stateManager.setState({ nodes: builderNodes, edges: builderEdges });
             updateConnections();
+            updateHistoryButtons();
             
             // 如果画布为空，显示提示
             if (builderNodes.length === 0) {
@@ -2535,6 +3902,41 @@
                     hint.classList.remove('hidden');
                 }
             }
+        }
+        
+        // ========== 撤销/重做功能 ==========
+        function undoBuilder() {
+            if (stateManager.undo()) {
+                // 重新渲染所有节点
+                const canvas = document.getElementById('builderCanvas');
+                canvas.querySelectorAll('.node-item').forEach(n => n.remove());
+                builderNodes = stateManager.state.nodes;
+                builderEdges = stateManager.state.edges;
+                builderNodes.forEach(node => renderNode(node));
+                updateConnections();
+                updateHistoryButtons();
+                notificationManager.show('已撤销', 'success', 1500);
+            }
+        }
+        
+        function redoBuilder() {
+            if (stateManager.redo()) {
+                const canvas = document.getElementById('builderCanvas');
+                canvas.querySelectorAll('.node-item').forEach(n => n.remove());
+                builderNodes = stateManager.state.nodes;
+                builderEdges = stateManager.state.edges;
+                builderNodes.forEach(node => renderNode(node));
+                updateConnections();
+                updateHistoryButtons();
+                notificationManager.show('已重做', 'success', 1500);
+            }
+        }
+        
+        function updateHistoryButtons() {
+            const undoBtn = document.getElementById('undoBtn');
+            const redoBtn = document.getElementById('redoBtn');
+            if (undoBtn) undoBtn.disabled = !stateManager.canUndo();
+            if (redoBtn) redoBtn.disabled = !stateManager.canRedo();
         }
         
         function deleteSelectedNode() {
@@ -2691,6 +4093,25 @@
             canvas.style.transformOrigin = 'top left';
         }
         
+        // 画布缩放控制函数
+        function zoomIn() {
+            if (canvasManager) {
+                canvasManager.zoomIn();
+            }
+        }
+        
+        function zoomOut() {
+            if (canvasManager) {
+                canvasManager.zoomOut();
+            }
+        }
+        
+        function resetCanvasView() {
+            if (canvasManager) {
+                canvasManager.resetView();
+            }
+        }
+        
         function centerCanvas() {
             if (builderNodes.length === 0) return;
             
@@ -2784,7 +4205,9 @@
                         );
                         if (!exists) {
                             builderEdges.push({ source: connectingFromPort, target: targetNodeId });
+                            stateManager.setState({ nodes: builderNodes, edges: builderEdges });
                             updateConnections();
+                            updateHistoryButtons();
                         }
                     }
                 }
@@ -2823,7 +4246,9 @@
                         );
                         if (!exists) {
                             builderEdges.push({ source: connectionSource, target: nodeId });
+                            stateManager.setState({ nodes: builderNodes, edges: builderEdges });
                             updateConnections();
+                            updateHistoryButtons();
                         }
                         connectionSource = null;
                     } else {
@@ -3060,7 +4485,9 @@
                 builderEdges.push({ source: conditionNode.id, target: synthNode.id }); // 条件分支
                 builderEdges.push({ source: noteNode.id, target: synthNode.id });
                 
+                stateManager.setState({ nodes: builderNodes, edges: builderEdges });
                 updateConnections();
+                updateHistoryButtons();
                 alert('✅ 已加载"天气助手"示例！\n\n流程：规划 → 天气查询 → 条件判断 → [写笔记/跳过] → 合成回复\n\n提示：双击节点创建连接，点击节点配置参数');
                 
             } else if (exampleType === 'search') {
@@ -3093,43 +4520,10 @@
                 builderEdges.push({ source: searchNode.id, target: llmNode.id });
                 builderEdges.push({ source: llmNode.id, target: synthNode.id });
                 
+                stateManager.setState({ nodes: builderNodes, edges: builderEdges });
                 updateConnections();
+                updateHistoryButtons();
                 alert('✅ 已加载"搜索总结"示例！\n\n流程：规划 → 网络搜索 → LLM总结 → 合成回复\n\n提示：双击节点创建连接，点击节点配置参数');
-            }
-        }
-
-        // 获取当前会话ID
-        function getCurrentSessionId() {
-            // 先从 URL 参数获取
-            const urlParams = new URLSearchParams(window.location.search);
-            let sessionId = urlParams.get('session_id');
-            
-            // 如果没有，从 localStorage 获取
-            if (!sessionId) {
-                sessionId = localStorage.getItem('currentSessionId');
-            }
-            
-            // 如果还是没有，生成新的
-            if (!sessionId) {
-                sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem('currentSessionId', sessionId);
-            }
-            
-            return sessionId;
-        }
-
-        // 打开历史记录
-        function openHistory() {
-            window.location.href = 'conversation_history.html';
-        }
-
-        // 打开设置
-        function openSettings() {
-            const sessionId = getCurrentSessionId();
-            if (sessionId) {
-                window.location.href = `conversation_settings.html?session_id=${sessionId}`;
-            } else {
-                alert('当前没有活动的会话');
             }
         }
 
@@ -3174,7 +4568,7 @@
             }
         }
 
-        // 事件监听器设置
+        // ========== 事件监听器设置和初始化 ==========
         document.addEventListener('DOMContentLoaded', function() {
             // 检查登录状态
             const userInfo = localStorage.getItem('userInfo');
@@ -3195,17 +4589,29 @@
                 getCurrentSessionId();
             }
             
+            // 初始化画布管理器
+            canvasManager = new CanvasManager();
+            canvasManager.init();
+            
+            // 订阅状态变化
+            stateManager.subscribe((state) => {
+                builderNodes = state.nodes;
+                builderEdges = state.edges;
+            });
+            
+            // 初始化历史按钮状态
+            updateHistoryButtons();
+            
             // 发送按钮点击事件
             document.getElementById('sendBtn').addEventListener('click', function(e) {
                 e.preventDefault();
                 sendMessage();
             });
 
-            // 回车发送（Shift+Enter 换行）
+            // 回车发送（Shift+Enter 换行）- 已在键盘快捷键中处理，这里保留兼容
             document.getElementById('messageInput').addEventListener('keydown', function(e) {
                 if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
+                    // 让全局键盘快捷键处理，避免重复
                 }
             });
             
@@ -3224,6 +4630,56 @@
                 e.preventDefault();
                 return false;
             });
+            
+            // 检查网络状态
+            window.addEventListener('online', () => {
+                notificationManager.show('网络连接已恢复', 'success');
+            });
+            
+            window.addEventListener('offline', () => {
+                notificationManager.show('网络连接已断开', 'warning', 0);
+            });
+            
+            console.log('✅ 前端优化模块已加载');
+        });
+        
+        // ========== 键盘快捷键 ==========
+        document.addEventListener('keydown', (e) => {
+            // Ctrl/Cmd + Z: 撤销
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                if (document.getElementById('builderPanel').classList.contains('open')) {
+                    undoBuilder();
+                }
+            }
+            
+            // Ctrl/Cmd + Y 或 Shift + Z: 重做
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+                e.preventDefault();
+                if (document.getElementById('builderPanel').classList.contains('open')) {
+                    redoBuilder();
+                }
+            }
+            
+            // Escape: 关闭面板/取消选择
+            if (e.key === 'Escape') {
+                if (document.getElementById('builderPanel').classList.contains('open')) {
+                    closeContextMenu();
+                    if (selectedNodeId) {
+                        selectedNodeId = null;
+                        document.getElementById('configContent').innerHTML = 
+                            '<div style="color: #9ca3af; font-size: 13px;">选择一个节点进行配置</div>';
+                    }
+                }
+            }
+            
+            // Enter: 发送消息（焦点在输入框时）
+            if (e.key === 'Enter' && !e.shiftKey && document.activeElement.id === 'messageInput') {
+                e.preventDefault();
+                if (!isSendingMessage) {
+                    sendMessage();
+                }
+            }
         });
     </script>
 </body>

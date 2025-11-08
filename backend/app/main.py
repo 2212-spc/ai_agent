@@ -42,6 +42,7 @@ from .graph_agent import run_agent, stream_agent
 from .file_processor import FileProcessor, chunk_text
 from .rag_service import ingest_text_chunk
 from .agent_builder import execute_custom_agent, stream_custom_agent
+from .agent_roles import list_available_agents
 from .memory_service import (
     retrieve_relevant_memories,
     format_memories_for_context,
@@ -51,6 +52,7 @@ from .database import (
     AgentConfig,
     ConversationHistory,
     LongTermMemory,
+    PromptTemplate,
     get_agent_config_by_id,
     list_agent_configs,
     get_conversation_history,
@@ -62,6 +64,13 @@ from .database import (
     delete_conversation_message,
     get_session_config,
     create_or_update_session_config,
+    get_prompt_template_by_id,
+    get_active_prompt_for_agent,
+    list_prompt_templates,
+    create_prompt_template,
+    update_prompt_template,
+    activate_prompt_template,
+    delete_prompt_template,
 )
 
 
@@ -220,6 +229,47 @@ class AgentConfigResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+# ==================== Prompt模板相关的请求和响应模型 ====================
+
+class PromptTemplateResponse(BaseModel):
+    """Prompt模板响应模型"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str
+    name: str
+    agent_id: str
+    content: str
+    description: Optional[str]
+    is_default: bool
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class PromptTemplateCreateRequest(BaseModel):
+    """创建Prompt模板的请求模型"""
+    name: str
+    agent_id: str
+    content: str
+    description: Optional[str] = None
+
+
+class PromptTemplateUpdateRequest(BaseModel):
+    """更新Prompt模板的请求模型"""
+    name: Optional[str] = None
+    content: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class PromptGenerateRequest(BaseModel):
+    """Prompt生成请求"""
+    agent_id: str = Field(..., description="智能体ID")
+    user_requirement: str = Field(..., description="用户需求描述（自然语言）")
+    reference_style: Optional[str] = Field(None, description="参考风格（如：简洁、详细、专业等）")
+    output_format: Optional[str] = Field(None, description="期望的输出格式（如：JSON、Markdown、纯文本等）")
 
 
 class AgentExecuteRequest(BaseModel):
@@ -1176,6 +1226,12 @@ async def list_agent_configs_endpoint(
     ]
 
 
+@app.get("/agents/list")
+async def list_agents_endpoint() -> List[Dict[str, Any]]:
+    """获取所有可用的智能体列表（角色定义）"""
+    return list_available_agents()
+
+
 @app.get("/agents/{agent_id}", response_model=AgentConfigResponse)
 async def get_agent_config(
     agent_id: str,
@@ -1195,6 +1251,628 @@ async def get_agent_config(
         "created_at": agent.created_at,
         "updated_at": agent.updated_at,
     })
+
+
+# ==================== Prompt模板管理API ====================
+
+@app.get("/prompts", response_model=List[PromptTemplateResponse])
+async def list_prompt_templates_endpoint(
+    agent_id: Optional[str] = None,
+    include_inactive: bool = False,
+    session: Session = Depends(get_db_session),
+) -> List[PromptTemplateResponse]:
+    """列出所有Prompt模板（可按智能体筛选）"""
+    templates = list_prompt_templates(
+        session, 
+        agent_id=agent_id, 
+        include_inactive=include_inactive
+    )
+    return [
+        PromptTemplateResponse.model_validate({
+            "id": template.id,
+            "name": template.name,
+            "agent_id": template.agent_id,
+            "content": template.content,
+            "description": template.description,
+            "is_default": template.is_default,
+            "is_active": template.is_active,
+            "created_at": template.created_at,
+            "updated_at": template.updated_at,
+        })
+        for template in templates
+    ]
+
+
+@app.get("/prompts/{template_id}", response_model=PromptTemplateResponse)
+async def get_prompt_template(
+    template_id: str,
+    session: Session = Depends(get_db_session),
+) -> PromptTemplateResponse:
+    """获取单个Prompt模板"""
+    template = get_prompt_template_by_id(session, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Prompt模板不存在")
+    
+    return PromptTemplateResponse.model_validate({
+        "id": template.id,
+        "name": template.name,
+        "agent_id": template.agent_id,
+        "content": template.content,
+        "description": template.description,
+        "is_default": template.is_default,
+        "is_active": template.is_active,
+        "created_at": template.created_at,
+        "updated_at": template.updated_at,
+    })
+
+
+@app.get("/prompts/agent/{agent_id}", response_model=List[PromptTemplateResponse])
+async def get_prompts_by_agent(
+    agent_id: str,
+    include_inactive: bool = False,
+    session: Session = Depends(get_db_session),
+) -> List[PromptTemplateResponse]:
+    """获取指定智能体的所有Prompt模板"""
+    templates = list_prompt_templates(
+        session, 
+        agent_id=agent_id, 
+        include_inactive=include_inactive
+    )
+    return [
+        PromptTemplateResponse.model_validate({
+            "id": template.id,
+            "name": template.name,
+            "agent_id": template.agent_id,
+            "content": template.content,
+            "description": template.description,
+            "is_default": template.is_default,
+            "is_active": template.is_active,
+            "created_at": template.created_at,
+            "updated_at": template.updated_at,
+        })
+        for template in templates
+    ]
+
+
+@app.get("/prompts/agent/{agent_id}/active", response_model=PromptTemplateResponse)
+async def get_active_prompt_for_agent_endpoint(
+    agent_id: str,
+    session: Session = Depends(get_db_session),
+) -> PromptTemplateResponse:
+    """获取指定智能体当前激活的Prompt模板"""
+    template = get_active_prompt_for_agent(session, agent_id)
+    if template is None:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"智能体 {agent_id} 没有激活的Prompt模板"
+        )
+    
+    return PromptTemplateResponse.model_validate({
+        "id": template.id,
+        "name": template.name,
+        "agent_id": template.agent_id,
+        "content": template.content,
+        "description": template.description,
+        "is_default": template.is_default,
+        "is_active": template.is_active,
+        "created_at": template.created_at,
+        "updated_at": template.updated_at,
+    })
+
+
+@app.post("/prompts", response_model=PromptTemplateResponse)
+async def create_prompt_template_endpoint(
+    payload: PromptTemplateCreateRequest,
+    session: Session = Depends(get_db_session),
+) -> PromptTemplateResponse:
+    """创建新的Prompt模板"""
+    template = create_prompt_template(
+        session=session,
+        name=payload.name,
+        agent_id=payload.agent_id,
+        content=payload.content,
+        description=payload.description,
+        is_default=False,  # 用户创建的模板不是默认模板
+    )
+    
+    return PromptTemplateResponse.model_validate({
+        "id": template.id,
+        "name": template.name,
+        "agent_id": template.agent_id,
+        "content": template.content,
+        "description": template.description,
+        "is_default": template.is_default,
+        "is_active": template.is_active,
+        "created_at": template.created_at,
+        "updated_at": template.updated_at,
+    })
+
+
+@app.put("/prompts/{template_id}", response_model=PromptTemplateResponse)
+async def update_prompt_template_endpoint(
+    template_id: str,
+    payload: PromptTemplateUpdateRequest,
+    session: Session = Depends(get_db_session),
+) -> PromptTemplateResponse:
+    """更新Prompt模板"""
+    template = update_prompt_template(
+        session=session,
+        template_id=template_id,
+        name=payload.name,
+        content=payload.content,
+        description=payload.description,
+        is_active=payload.is_active,
+    )
+    
+    if template is None:
+        raise HTTPException(status_code=404, detail="Prompt模板不存在")
+    
+    return PromptTemplateResponse.model_validate({
+        "id": template.id,
+        "name": template.name,
+        "agent_id": template.agent_id,
+        "content": template.content,
+        "description": template.description,
+        "is_default": template.is_default,
+        "is_active": template.is_active,
+        "created_at": template.created_at,
+        "updated_at": template.updated_at,
+    })
+
+
+@app.post("/prompts/{template_id}/activate", response_model=PromptTemplateResponse)
+async def activate_prompt_template_endpoint(
+    template_id: str,
+    session: Session = Depends(get_db_session),
+) -> PromptTemplateResponse:
+    """激活指定的Prompt模板（同时将同一智能体的其他模板设为非激活）"""
+    template = get_prompt_template_by_id(session, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Prompt模板不存在")
+    
+    activated_template = activate_prompt_template(
+        session=session,
+        template_id=template_id,
+        agent_id=template.agent_id,
+    )
+    
+    if activated_template is None:
+        raise HTTPException(
+            status_code=400, 
+            detail="无法激活该模板，请检查模板ID和智能体ID是否匹配"
+        )
+    
+    return PromptTemplateResponse.model_validate({
+        "id": activated_template.id,
+        "name": activated_template.name,
+        "agent_id": activated_template.agent_id,
+        "content": activated_template.content,
+        "description": activated_template.description,
+        "is_default": activated_template.is_default,
+        "is_active": activated_template.is_active,
+        "created_at": activated_template.created_at,
+        "updated_at": activated_template.updated_at,
+    })
+
+
+@app.post("/prompts/{template_id}/deactivate", response_model=PromptTemplateResponse)
+async def deactivate_prompt_template_endpoint(
+    template_id: str,
+    session: Session = Depends(get_db_session),
+) -> PromptTemplateResponse:
+    """停用指定的Prompt模板"""
+    from .database import list_prompt_templates
+    
+    template = get_prompt_template_by_id(session, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Prompt模板不存在")
+    
+    # 检查是否还有其他激活的模板（除了当前要停用的）
+    all_templates = list_prompt_templates(
+        session, 
+        agent_id=template.agent_id, 
+        include_inactive=True
+    )
+    other_active_templates = [
+        t for t in all_templates 
+        if t.id != template_id and t.is_active
+    ]
+    
+    # 如果停用默认模板，需要确保至少有一个其他激活的模板
+    if template.is_default:
+        if not other_active_templates:
+            raise HTTPException(
+                status_code=400,
+                detail="不能停用默认模板：该智能体没有其他激活的模板。请先激活另一个模板，或创建新模板后再停用默认模板。"
+            )
+    
+    # 使用更新接口停用
+    updated_template = update_prompt_template(
+        session=session,
+        template_id=template_id,
+        name=None,
+        content=None,
+        description=None,
+        is_active=False,
+    )
+    
+    if updated_template is None:
+        raise HTTPException(status_code=404, detail="Prompt模板不存在")
+    
+    return PromptTemplateResponse.model_validate({
+        "id": updated_template.id,
+        "name": updated_template.name,
+        "agent_id": updated_template.agent_id,
+        "content": updated_template.content,
+        "description": updated_template.description,
+        "is_default": updated_template.is_default,
+        "is_active": updated_template.is_active,
+        "created_at": updated_template.created_at,
+        "updated_at": updated_template.updated_at,
+    })
+
+
+@app.delete("/prompts/{template_id}")
+async def delete_prompt_template_endpoint(
+    template_id: str,
+    session: Session = Depends(get_db_session),
+) -> Dict[str, str]:
+    """删除Prompt模板（不能删除默认模板）"""
+    success = delete_prompt_template(session, template_id)
+    if not success:
+        template = get_prompt_template_by_id(session, template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="Prompt模板不存在")
+        if template.is_default:
+            raise HTTPException(
+                status_code=400, 
+                detail="不能删除默认模板，默认模板是系统预设的"
+            )
+        raise HTTPException(status_code=400, detail="删除失败")
+    
+    return {"status": "deleted", "message": "Prompt模板已删除"}
+
+
+@app.post("/prompts/init-defaults")
+async def init_default_prompts(
+    session: Session = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """初始化默认Prompt模板（将硬编码的prompt保存到数据库作为示例）"""
+    from .agent_roles import get_default_prompts
+    from .database import list_prompt_templates
+    
+    default_prompts = get_default_prompts()
+    created_count = 0
+    skipped_count = 0
+    
+    for prompt_data in default_prompts:
+        # 检查是否已存在该智能体的默认模板
+        existing_templates = list_prompt_templates(
+            session, 
+            agent_id=prompt_data["agent_id"], 
+            include_inactive=True
+        )
+        has_default = any(t.is_default for t in existing_templates)
+        
+        if has_default:
+            skipped_count += 1
+            continue
+        
+        # 创建默认模板
+        create_prompt_template(
+            session=session,
+            name=prompt_data["name"],
+            agent_id=prompt_data["agent_id"],
+            content=prompt_data["content"],
+            description=prompt_data.get("description", "系统默认模板，作为示例参考"),
+            is_default=True,  # 标记为默认模板
+        )
+        created_count += 1
+    
+    return {
+        "status": "success",
+        "created": created_count,
+        "skipped": skipped_count,
+        "message": f"初始化完成：创建 {created_count} 个默认模板，跳过 {skipped_count} 个已存在的模板"
+    }
+
+
+def validate_prompt_template(
+    prompt: str,
+    agent_id: str,
+    available_placeholders: List[str],
+    format_requirements: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    验证prompt模板
+    
+    Args:
+        prompt: 待验证的prompt
+        agent_id: 智能体ID
+        available_placeholders: 可用的占位符列表
+        format_requirements: 格式要求
+    
+    Returns:
+        验证结果
+    """
+    import re
+    
+    issues = []
+    warnings = []
+    
+    # 1. 检查占位符
+    placeholders = re.findall(r'\{(\w+)\}', prompt)
+    if placeholders:
+        # 检查未定义的占位符
+        undefined = [p for p in placeholders if p not in available_placeholders]
+        if undefined:
+            warnings.append(f"使用了未定义的占位符: {undefined}，这些占位符可能不会被正确替换")
+    
+    # 2. 检查格式要求
+    if format_requirements:
+        required_format = format_requirements.get("required_format")
+        
+        if required_format == "JSON":
+            # 检查是否包含JSON格式要求
+            if "JSON" not in prompt.upper() and "json" not in prompt.lower():
+                issues.append("缺少JSON格式要求，分析专家/验证专家必须返回JSON格式")
+            
+            # 检查是否包含"只返回 JSON"的强调
+            if "只返回" not in prompt and "只输出" not in prompt:
+                warnings.append("建议在prompt末尾添加'只返回 JSON，不要其他解释。'的强调")
+            
+            # 检查是否包含JSON结构说明
+            required_fields = format_requirements.get("required_fields", [])
+            missing_fields = []
+            for field in required_fields[:3]:  # 只检查前3个字段作为示例
+                if field not in prompt:
+                    missing_fields.append(field)
+            
+            if missing_fields and len(missing_fields) == 3:
+                warnings.append(f"建议在prompt中明确说明JSON结构，包含字段：{', '.join(required_fields[:5])}...")
+        
+        elif required_format == "Markdown":
+            if "Markdown" not in prompt and "markdown" not in prompt.lower():
+                warnings.append("建议明确要求Markdown格式输出")
+    
+    # 3. 检查占位符格式（双花括号）
+    double_braces = re.findall(r'\{\{(\w+)\}\}', prompt)
+    if double_braces:
+        warnings.append(f"发现双花括号占位符: {double_braces}，系统会自动转换为单花括号，但建议直接使用单花括号")
+    
+    return {
+        "valid": len(issues) == 0,
+        "issues": issues,
+        "warnings": warnings,
+        "placeholders_found": list(set(placeholders)),
+        "placeholders_available": available_placeholders,
+    }
+
+
+@app.post("/prompts/generate")
+async def generate_prompt_from_requirement(
+    payload: PromptGenerateRequest,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """
+    根据用户需求自动生成Prompt模板
+    
+    用户只需用自然语言描述需求，系统会使用LLM生成结构化的prompt
+    """
+    from .graph_agent import invoke_llm
+    from .agent_roles import list_available_agents
+    
+    # 获取智能体信息
+    agents = list_available_agents()
+    agent_info = next((a for a in agents if a["id"] == payload.agent_id), None)
+    
+    if not agent_info:
+        raise HTTPException(status_code=404, detail=f"智能体 {payload.agent_id} 不存在")
+    
+    # 构建生成prompt的提示词
+    style_note = f"\n- 参考风格：{payload.reference_style}" if payload.reference_style else ""
+    format_note = f"\n- 输出格式：{payload.output_format}" if payload.output_format else ""
+    
+    # 根据智能体类型确定可用占位符和格式要求
+    agent_placeholders = {
+        "retrieval_specialist": ["user_query"],
+        "analysis_specialist": ["user_query", "task_description", "analysis_context"],
+        "summarization_specialist": ["user_query", "task_description", "full_context"],
+        "verification_specialist": ["user_query", "task_description", "final_answer"],
+    }
+    
+    format_requirements = {
+        "analysis_specialist": {
+            "required_format": "JSON",
+            "required_fields": [
+                "core_concepts", "key_facts", "key_data",
+                "technical_principles", "relationships",
+                "trends_insights", "critical_notes",
+                "analysis_summary", "confidence_score"
+            ],
+            "json_structure": """{
+  "core_concepts": [{"concept": "...", "explanation": "...", "importance": "high|medium|low"}],
+  "key_facts": [{"fact": "...", "source": "...", "confidence": "high|medium|low"}],
+  "key_data": [{"data_point": "...", "value": "...", "context": "..."}],
+  "technical_principles": [{"principle": "...", "explanation": "...", "advantages": [], "limitations": []}],
+  "relationships": [{"from": "...", "to": "...", "relationship_type": "...", "description": "..."}],
+  "trends_insights": [{"trend": "...", "evidence": "...", "implications": "..."}],
+  "critical_notes": [{"note_type": "...", "description": "..."}],
+  "analysis_summary": "...",
+  "confidence_score": 0.0-1.0
+}"""
+        },
+        "verification_specialist": {
+            "required_format": "JSON",
+            "required_fields": [
+                "accuracy_score", "completeness_score", "clarity_score",
+                "relevance_score", "overall_score", "issues", "suggestions", "verdict"
+            ],
+            "json_structure": """{
+  "accuracy_score": 0-10,
+  "completeness_score": 0-10,
+  "clarity_score": 0-10,
+  "relevance_score": 0-10,
+  "overall_score": 0-10,
+  "issues": ["..."],
+  "suggestions": ["..."],
+  "verdict": "通过" 或 "需要改进"
+}"""
+        },
+        "summarization_specialist": {
+            "required_format": "Markdown",
+            "note": "返回Markdown格式的文本报告，不需要JSON"
+        }
+    }
+    
+    available_placeholders = agent_placeholders.get(payload.agent_id, ["user_query", "task_description"])
+    format_req = format_requirements.get(payload.agent_id, {})
+    
+    # 占位符描述映射
+    placeholder_descriptions = {
+        "user_query": "用户查询内容",
+        "task_description": "当前任务描述",
+        "analysis_context": "分析上下文（检索结果、待分析内容）",
+        "full_context": "完整上下文（所有智能体的结果汇总）",
+        "final_answer": "最终答案（用于验证）",
+    }
+    
+    # 构建占位符说明
+    placeholder_help = "\n".join([
+        f"- {{{p}}} - {placeholder_descriptions.get(p, '占位符')}" 
+        for p in available_placeholders
+    ])
+    
+    # 构建格式要求说明
+    format_help = ""
+    if format_req:
+        if format_req.get("required_format") == "JSON":
+            format_help = f"""
+## 输出格式要求（重要！）
+
+**必须返回JSON格式**，结构必须包含以下字段：
+{', '.join(format_req.get('required_fields', []))}
+
+JSON结构示例：
+{format_req.get('json_structure', '')}
+
+**重要提示**：
+- 必须在prompt中明确要求："以 JSON 格式输出结果："
+- 必须在prompt末尾强调："只返回 JSON，不要其他解释。"
+- JSON字段名必须与上述结构完全匹配
+"""
+        elif format_req.get("required_format") == "Markdown":
+            format_help = """
+## 输出格式要求
+
+**返回Markdown格式的文本报告**，不需要JSON格式。
+- 使用清晰的 Markdown 格式
+- 合理的标题层级（# ## ###）
+- 结构化组织内容
+"""
+    else:
+        format_help = """
+## 输出格式要求
+
+根据智能体职责确定输出格式，确保格式清晰、结构化。
+"""
+    
+    generation_prompt = f"""你是一个专业的Prompt工程师。请根据用户的需求，为智能体生成一个高质量的Prompt模板。
+
+## 智能体信息
+- 名称：{agent_info.get('name', '未知')}
+- ID：{payload.agent_id}
+- 描述：{agent_info.get('description', '无')}
+
+## 用户需求
+{payload.user_requirement}
+{style_note}{format_note}
+
+## 可用的占位符（必须使用单花括号）
+
+{placeholder_help}
+
+**占位符使用规则**：
+1. 必须使用单花括号格式：{{variable}}，不要使用双花括号
+2. 只能使用上述列出的占位符
+3. 根据智能体类型选择合适的占位符
+4. 不要使用未列出的占位符
+
+{format_help}
+
+## 生成要求
+1. Prompt应该清晰、具体、可执行
+2. 包含明确的角色定义、任务描述、输出要求
+3. 使用上述列出的占位符以便动态替换
+4. 如果用户需求不够具体，可以适当补充合理的假设
+5. 确保Prompt符合该智能体的职责范围
+6. 保持专业但易懂的语言风格
+7. 如果智能体需要JSON格式，必须在prompt中明确要求并指定结构
+
+## 输出格式
+请直接输出生成的Prompt内容，不要包含任何解释、说明文字或代码块标记。Prompt应该可以直接使用。
+
+现在请生成Prompt："""
+
+    try:
+        # 调用LLM生成prompt
+        messages = [
+            {
+                "role": "system",
+                "content": "你是一个专业的Prompt工程师，擅长将用户需求转化为高质量的Prompt模板。你生成的Prompt应该结构清晰、指令明确、易于执行。"
+            },
+            {
+                "role": "user",
+                "content": generation_prompt
+            }
+        ]
+        
+        generated_prompt, _ = await invoke_llm(
+            messages=messages,
+            settings=settings,
+            temperature=0.7,
+        )
+        
+        # 清理生成的内容（移除可能的markdown代码块标记）
+        generated_prompt = generated_prompt.strip()
+        if generated_prompt.startswith("```"):
+            # 移除代码块标记
+            lines = generated_prompt.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines[-1].strip() == "```":
+                lines = lines[:-1]
+            generated_prompt = "\n".join(lines).strip()
+        
+        # 验证生成的prompt
+        validation_result = validate_prompt_template(
+            prompt=generated_prompt,
+            agent_id=payload.agent_id,
+            available_placeholders=available_placeholders,
+            format_requirements=format_req
+        )
+        
+        # 生成建议的模板名称和描述
+        name_suggestion = f"AI生成-{agent_info.get('name', '智能体')}"
+        description_suggestion = f"根据需求自动生成：{payload.user_requirement[:50]}{'...' if len(payload.user_requirement) > 50 else ''}"
+        
+        return {
+            "success": True,
+            "generated_prompt": generated_prompt,
+            "suggested_name": name_suggestion,
+            "suggested_description": description_suggestion,
+            "agent_id": payload.agent_id,
+            "agent_name": agent_info.get('name', '未知'),
+            "validation": validation_result,
+        }
+        
+    except Exception as e:
+        logger.error(f"生成Prompt失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"生成Prompt失败: {str(e)}"
+        )
 
 
 @app.post("/agents/{agent_id}/execute", response_model=ChatResponse)
@@ -1872,3 +2550,165 @@ async def update_session_config_api(
     )
     
     return SessionConfigModel.model_validate(config)
+
+
+# ==================== 多智能体系统 API ====================
+
+class MultiAgentChatRequest(BaseModel):
+    """多智能体对话请求"""
+    messages: List[Message]
+    use_knowledge_base: bool = Field(default=True, description="是否使用知识库")
+    use_tools: bool = Field(default=True, description="是否使用工具")
+    execution_mode: str = Field(default="sequential", description="执行模式：sequential 或 parallel")
+    session_id: Optional[str] = Field(default=None, description="会话ID")
+    user_id: Optional[str] = Field(default=None, description="用户ID")
+
+
+class MultiAgentChatResponse(BaseModel):
+    """多智能体对话响应"""
+    reply: str
+    orchestrator_plan: str
+    sub_tasks: List[Dict[str, Any]] = Field(default_factory=list)
+    agent_results: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    thoughts: List[str] = Field(default_factory=list)
+    observations: List[str] = Field(default_factory=list)
+    quality_score: float = 0.0
+    thread_id: str
+    session_id: str
+
+
+@app.post("/chat/multi-agent", response_model=MultiAgentChatResponse)
+async def chat_with_multi_agent(
+    payload: MultiAgentChatRequest,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> MultiAgentChatResponse:
+    """
+    使用多智能体系统处理对话
+    
+    特点：
+    - 多个专家智能体协作
+    - 任务自动分解
+    - 并行/串行执行
+    - 结果智能汇总
+    """
+    logger.info("🤖🤖🤖 [多智能体系统] 开始处理请求")
+    
+    # 导入多智能体模块
+    from .multi_agent import run_multi_agent
+    
+    # 获取可用工具
+    tool_records = []
+    if payload.use_tools:
+        tool_records = list_tools(session, include_inactive=False)
+    
+    # 运行多智能体系统
+    result = await run_multi_agent(
+        user_query=payload.messages[-1].content if payload.messages else "",
+        settings=settings,
+        session=session,
+        tool_records=tool_records,
+        use_knowledge_base=payload.use_knowledge_base,
+        conversation_history=[msg.model_dump() for msg in payload.messages],
+        session_id=payload.session_id,
+        user_id=payload.user_id,
+        execution_mode=payload.execution_mode,
+    )
+    
+    return MultiAgentChatResponse(
+        reply=result.get("final_answer", "未能生成答案"),
+        orchestrator_plan=result.get("orchestrator_plan", ""),
+        sub_tasks=result.get("sub_tasks", []),
+        agent_results=result.get("agent_results", {}),
+        thoughts=result.get("thoughts", []),
+        observations=result.get("observations", []),
+        quality_score=result.get("quality_score", 0.0),
+        thread_id=result.get("thread_id", ""),
+        session_id=result.get("session_id", ""),
+    )
+
+
+@app.post("/chat/multi-agent/stream")
+async def chat_with_multi_agent_stream(
+    payload: MultiAgentChatRequest,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    """
+    使用多智能体系统处理对话（流式）
+    
+    实时返回各智能体的执行过程
+    """
+    logger.info("🌊🤖🤖🤖 [多智能体系统-流式] 开始处理")
+    
+    from .multi_agent import stream_multi_agent
+    
+    tool_records = []
+    if payload.use_tools:
+        tool_records = list_tools(session, include_inactive=False)
+    
+    session_id = payload.session_id or str(uuid.uuid4())
+    
+    async def event_generator() -> AsyncGenerator[bytes, None]:
+        try:
+            yield format_sse("status", {"stage": "started", "mode": "multi_agent"})
+            
+            # 流式执行多智能体系统
+            async for event in stream_multi_agent(
+                user_query=payload.messages[-1].content if payload.messages else "",
+                settings=settings,
+                session=session,
+                tool_records=tool_records,
+                use_knowledge_base=payload.use_knowledge_base,
+                conversation_history=[msg.model_dump() for msg in payload.messages],
+                session_id=session_id,
+                user_id=payload.user_id,
+                execution_mode=payload.execution_mode,
+            ):
+                event_type = event.get("event", "unknown")
+                
+                # 协调器事件
+                if event_type == "orchestrator_plan":
+                    yield format_sse("orchestrator_plan", {
+                        "plan": event.get("data", {}).get("orchestrator_plan", ""),
+                        "timestamp": event.get("timestamp"),
+                    })
+                
+                # 智能体执行事件
+                elif event_type == "agent_execution":
+                    node_name = event.get("node", "")
+                    node_data = event.get("data", {})
+                    
+                    yield format_sse("agent_execution", {
+                        "agent": node_name,
+                        "data": node_data,
+                        "timestamp": event.get("timestamp"),
+                    })
+                    
+                    # 如果有最终答案，发送
+                    if "final_answer" in node_data and node_data["final_answer"]:
+                        yield format_sse("assistant_final", {
+                            "content": node_data["final_answer"],
+                        })
+                
+                # 完成事件
+                elif event_type == "completed":
+                    yield format_sse("completed", {
+                        "thread_id": event.get("thread_id"),
+                        "timestamp": event.get("timestamp"),
+                    })
+            
+        except Exception as e:
+            logger.error(f"多智能体系统流式执行失败: {e}", exc_info=True)
+            yield format_sse("error", {"message": str(e)})
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/multi-agent/agents")
+async def list_multi_agent_agents() -> List[Dict[str, Any]]:
+    """
+    列出所有可用的智能体
+    """
+    from .agent_roles import list_available_agents
+    return list_available_agents()
