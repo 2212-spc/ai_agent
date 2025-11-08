@@ -1958,6 +1958,24 @@ async def chat_with_multi_agent_stream(
                         yield format_sse("assistant_final", {
                             "content": node_data["final_answer"],
                         })
+                        logger.info(f"📤 多智能体模式：已发送最终答案，长度: {len(node_data['final_answer'])}")
+                        
+                        # 保存对话并提取记忆（异步进行，不阻塞流式响应）
+                        try:
+                            from .memory_service import save_conversation_and_extract_memories
+                            user_query = payload.messages[-1].content if payload.messages else ""
+                            saved_memories = await save_conversation_and_extract_memories(
+                                session=session,
+                                session_id=session_id,
+                                user_query=user_query,
+                                assistant_reply=node_data["final_answer"],
+                                settings=settings,
+                                user_id=payload.user_id,
+                            )
+                            if saved_memories:
+                                logger.info(f"💾 多智能体模式：保存了 {len(saved_memories)} 条新记忆")
+                        except Exception as e:
+                            logger.warning(f"多智能体模式：保存记忆失败: {e}")
                 
                 # 完成事件
                 elif event_type == "completed":

@@ -195,6 +195,151 @@
             overflow: hidden;
         }
 
+        /* 左侧历史记录侧边栏 */
+        .sidebar {
+            width: 260px;
+            background: #f7f7f8;
+            border-right: 1px solid #e5e5e5;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 12px 16px;
+            background: white;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #202123;
+        }
+
+        .sidebar-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .history-item {
+            padding: 10px 12px;
+            margin-bottom: 4px;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .history-item:hover {
+            border-color: #10a37f;
+            background: #f9f9f9;
+        }
+
+        .history-item.active {
+            background: #e6f4f1;
+            border-color: #10a37f;
+        }
+
+        .history-item-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: #202123;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history-item-preview {
+            font-size: 12px;
+            color: #8e8ea0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history-item-time {
+            font-size: 11px;
+            color: #8e8ea0;
+            margin-top: 4px;
+        }
+
+        .history-loading {
+            text-align: center;
+            padding: 20px;
+            color: #8e8ea0;
+            font-size: 13px;
+        }
+
+        .history-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: #8e8ea0;
+            font-size: 13px;
+        }
+
+        .new-chat-btn {
+            margin: 8px;
+            padding: 10px 16px;
+            background: #10a37f;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .new-chat-btn:hover {
+            background: #0d8f6e;
+        }
+
+        .toggle-sidebar-btn {
+            position: absolute;
+            left: 260px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 60px;
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-left: none;
+            border-radius: 0 6px 6px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #8e8ea0;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .toggle-sidebar-btn:hover {
+            background: #f7f7f8;
+        }
+
+        .sidebar.collapsed + .toggle-sidebar-btn {
+            left: 0;
+        }
+
         .chat-area {
             flex: 1;
             display: flex;
@@ -1907,6 +2052,27 @@
 
         <!-- Main Content -->
         <div class="main-content">
+            <!-- 左侧历史记录侧边栏 -->
+            <div class="sidebar" id="historySidebar">
+                <button class="new-chat-btn" onclick="startNewChat()">
+                    ➕ 新建对话
+                </button>
+                <div class="sidebar-header">
+                    <div class="sidebar-title">📚 历史记录</div>
+                    <div class="sidebar-actions">
+                        <button class="icon-btn" onclick="refreshHistoryList()" title="刷新">🔄</button>
+                    </div>
+                </div>
+                <div class="sidebar-content" id="sidebarHistoryList">
+                    <div class="history-loading">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 侧边栏切换按钮 -->
+            <button class="toggle-sidebar-btn" id="toggleSidebarBtn" onclick="toggleSidebar()">
+                ◀
+            </button>
+
             <!-- Chat Area -->
             <div class="chat-area">
                 <div class="messages-container" id="messagesContainer">
@@ -2547,6 +2713,12 @@
         let isTimelineOpen = false;
         let currentSessionId = null; // 当前会话ID
         let isMultiAgentMode = false; // 是否使用多智能体模式
+        let currentAbortController = null; // 用于取消正在进行的请求
+        let currentStreamReader = null; // 用于跟踪当前的流式响应reader
+        
+        // 会话状态管理 - 保存每个会话的状态
+        const sessionStates = new Map(); // key: sessionId, value: { html, isGenerating, timestamp }
+        let activeGeneratingSessionId = null; // 正在生成内容的会话ID
         
         // Agent构建器状态
         let builderNodes = [];
@@ -2599,11 +2771,24 @@
             return 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
         }
 
+        // 从URL获取参数
+        function getUrlParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
         // 获取当前会话ID（如果没有则创建新的）
         function getCurrentSessionId() {
             if (!currentSessionId) {
-                currentSessionId = generateSessionId();
-                console.log('🆕 创建新会话:', currentSessionId);
+                // 首先尝试从URL参数获取
+                const urlSessionId = getUrlParameter('session_id');
+                if (urlSessionId) {
+                    currentSessionId = urlSessionId;
+                    console.log('📖 加载现有会话:', currentSessionId);
+                } else {
+                    currentSessionId = generateSessionId();
+                    console.log('🆕 创建新会话:', currentSessionId);
+                }
             }
             return currentSessionId;
         }
@@ -2613,6 +2798,318 @@
             currentSessionId = generateSessionId();
             console.log('🔄 开始新会话:', currentSessionId);
             return currentSessionId;
+        }
+
+        // ========== 侧边栏历史记录功能 ==========
+        let isSidebarOpen = true;
+        let sidebarHistoryData = [];
+
+        // 切换侧边栏
+        function toggleSidebar() {
+            isSidebarOpen = !isSidebarOpen;
+            const sidebar = document.getElementById('historySidebar');
+            const toggleBtn = document.getElementById('toggleSidebarBtn');
+            
+            if (isSidebarOpen) {
+                sidebar.classList.remove('collapsed');
+                toggleBtn.innerHTML = '◀';
+                toggleBtn.title = '收起侧边栏';
+            } else {
+                sidebar.classList.add('collapsed');
+                toggleBtn.innerHTML = '▶';
+                toggleBtn.title = '展开侧边栏';
+            }
+        }
+
+        // 加载侧边栏历史记录列表
+        async function loadSidebarHistory(retryCount = 0) {
+            console.log('📚 加载侧边栏历史记录...（尝试次数:', retryCount + 1, ')');
+            const listEl = document.getElementById('sidebarHistoryList');
+            if (!listEl) {
+                console.error('❌ 找不到历史记录列表元素');
+                // 如果元素不存在且重试次数少于3次，延迟重试
+                if (retryCount < 3) {
+                    console.log('⏳ 延迟500ms后重试...');
+                    setTimeout(() => loadSidebarHistory(retryCount + 1), 500);
+                }
+                return;
+            }
+            
+            listEl.innerHTML = '<div class="history-loading">加载中...</div>';
+
+            try {
+                const userInfo = localStorage.getItem('userInfo');
+                const userId = userInfo ? JSON.parse(userInfo).user_id : null;
+
+                let url = `${API_BASE}/conversations?limit=50&offset=0`;
+                if (userId) url += `&user_id=${userId}`;
+
+                console.log('🔗 请求URL:', url);
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                    },
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ 服务器响应错误:', response.status, errorText);
+                    throw new Error(`服务器错误 ${response.status}`);
+                }
+
+                const conversations = await response.json();
+                console.log('📦 收到历史记录数据:', conversations.length, '条');
+                
+                if (!Array.isArray(conversations)) {
+                    console.error('❌ 返回数据格式错误，不是数组:', conversations);
+                    throw new Error('数据格式错误');
+                }
+                
+                sidebarHistoryData = conversations;
+                renderSidebarHistory(conversations);
+                
+                console.log(`✅ 侧边栏加载了 ${conversations.length} 条历史记录`);
+            } catch (error) {
+                console.error('❌ 加载侧边栏历史失败:', error);
+                if (listEl) {
+                    listEl.innerHTML = `<div class="history-empty">加载失败<br><small style="color: #999; font-size: 11px;">${error.message}</small></div>`;
+                }
+            }
+        }
+
+        // 渲染侧边栏历史记录
+        function renderSidebarHistory(conversations) {
+            const listEl = document.getElementById('sidebarHistoryList');
+            
+            if (!listEl) {
+                console.error('❌ 找不到历史记录列表元素');
+                return;
+            }
+
+            if (!conversations || conversations.length === 0) {
+                listEl.innerHTML = '<div class="history-empty">暂无历史记录<br>开始新对话吧！</div>';
+                return;
+            }
+
+            try {
+                const html = conversations.map(conv => {
+                    if (!conv || !conv.session_id) {
+                        console.warn('⚠️ 跳过无效的对话记录:', conv);
+                        return '';
+                    }
+                    
+                    const isActive = conv.session_id === currentSessionId;
+                    const title = escapeHtml(conv.title || '新对话');
+                    const preview = escapeHtml(conv.preview || '');
+                    const time = formatTimeAgo(conv.last_message_time);
+                    
+                    return `
+                        <div class="history-item ${isActive ? 'active' : ''}" onclick="switchToConversation('${conv.session_id}')">
+                            <div class="history-item-title">${title}</div>
+                            <div class="history-item-preview">${preview}</div>
+                            <div class="history-item-time">${time}</div>
+                        </div>
+                    `;
+                }).filter(item => item).join('');
+                
+                listEl.innerHTML = html;
+                console.log('✅ 历史记录渲染完成');
+            } catch (error) {
+                console.error('❌ 渲染历史记录失败:', error);
+                listEl.innerHTML = '<div class="history-empty">渲染失败</div>';
+            }
+        }
+
+        // 保存当前会话状态
+        function saveCurrentSessionState() {
+            if (!currentSessionId) return;
+            
+            const container = document.getElementById('messagesContainer');
+            
+            // 只保存当前正在显示的会话状态
+            // 如果当前会话正在生成，标记为生成中
+            const isCurrentGenerating = activeGeneratingSessionId === currentSessionId;
+            
+            // 保存滚动位置
+            const scrollPosition = container.scrollTop;
+            const scrollHeight = container.scrollHeight;
+            
+            sessionStates.set(currentSessionId, {
+                html: container.innerHTML,
+                isGenerating: isCurrentGenerating,
+                scrollPosition: scrollPosition,
+                scrollHeight: scrollHeight,
+                timestamp: Date.now()
+            });
+            
+            console.log('💾 已保存会话状态:', currentSessionId, '正在生成:', isCurrentGenerating, '滚动位置:', scrollPosition);
+        }
+        
+        // 恢复会话状态
+        function restoreSessionState(sessionId) {
+            const container = document.getElementById('messagesContainer');
+            const savedState = sessionStates.get(sessionId);
+            
+            if (savedState) {
+                container.innerHTML = savedState.html;
+                
+                // 恢复滚动位置（需要等DOM渲染完成）
+                setTimeout(() => {
+                    if (savedState.scrollPosition !== undefined) {
+                        container.scrollTop = savedState.scrollPosition;
+                        console.log('📜 已恢复滚动位置:', savedState.scrollPosition);
+                    }
+                }, 50);
+                
+                console.log('📂 已恢复会话状态:', sessionId, '正在生成:', savedState.isGenerating);
+                return true;
+            }
+            return false;
+        }
+        
+        // 切换到某个历史对话
+        async function switchToConversation(sessionId) {
+            const isSameSession = sessionId === currentSessionId;
+            
+            if (isSameSession) {
+                console.log('🔄 已经是当前会话');
+                return;
+            }
+            
+            console.log('🔄 切换到会话:', sessionId);
+            
+            // 保存当前会话状态
+            if (currentSessionId) {
+                saveCurrentSessionState();
+                
+                // 如果当前会话正在生成，显示提示
+                if (activeGeneratingSessionId === currentSessionId) {
+                    notificationManager.show('后台继续生成中...', 'info', 2000);
+                }
+            }
+            
+            // 更新当前会话ID
+            currentSessionId = sessionId;
+            
+            // 尝试恢复目标会话的状态
+            const restored = restoreSessionState(sessionId);
+            
+            if (!restored) {
+                // 如果没有保存的状态，从服务器加载历史消息
+                console.log('📥 从服务器加载历史消息:', sessionId);
+                const container = document.getElementById('messagesContainer');
+                container.innerHTML = '';
+                await loadHistoryMessages(sessionId);
+            } else {
+                console.log('✅ 已从缓存恢复会话状态');
+            }
+            
+            // 更新页面标题
+            const headerTitle = document.querySelector('.header-title h1');
+            if (headerTitle) {
+                headerTitle.textContent = '📖 历史对话';
+            }
+            
+            // 更新侧边栏高亮
+            renderSidebarHistory(sidebarHistoryData);
+            
+            console.log('✅ 已切换到会话:', sessionId);
+        }
+
+        // 开始新对话
+        async function startNewChat() {
+            console.log('🆕 开始新对话');
+            
+            // 保存当前会话的状态
+            if (currentSessionId) {
+                saveCurrentSessionState();
+                
+                // 如果当前会话正在生成，显示提示
+                if (activeGeneratingSessionId === currentSessionId) {
+                    notificationManager.show('后台继续生成中...', 'info', 2000);
+                }
+            }
+            
+            // 生成新会话ID
+            currentSessionId = generateSessionId();
+            
+            // 清空消息容器
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = '';
+            
+            // 重新添加欢迎消息
+            const welcomeMsg = `
+                <div class="message agent-message">
+                    <div class="message-header">
+                        <div class="avatar">🤖</div>
+                        <div class="message-role">AI Agent</div>
+                    </div>
+                    <div class="message-content">
+                        <p>你好！我是基于 LangGraph 的 AI Agent，可以帮你完成复杂任务。</p>
+                        
+                        <div class="example-prompts">
+                            <div class="example-prompt" onclick="useExample('查询北京明天的天气，如果会下雨就写个笔记提醒我带伞')">
+                                <div class="example-title">复杂任务示例</div>
+                                <div class="example-desc">查询北京明天的天气，如果会下雨就写个笔记提醒我带伞</div>
+                            </div>
+                            <div class="example-prompt" onclick="useExample('帮我搜索人工智能的最新进展，总结关键点并画个思维导图')">
+                                <div class="example-title">搜索 + 可视化</div>
+                                <div class="example-desc">帮我搜索人工智能的最新进展，总结关键点并画个思维导图</div>
+                            </div>
+                            <div class="example-prompt" onclick="useExample('查询知识库中关于MobileNet的内容，提取核心创新点')">
+                                <div class="example-title">知识库查询</div>
+                                <div class="example-desc">查询知识库中关于MobileNet的内容，提取核心创新点</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = welcomeMsg;
+            
+            // 更新页面标题
+            const headerTitle = document.querySelector('.header-title h1');
+            if (headerTitle) {
+                headerTitle.textContent = 'LangGraph Agent';
+            }
+            
+            // 更新侧边栏（取消高亮）
+            renderSidebarHistory(sidebarHistoryData);
+            
+            // 聚焦输入框
+            document.getElementById('messageInput').focus();
+            
+            console.log('✅ 新对话已开始');
+        }
+
+        // 刷新历史记录列表
+        function refreshHistoryList() {
+            loadSidebarHistory();
+            notificationManager.show('历史记录已刷新', 'success', 2000);
+        }
+
+        // 格式化时间（多久前）
+        function formatTimeAgo(timeStr) {
+            if (!timeStr) return '未知';
+            const date = new Date(timeStr);
+            const now = new Date();
+            const diff = now - date;
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            if (minutes < 1) return '刚刚';
+            if (minutes < 60) return `${minutes}分钟前`;
+            if (hours < 24) return `${hours}小时前`;
+            if (days < 7) return `${days}天前`;
+            return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         function useExample(text) {
@@ -2668,12 +3165,11 @@
             }).join('');
         }
 
-        function addUserMessage(content) {
+        function addUserMessage(content, timestamp = null) {
             const container = document.getElementById('messagesContainer');
-            const time = new Date().toLocaleTimeString('zh-CN', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
+            const time = timestamp 
+                ? new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                : new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
             
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message user-message';
@@ -2687,6 +3183,81 @@
             `;
             container.appendChild(messageDiv);
             container.scrollTop = container.scrollHeight;
+        }
+
+        function addAssistantMessage(content, timestamp = null) {
+            const container = document.getElementById('messagesContainer');
+            const time = timestamp 
+                ? new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                : new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message agent-message';
+            
+            // 使用marked渲染Markdown内容
+            const renderedContent = marked.parse(content);
+            const sanitizedContent = DOMPurify.sanitize(renderedContent);
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <div class="avatar">🤖</div>
+                    <div class="message-role">AI Agent</div>
+                    <div class="message-time">${time}</div>
+                </div>
+                <div class="message-content">${sanitizedContent}</div>
+            `;
+            
+            container.appendChild(messageDiv);
+            
+            // 代码高亮
+            messageDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // 加载历史消息
+        async function loadHistoryMessages(sessionId) {
+            console.log('📖 开始加载历史消息，会话ID:', sessionId);
+            
+            try {
+                const userInfo = localStorage.getItem('userInfo');
+                const userId = userInfo ? JSON.parse(userInfo).user_id : null;
+                
+                let url = `${API_BASE}/conversation/${sessionId}/history?limit=100`;
+                if (userId) {
+                    url += `&user_id=${userId}`;
+                }
+                
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`获取历史消息失败: ${response.status}`);
+                }
+                
+                const messages = await response.json();
+                console.log(`✅ 成功加载 ${messages.length} 条历史消息`);
+                
+                // 清空当前消息容器
+                const container = document.getElementById('messagesContainer');
+                container.innerHTML = '';
+                
+                // 按时间顺序渲染消息
+                messages.forEach(msg => {
+                    if (msg.role === 'user') {
+                        addUserMessage(msg.content, msg.created_at);
+                    } else if (msg.role === 'assistant') {
+                        addAssistantMessage(msg.content, msg.created_at);
+                    }
+                });
+                
+                console.log('✅ 历史消息渲染完成');
+                
+            } catch (error) {
+                console.error('❌ 加载历史消息失败:', error);
+                notificationManager.show('加载历史记录失败', 'error');
+            }
         }
 
         function createAgentMessage() {
@@ -2970,6 +3541,14 @@
             // 标记开始发送消息
             isSendingMessage = true;
             console.log('🚀 开始发送消息，附件数量:', attachedFiles.length);
+            
+            // 记录这次请求对应的会话ID（用于后台生成）
+            const requestSessionId = getCurrentSessionId();
+            activeGeneratingSessionId = requestSessionId;
+            console.log('📝 请求会话ID:', requestSessionId);
+
+            // 创建新的 AbortController
+            currentAbortController = new AbortController();
 
             // 重置计数器
             nodeCount = 0;
@@ -3016,6 +3595,7 @@
                     response = await fetch(uploadUrl, {
                         method: 'POST',
                         body: formData,
+                        signal: currentAbortController.signal,
                     });
                     
                     if (!response.ok) {
@@ -3043,6 +3623,7 @@
                             session_id: getCurrentSessionId(),
                             execution_mode: 'sequential', // 多智能体执行模式: sequential 或 parallel
                         }),
+                        signal: currentAbortController.signal,
                     });
                     
                     if (!response.ok) {
@@ -3051,6 +3632,7 @@
                 }
 
                 const reader = response.body.getReader();
+                currentStreamReader = reader; // 保存reader引用
                 const decoder = new TextDecoder();
                 let buffer = '';
                 let eventCount = 0;
@@ -3087,26 +3669,152 @@
 
                         if (eventType && eventData) {
                             eventCount++;
-                            handleAgentEvent(eventType, eventData);
+                            
+                            // 无论当前显示哪个会话，都处理事件并更新DOM
+                            // 如果不是当前显示的会话，需要临时切换
+                            const isCurrentSession = activeGeneratingSessionId === currentSessionId;
+                            
+                            if (!isCurrentSession && activeGeneratingSessionId) {
+                                // 后台生成：需要临时切换到生成中的会话来更新DOM
+                                const container = document.getElementById('messagesContainer');
+                                const savedHtml = container.innerHTML;  // 保存当前显示的HTML
+                                const savedScrollPos = container.scrollTop;  // 保存当前滚动位置
+                                
+                                // 恢复正在生成会话的HTML
+                                const generatingState = sessionStates.get(activeGeneratingSessionId);
+                                if (generatingState) {
+                                    container.innerHTML = generatingState.html;
+                                    // 临时恢复生成会话的滚动位置（如果有）
+                                    if (generatingState.scrollPosition !== undefined) {
+                                        container.scrollTop = generatingState.scrollPosition;
+                                    }
+                                }
+                                
+                                // 处理事件（更新DOM）
+                                handleAgentEvent(eventType, eventData);
+                                
+                                // 保存更新后的生成会话HTML和滚动位置
+                                sessionStates.set(activeGeneratingSessionId, {
+                                    html: container.innerHTML,
+                                    isGenerating: true,
+                                    scrollPosition: container.scrollTop,
+                                    scrollHeight: container.scrollHeight,
+                                    timestamp: Date.now()
+                                });
+                                
+                                // 恢复当前显示的HTML和滚动位置
+                                container.innerHTML = savedHtml;
+                                container.scrollTop = savedScrollPos;
+                                
+                                console.log('🔄 后台生成更新:', eventType);
+                            } else {
+                                // 当前会话生成：正常更新DOM
+                                handleAgentEvent(eventType, eventData);
+                                
+                                // 定期保存状态
+                                if (eventCount % 10 === 0) {
+                                    saveCurrentSessionState();
+                                }
+                            }
                         }
                     }
                 }
+                
+                // 流式响应完成，保存最终状态
+                saveCurrentSessionState();
 
             } catch (error) {
                 console.error('发送失败:', error);
-                const errorMsg = utils.formatError(error);
-                updateAgentMessage(`❌ **错误**\n\n${errorMsg}\n\n**建议检查：**\n1. 后端服务是否正常运行\n2. API Key 是否配置正确\n3. 网络连接是否正常`);
-                notificationManager.show(errorMsg, 'error', 5000);
-            } finally {
-                // 完成消息处理
-                finalizeAgentMessage();
                 
-                // 添加长报告折叠功能
-                const currentMsg = document.getElementById('currentAgentMessage');
-                if (currentMsg) {
-                    const contentDiv = currentMsg.querySelector('.message-content');
-                    if (contentDiv) {
-                        addReadMoreButton(contentDiv);
+                // 如果是用户主动取消，不显示错误
+                if (error.name === 'AbortError') {
+                    console.log('⚠️ 请求已被用户取消');
+                    updateAgentMessage('⚠️ 对话已被中断');
+                } else {
+                    const errorMsg = utils.formatError(error);
+                    updateAgentMessage(`❌ **错误**\n\n${errorMsg}\n\n**建议检查：**\n1. 后端服务是否正常运行\n2. API Key 是否配置正确\n3. 网络连接是否正常`);
+                    notificationManager.show(errorMsg, 'error', 5000);
+                }
+            } finally {
+                // 如果是后台生成，需要在后台会话的上下文中完成处理
+                if (requestSessionId && currentSessionId !== requestSessionId) {
+                    // 后台生成完成，临时切换到后台会话进行清理
+                    const container = document.getElementById('messagesContainer');
+                    const savedHtml = container.innerHTML;
+                    
+                    // 恢复后台生成会话的HTML
+                    const generatingState = sessionStates.get(requestSessionId);
+                    if (generatingState) {
+                        container.innerHTML = generatingState.html;
+                    }
+                    
+                    // 完成消息处理（移除ID，添加折叠按钮等）
+                    finalizeAgentMessage();
+                    const currentMsg = document.getElementById('currentAgentMessage');
+                    if (!currentMsg) {
+                        // ID已被移除，查找最后一条agent消息
+                        const agentMessages = container.querySelectorAll('.agent-message');
+                        const lastMsg = agentMessages[agentMessages.length - 1];
+                        if (lastMsg) {
+                            const contentDiv = lastMsg.querySelector('.message-content');
+                            if (contentDiv) {
+                                addReadMoreButton(contentDiv);
+                            }
+                        }
+                    } else {
+                        const contentDiv = currentMsg.querySelector('.message-content');
+                        if (contentDiv) {
+                            addReadMoreButton(contentDiv);
+                        }
+                    }
+                    
+                    // 保存更新后的HTML和滚动位置
+                    sessionStates.set(requestSessionId, {
+                        html: container.innerHTML,
+                        isGenerating: false,
+                        scrollPosition: container.scrollTop,
+                        scrollHeight: container.scrollHeight,
+                        timestamp: Date.now()
+                    });
+                    
+                    // 恢复当前显示的HTML
+                    container.innerHTML = savedHtml;
+                    
+                    console.log('💾 后台会话生成完成，已保存最终状态:', requestSessionId);
+                } else {
+                    // 当前会话生成完成，正常处理
+                    finalizeAgentMessage();
+                    
+                    const currentMsg = document.getElementById('currentAgentMessage');
+                    if (!currentMsg) {
+                        // ID已被移除，查找最后一条agent消息
+                        const container = document.getElementById('messagesContainer');
+                        const agentMessages = container.querySelectorAll('.agent-message');
+                        const lastMsg = agentMessages[agentMessages.length - 1];
+                        if (lastMsg) {
+                            const contentDiv = lastMsg.querySelector('.message-content');
+                            if (contentDiv) {
+                                addReadMoreButton(contentDiv);
+                            }
+                        }
+                    } else {
+                        const contentDiv = currentMsg.querySelector('.message-content');
+                        if (contentDiv) {
+                            addReadMoreButton(contentDiv);
+                        }
+                    }
+                    
+                    // 保存最终状态
+                    if (requestSessionId) {
+                        const container = document.getElementById('messagesContainer');
+                        sessionStates.set(requestSessionId, {
+                            html: container.innerHTML,
+                            isGenerating: false,
+                            scrollPosition: container.scrollTop,
+                            scrollHeight: container.scrollHeight,
+                            timestamp: Date.now()
+                        });
+                        console.log('💾 当前会话生成完成，已保存状态:', requestSessionId);
                     }
                 }
                 
@@ -3115,7 +3823,24 @@
                 sendBtn.setAttribute('aria-label', '发送消息');
                 completeCurrentNode();
                 isSendingMessage = false;
-                console.log('✅ 消息处理完成');
+                activeGeneratingSessionId = null;  // 清除正在生成的会话ID
+                
+                // 清理请求相关的引用
+                currentAbortController = null;
+                currentStreamReader = null;
+                
+                console.log('✅ 消息处理完成，会话ID:', requestSessionId);
+                
+                // 如果是后台生成完成，显示通知
+                if (currentSessionId !== requestSessionId) {
+                    console.log('🎉 后台会话生成完成:', requestSessionId);
+                    notificationManager.show('后台对话已生成完成 ✓', 'success', 5000);
+                }
+                
+                // 刷新侧边栏历史记录，确保显示最新的对话
+                setTimeout(() => {
+                    loadSidebarHistory();
+                }, 1000);
                 
                 // 清空附件
                 attachedFiles = [];
@@ -3188,6 +3913,10 @@
                     completeCurrentNode();
                     if (data.content) {
                         updateAgentMessage(data.content);
+                        // 刷新侧边栏历史记录（减少延迟）
+                        setTimeout(() => {
+                            loadSidebarHistory();
+                        }, 500);
                     } else {
                         console.warn('⚠️ 最终答案内容为空');
                     }
@@ -3196,6 +3925,10 @@
                 case 'completed':
                     currentThreadId = data.thread_id;
                     console.log('✅ Agent 执行完成, Thread ID:', currentThreadId);
+                    // 再次刷新侧边栏，确保显示最新的对话
+                    setTimeout(() => {
+                        loadSidebarHistory();
+                    }, 800);
                     
                     // 更新质量评分（如果有）
                     if (data.quality_score !== undefined) {
@@ -4509,7 +5242,7 @@
         }
 
         // ========== 事件监听器设置和初始化 ==========
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             // 检查登录状态
             const userInfo = localStorage.getItem('userInfo');
             if (!userInfo) {
@@ -4527,6 +5260,27 @@
                 builderNodes = state.nodes;
                 builderEdges = state.edges;
             });
+            
+            // 加载侧边栏历史记录（延迟一点确保DOM完全准备好）
+            setTimeout(() => {
+                loadSidebarHistory();
+            }, 100);
+            
+            // 检查是否有 session_id 参数（从历史记录点击进来）
+            const urlSessionId = getUrlParameter('session_id');
+            if (urlSessionId) {
+                console.log('🔍 检测到URL参数中的会话ID:', urlSessionId);
+                // 获取会话ID（这会设置 currentSessionId）
+                getCurrentSessionId();
+                // 加载历史消息
+                await loadHistoryMessages(urlSessionId);
+                
+                // 更新页面标题显示正在查看历史记录
+                const headerTitle = document.querySelector('.header-title h1');
+                if (headerTitle) {
+                    headerTitle.textContent = '📖 历史对话';
+                }
+            }
             
             // 初始化历史按钮状态
             updateHistoryButtons();
