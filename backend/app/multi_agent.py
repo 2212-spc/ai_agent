@@ -395,7 +395,7 @@ def create_multi_agent_graph(
         return await analysis_specialist_node(state, settings, session)
     
     async def summarization_wrapper(state: MultiAgentState) -> Dict[str, Any]:
-        return await summarization_specialist_node(state, settings, session)
+        return await summarization_specialist_node(state, settings, session, tool_records=tool_records)
     
     async def verification_wrapper(state: MultiAgentState) -> Dict[str, Any]:
         return await verification_specialist_node(state, settings, session)

@@ -6,7 +6,7 @@
     <title>LangGraph Agent - 智能体演示</title>
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/es/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
     <style>
@@ -722,6 +722,163 @@
             margin: 16px 0;
             border: 1px solid #e5e5e5;
             overflow-x: auto;
+            cursor: zoom-in;
+            transition: all 0.3s ease;
+            max-width: 100%;
+        }
+        
+        .message-content .mermaid:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .message-content .mermaid svg {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        /* 停止按钮样式 */
+        .stop-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: #ef4444;
+            border: none;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .stop-btn:hover {
+            background: #dc2626;
+            transform: scale(1.05);
+        }
+        
+        .stop-btn:active {
+            transform: scale(0.95);
+        }
+        
+        /* 图片放大模态框 */
+        .image-modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            animation: fadeIn 0.3s;
+        }
+        
+        .image-modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .image-modal-content {
+            max-width: 95%;
+            max-height: 95%;
+            object-fit: contain;
+            animation: zoomIn 0.3s;
+        }
+        
+        .image-modal-close {
+            position: absolute;
+            top: 20px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        
+        .image-modal-close:hover {
+            color: #bbb;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes zoomIn {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        
+        /* 图表放大模态框 */
+        .mermaid-modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            overflow: auto;
+        }
+        
+        .mermaid-modal.active {
+            display: block;
+        }
+        
+        .mermaid-modal-content {
+            margin: 2% auto;
+            padding: 40px;
+            max-width: 95%;
+            max-height: 90vh;
+            background: white;
+            border-radius: 12px;
+            position: relative;
+            overflow: auto;
+        }
+        
+        /* 确保Mermaid SVG在模态框中正确显示（矢量放大） */
+        .mermaid-modal-content .mermaid {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 400px;
+        }
+        
+        .mermaid-modal-content .mermaid svg {
+            max-width: 100%;
+            height: auto !important;
+            /* 确保SVG矢量渲染清晰 */
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            shape-rendering: geometricPrecision;
+        }
+        
+        .mermaid-modal-close {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            color: #aaa;
+            font-size: 35px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 1;
+        }
+        
+        .mermaid-modal-close:hover {
+            color: #000;
+        }
+        
+        .message-content img {
+            cursor: zoom-in;
+            transition: opacity 0.2s;
+        }
+        
+        .message-content img:hover {
+            opacity: 0.9;
         }
         
         /* 列表样式优化 */
@@ -2131,10 +2288,27 @@
                                 <button class="send-btn" id="sendBtn">
                                     ↑
                                 </button>
+                                <button class="stop-btn" id="stopBtn" style="display: none;" title="停止生成">
+                                    ⏹
+                                </button>
                             </div>
                         </div>
                         <input type="file" id="fileInput" multiple accept="image/*,.pdf,.doc,.docx,.txt" onchange="handleFileSelect(event)">
                     </div>
+                </div>
+            </div>
+
+            <!-- 图片放大模态框 -->
+            <div id="imageModal" class="image-modal" onclick="closeImageModal()">
+                <span class="image-modal-close">&times;</span>
+                <img class="image-modal-content" id="modalImage">
+            </div>
+
+            <!-- Mermaid图表放大模态框 -->
+            <div id="mermaidModal" class="mermaid-modal" onclick="closeMermaidModal()">
+                <div class="mermaid-modal-content" onclick="event.stopPropagation()">
+                    <span class="mermaid-modal-close" onclick="closeMermaidModal()">&times;</span>
+                    <div id="modalMermaidContent"></div>
                 </div>
             </div>
 
@@ -3210,10 +3384,79 @@
             
             container.appendChild(messageDiv);
             
-            // 代码高亮
-            messageDiv.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
+            const contentDiv = messageDiv.querySelector('.message-content');
+            
+            // 1. 代码高亮
+            if (typeof hljs !== 'undefined') {
+                messageDiv.querySelectorAll('pre code').forEach((block) => {
+                    try {
+                        hljs.highlightElement(block);
+                    } catch (e) {
+                        console.warn('代码高亮失败:', e);
+                    }
+                });
+            }
+            
+            // 2. 渲染 Mermaid 图表
+            if (typeof mermaid !== 'undefined') {
+                const mermaidBlocks = contentDiv.querySelectorAll('code.language-mermaid');
+                mermaidBlocks.forEach((block, index) => {
+                    const mermaidCode = block.textContent;
+                    const mermaidDiv = document.createElement('div');
+                    mermaidDiv.className = 'mermaid';
+                    // 为每个 Mermaid 图表生成唯一 ID
+                    mermaidDiv.id = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                    mermaidDiv.textContent = mermaidCode;
+                    mermaidDiv.setAttribute('data-mermaid-code', mermaidCode);
+                    mermaidDiv.style.cursor = 'zoom-in';
+                    block.parentElement.replaceWith(mermaidDiv);
+                });
+                
+                // 异步渲染所有 mermaid 图表
+                const mermaidDivs = contentDiv.querySelectorAll('.mermaid');
+                if (mermaidDivs.length > 0) {
+                    console.log(`📊 开始渲染 ${mermaidDivs.length} 个 Mermaid 图表（历史消息）`);
+                    // 使用 Promise.all 确保所有渲染完成
+                    Promise.all(Array.from(mermaidDivs).map(async (mermaidDiv, idx) => {
+                        try {
+                            const mermaidCode = mermaidDiv.getAttribute('data-mermaid-code');
+                            console.log(`  渲染图表 ${idx + 1}:`, mermaidDiv.id);
+                            await mermaid.run({
+                                nodes: [mermaidDiv],
+                                suppressErrors: false
+                            });
+                            
+                            // 渲染完成后添加点击事件
+                            if (mermaidCode) {
+                                mermaidDiv.onclick = function(e) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    window.openMermaidModal(mermaidCode);
+                                };
+                                console.log(`  ✅ 图表 ${idx + 1} 渲染成功`);
+                            }
+                        } catch (err) {
+                            console.error(`  ❌ 图表 ${idx + 1} 渲染失败:`, err);
+                        }
+                    })).then(() => {
+                        console.log('✅ 所有历史消息中的思维导图已渲染完成');
+                    }).catch(err => {
+                        console.error('❌ Mermaid批量渲染失败:', err);
+                    });
+                }
+            }
+            
+            // 3. 为图片添加点击放大功能
+            contentDiv.querySelectorAll('img').forEach(img => {
+                if (!img.onclick) {
+                    img.onclick = function() {
+                        window.openImageModal(img.src);
+                    };
+                }
             });
+            
+            // 4. 添加复制按钮
+            addCopyButtons(contentDiv);
             
             container.scrollTop = container.scrollHeight;
         }
@@ -3231,21 +3474,28 @@
                     url += `&user_id=${userId}`;
                 }
                 
+                console.log('🔗 请求URL:', url);
                 const response = await fetch(url);
                 
                 if (!response.ok) {
-                    throw new Error(`获取历史消息失败: ${response.status}`);
+                    console.error('❌ HTTP错误:', response.status, response.statusText);
+                    throw new Error(`获取历史消息失败: ${response.status} ${response.statusText}`);
                 }
                 
                 const messages = await response.json();
-                console.log(`✅ 成功加载 ${messages.length} 条历史消息`);
+                console.log(`✅ 成功加载 ${messages.length} 条历史消息`, messages);
                 
                 // 清空当前消息容器
                 const container = document.getElementById('messagesContainer');
+                if (!container) {
+                    console.error('❌ 找不到消息容器元素');
+                    throw new Error('找不到消息容器');
+                }
                 container.innerHTML = '';
                 
                 // 按时间顺序渲染消息
-                messages.forEach(msg => {
+                messages.forEach((msg, index) => {
+                    console.log(`📝 渲染消息 ${index + 1}/${messages.length}:`, msg.role, msg.content.substring(0, 50));
                     if (msg.role === 'user') {
                         addUserMessage(msg.content, msg.created_at);
                     } else if (msg.role === 'assistant') {
@@ -3253,11 +3503,15 @@
                     }
                 });
                 
+                // 等待一小段时间确保所有 Mermaid 渲染完成
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
                 console.log('✅ 历史消息渲染完成');
                 
             } catch (error) {
                 console.error('❌ 加载历史消息失败:', error);
-                notificationManager.show('加载历史记录失败', 'error');
+                console.error('错误详情:', error.stack);
+                notificationManager.show(`加载历史记录失败: ${error.message}`, 'error');
             }
         }
 
@@ -3366,7 +3620,13 @@
                             }
                             
                             // 高亮代码
-                            hljs.highlightElement(block);
+                            if (typeof hljs !== 'undefined') {
+                                try {
+                                    hljs.highlightElement(block);
+                                } catch (e) {
+                                    console.warn('代码高亮失败:', e);
+                                }
+                            }
                             
                             // 添加特殊标记以增强渲染
                             block.classList.add('enhanced-highlight');
@@ -3378,27 +3638,66 @@
                 
                 // 3. 渲染 Mermaid 图表（如果 mermaid 可用）
                 if (typeof mermaid !== 'undefined') {
-                    contentDiv.querySelectorAll('code.language-mermaid').forEach((block) => {
+                    const mermaidBlocks = contentDiv.querySelectorAll('code.language-mermaid');
+                    mermaidBlocks.forEach((block, index) => {
                         const mermaidCode = block.textContent;
                         const mermaidDiv = document.createElement('div');
                         mermaidDiv.className = 'mermaid';
+                        // 为每个 Mermaid 图表生成唯一 ID
+                        mermaidDiv.id = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                         mermaidDiv.textContent = mermaidCode;
-                        // 替换整个 pre 标签
+                        mermaidDiv.setAttribute('data-mermaid-code', mermaidCode);
+                        mermaidDiv.style.cursor = 'zoom-in';
                         block.parentElement.replaceWith(mermaidDiv);
                     });
                     
                     // 异步渲染所有 mermaid 图表
-                    if (contentDiv.querySelector('.mermaid')) {
-                        mermaid.run({
-                            querySelector: '.mermaid'
-                        }).catch(err => console.error('Mermaid render error:', err));
+                    const mermaidDivs = contentDiv.querySelectorAll('.mermaid');
+                    if (mermaidDivs.length > 0) {
+                        console.log(`📊 开始渲染 ${mermaidDivs.length} 个 Mermaid 图表（实时消息）`);
+                        // 使用 Promise.all 确保所有渲染完成
+                        Promise.all(Array.from(mermaidDivs).map(async (mermaidDiv, idx) => {
+                            try {
+                                const mermaidCode = mermaidDiv.getAttribute('data-mermaid-code');
+                                console.log(`  渲染图表 ${idx + 1}:`, mermaidDiv.id);
+                                await mermaid.run({
+                                    nodes: [mermaidDiv],
+                                    suppressErrors: false
+                                });
+                                
+                                // 渲染完成后添加点击事件
+                                if (mermaidCode) {
+                                    mermaidDiv.onclick = function(e) {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        window.openMermaidModal(mermaidCode);
+                                    };
+                                    console.log(`  ✅ 图表 ${idx + 1} 渲染成功并绑定点击事件`);
+                                }
+                            } catch (err) {
+                                console.error(`  ❌ 图表 ${idx + 1} 渲染失败:`, err);
+                            }
+                        })).then(() => {
+                            console.log('✅ 所有实时消息中的思维导图已渲染完成');
+                        }).catch(err => {
+                            console.error('❌ Mermaid批量渲染失败:', err);
+                        });
                     }
                 }
                 
-                // 4. 添加复制按钮
+                // 4. 为所有图片添加点击放大功能
+                contentDiv.querySelectorAll('img').forEach(img => {
+                    if (!img.onclick) {
+                        img.onclick = function() {
+                            window.openImageModal(img.src);
+                        };
+                    }
+                });
+                
+                // 5. 添加复制按钮
                 addCopyButtons(contentDiv);
                 
-                // 5. 滚动到底部
+                // 6. 滚动到底部
                 const container = document.getElementById('messagesContainer');
                 if (container) {
                     container.scrollTop = container.scrollHeight;
@@ -3571,11 +3870,11 @@
             // 创建 Agent 消息占位符（使用骨架屏）
             const agentMessageDiv = createAgentMessage();
 
-            // 禁用发送按钮
+            // 禁用发送按钮，显示停止按钮
             const sendBtn = document.getElementById('sendBtn');
-            sendBtn.disabled = true;
-            sendBtn.innerHTML = '⏳';
-            sendBtn.setAttribute('aria-label', '发送中，请稍候');
+            const stopBtn = document.getElementById('stopBtn');
+            sendBtn.style.display = 'none';
+            stopBtn.style.display = 'flex';
 
             try {
                 let response;
@@ -3828,9 +4127,8 @@
                     }
                 }
                 
-                sendBtn.disabled = false;
-                sendBtn.innerHTML = '↑';
-                sendBtn.setAttribute('aria-label', '发送消息');
+                sendBtn.style.display = 'flex';
+                stopBtn.style.display = 'none';
                 completeCurrentNode();
                 isSendingMessage = false;
                 activeGeneratingSessionId = null;  // 清除正在生成的会话ID
@@ -5260,45 +5558,10 @@
             }
         }
 
-        // 加载对话历史
+        // 加载对话历史（已废弃，使用 loadHistoryMessages 代替）
         async function loadConversationHistory(sessionId) {
-            if (!sessionId) return;
-
-            const userInfo = localStorage.getItem('userInfo');
-            const userId = userInfo ? JSON.parse(userInfo).user_id : null;
-
-            try {
-                let url = `${API_BASE}/conversation/${sessionId}/history?limit=50`;
-                if (userId) url += `&user_id=${userId}`;
-
-                const response = await fetch(url);
-                if (!response.ok) return;
-
-                const history = await response.json();
-                const container = document.getElementById('messagesContainer');
-                
-                // 清空当前消息（除了欢迎消息）
-                const existingMessages = container.querySelectorAll('.message');
-                existingMessages.forEach(msg => {
-                    if (!msg.querySelector('.example-prompts')) {
-                        msg.remove();
-                    }
-                });
-                
-                // 将历史消息添加到聊天界面
-                history.forEach(msg => {
-                    if (msg.role === 'user') {
-                        addUserMessage(msg.content);
-                    } else if (msg.role === 'assistant') {
-                        const agentDiv = createAgentMessage();
-                        updateAgentMessage(msg.content);
-                    }
-                });
-                
-                console.log(`✅ 已加载 ${history.length} 条历史消息`);
-            } catch (error) {
-                console.error('加载历史对话失败:', error);
-            }
+            console.log('⚠️ loadConversationHistory 已废弃，调用 loadHistoryMessages');
+            await loadHistoryMessages(sessionId);
         }
 
         // ========== 事件监听器设置和初始化 ==========
@@ -5361,6 +5624,12 @@
                 e.preventDefault();
                 sendMessage();
             });
+            
+            // 停止按钮点击事件
+            document.getElementById('stopBtn').addEventListener('click', function(e) {
+                e.preventDefault();
+                stopGeneration();
+            });
 
             // 回车发送（Shift+Enter 换行）- 已在键盘快捷键中处理，这里保留兼容
             document.getElementById('messageInput').addEventListener('keydown', function(e) {
@@ -5368,6 +5637,121 @@
                     // 让全局键盘快捷键处理，避免重复
                 }
             });
+        });
+        
+        // 停止生成
+        window.stopGeneration = function() {
+            console.log('🛑 用户请求停止生成');
+            
+            if (currentAbortController) {
+                currentAbortController.abort();
+                console.log('✅ 已发送中止信号');
+            }
+            
+            if (currentStreamReader) {
+                try {
+                    currentStreamReader.cancel();
+                    console.log('✅ 已取消流式读取');
+                } catch (e) {
+                    console.warn('取消流式读取失败:', e);
+                }
+            }
+            
+            // 更新UI
+            const sendBtn = document.getElementById('sendBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            sendBtn.style.display = 'flex';
+            stopBtn.style.display = 'none';
+            
+            isSendingMessage = false;
+            activeGeneratingSessionId = null;
+            
+            // 在消息中显示已停止
+            const lastMessage = document.querySelector('.message.assistant:last-child .message-content');
+            if (lastMessage && lastMessage.textContent.includes('正在思考')) {
+                lastMessage.innerHTML = '<p>⚠️ 对话已被停止</p>';
+            }
+        };
+        
+        // 打开图片模态框
+        window.openImageModal = function(src) {
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImage');
+            modal.classList.add('active');
+            modalImg.src = src;
+            console.log('🖼️ 打开图片放大视图');
+        };
+        
+        // 关闭图片模态框
+        window.closeImageModal = function() {
+            const modal = document.getElementById('imageModal');
+            modal.classList.remove('active');
+            console.log('✕ 关闭图片放大视图');
+        };
+        
+        // 打开Mermaid模态框
+        window.openMermaidModal = async function(mermaidCode) {
+            const modal = document.getElementById('mermaidModal');
+            const modalContent = document.getElementById('modalMermaidContent');
+            
+            // 清空之前的内容
+            modalContent.innerHTML = '';
+            
+            // 创建新的mermaid div，生成唯一ID
+            const mermaidDiv = document.createElement('div');
+            mermaidDiv.className = 'mermaid';
+            mermaidDiv.id = `mermaid-modal-${Date.now()}`;
+            mermaidDiv.textContent = mermaidCode;
+            modalContent.appendChild(mermaidDiv);
+            
+            // 显示模态框
+            modal.classList.add('active');
+            
+            // 渲染mermaid
+            if (typeof mermaid !== 'undefined') {
+                try {
+                    await mermaid.run({
+                        nodes: [mermaidDiv],
+                        suppressErrors: false
+                    });
+                    console.log('🔍 打开思维导图放大视图（矢量SVG）');
+                } catch (err) {
+                    console.error('Mermaid放大渲染失败:', err);
+                    // 显示友好的错误信息和原始代码
+                    modalContent.innerHTML = `
+                        <div style="padding: 20px;">
+                            <h3 style="color: #e53e3e; margin-bottom: 15px;">❌ 图表渲染失败</h3>
+                            <p style="color: #666; margin-bottom: 20px;">Mermaid 语法解析出错，以下是原始代码：</p>
+                            <details style="background: #f7fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                <summary style="cursor: pointer; font-weight: 600; color: #2d3748; margin-bottom: 10px;">
+                                    查看错误详情
+                                </summary>
+                                <pre style="background: #fff; padding: 12px; border-radius: 6px; overflow-x: auto; margin-top: 10px; border: 1px solid #e2e8f0;"><code>${err.message || err}</code></pre>
+                            </details>
+                            <details open style="background: #f7fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 15px;">
+                                <summary style="cursor: pointer; font-weight: 600; color: #2d3748; margin-bottom: 10px;">
+                                    原始 Mermaid 代码
+                                </summary>
+                                <pre style="background: #fff; padding: 12px; border-radius: 6px; overflow-x: auto; margin-top: 10px; border: 1px solid #e2e8f0; white-space: pre-wrap; word-wrap: break-word;"><code>${mermaidCode}</code></pre>
+                            </details>
+                            <p style="color: #718096; margin-top: 20px; font-size: 14px;">
+                                💡 提示：您可以将原始代码复制到 <a href="https://mermaid.live/" target="_blank" style="color: #667eea; text-decoration: underline;">Mermaid Live Editor</a> 进行调试
+                            </p>
+                        </div>
+                    `;
+                }
+            }
+        };
+        
+        // 关闭Mermaid模态框
+        window.closeMermaidModal = function() {
+            const modal = document.getElementById('mermaidModal');
+            modal.classList.remove('active');
+            console.log('✕ 关闭思维导图放大视图');
+        };
+        
+        // 初始化
+        window.addEventListener('DOMContentLoaded', function() {
             
             // 阻止页面内所有链接的默认跳转行为
             document.addEventListener('click', function(e) {
@@ -5438,5 +5822,6 @@
     </script>
 </body>
 </html>
+
 
 

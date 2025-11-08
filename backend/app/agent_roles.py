@@ -4,7 +4,9 @@
 """
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -210,48 +212,54 @@ async def retrieval_specialist_node(
                 continue
         
         if available_tools_map:
+            # 构建详细的工具schema信息
+            tool_schemas = []
+            for tool_key, tool in available_tools_map.items():
+                config = json.loads(tool.config or "{}")
+                builtin_key = config.get("builtin_key")
+                if builtin_key and builtin_key in BUILTIN_TOOLS:
+                    tool_def = BUILTIN_TOOLS[builtin_key]
+                    tool_schemas.append({
+                        "key": builtin_key,
+                        "name": tool_def.name,
+                        "description": tool_def.description,
+                        "schema": tool_def.input_schema
+                    })
+            
             # 使用LLM智能判断需要调用哪些工具
-            tool_selection_prompt = f"""你是一个工具调用专家。请分析用户问题，判断是否需要调用工具来获取信息。
+            tool_selection_prompt = f"""你是一个工具调用专家。请分析用户问题，判断是否需要调用工具来完成任务。
 
 【用户问题】：{user_query}
 
 【知识库检索状态】：{"✅ 已找到 " + str(len(retrieval_results.get("knowledge_base", []))) + " 个相关内容" if has_kb_results else "❌ 知识库无相关内容或未启用"}
 
-【可用工具】：
-{chr(10).join(tool_descriptions)}
+【可用工具及其参数】：
+{json.dumps(tool_schemas, ensure_ascii=False, indent=2)}
 
 【判断规则】：
-1. 如果用户问题需要实时数据（天气、新闻、最新信息等），应该调用相应工具
-2. 如果知识库已有足够信息，可以不调用工具
-3. 如果知识库无相关内容，优先考虑调用工具获取信息
-4. 可以同时调用多个工具（例如：查天气+搜索新闻）
+1. 检索专家的核心职责是**收集信息**，不负责最终内容输出
+2. ✅ 应该调用：web_search（网页搜索）、search_knowledge（知识库检索）等信息获取工具
+3. ❌ 不要调用：write_note（写入笔记）、draw_diagram（绘制图表）等内容输出工具
+4. 内容输出工具应该在分析和总结完成后由后续专家调用
+5. 如果用户问题需要实时数据（天气、新闻、最新信息等），应该调用web_search
 
-请以JSON格式输出需要调用的工具：
+【参数说明】：
+- 对于web_search工具：提供清晰的搜索查询，num_results通常设为5-10
+- 对于search_knowledge工具：提供准确的查询关键词，top_k设为3-5
+- 对于其他信息获取工具：提供完整的必需参数
+
+请以JSON格式输出需要调用的工具（只返回JSON，不要其他解释）：
 {{
   "need_tools": true/false,
   "tools_to_call": [
     {{
-      "tool_key": "get_weather",
-      "reason": "用户询问天气信息",
-      "arguments": {{"city": "北京"}}
-    }},
-    {{
-      "tool_key": "web_search", 
-      "reason": "需要搜索最新信息",
-      "arguments": {{"query": "搜索关键词", "num_results": 5}}
+      "tool_key": "工具的key",
+      "reason": "调用原因",
+      "arguments": {{完整的参数对象}}
     }}
   ],
   "reasoning": "判断理由"
 }}
-
-如果不需要调用工具，返回：
-{{
-  "need_tools": false,
-  "tools_to_call": [],
-  "reasoning": "知识库已有足够信息" 或 "问题无需外部数据"
-}}
-
-只返回JSON，不要其他解释。
 """
             
             try:
@@ -261,7 +269,7 @@ async def retrieval_specialist_node(
                     messages=[{"role": "user", "content": tool_selection_prompt}],
                     settings=settings,
                     temperature=0.2,
-                    max_tokens=800,
+                    max_tokens=4000,  # 增加token限制以支持生成完整的工具参数
                 )
                 
                 decision_data = parse_json_from_llm(tool_decision)
@@ -284,6 +292,136 @@ async def retrieval_specialist_node(
                             try:
                                 tool_record = available_tools_map[tool_key]
                                 logger.info(f"🔧 执行工具：{tool_key}，原因：{tool_reason}")
+                                
+                                # 对于需要生成内容的工具，先用LLM生成内容
+                                if tool_key == "write_note":
+                                    # 确保有filename
+                                    if not tool_args.get("filename"):
+                                        tool_args["filename"] = f"note_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                                    
+                                    # 如果内容为空或太短，则生成内容
+                                    if not tool_args.get("content") or len(str(tool_args.get("content", ""))) < 100:
+                                        logger.info(f"📝 为write_note工具生成内容...")
+                                        kb_context = ""
+                                        if retrieval_results.get("knowledge_base"):
+                                            kb_context = "\n\n".join([f"【文档片段 {i+1}】\n{ctx.content}" 
+                                                                      for i, ctx in enumerate(retrieval_results.get("knowledge_base", [])[:5])])
+                                        
+                                        # 收集所有可用的上下文信息（包括其他工具的结果）
+                                        tool_results_context = ""
+                                        if retrieval_results:
+                                            for tool_name, tool_data in retrieval_results.items():
+                                                if tool_name != "knowledge_base" and isinstance(tool_data, dict):
+                                                    result_str = tool_data.get("result", "")
+                                                    if result_str:
+                                                        tool_results_context += f"\n\n【{tool_name}工具结果】：\n{result_str[:2000]}"  # 限制长度
+                                        
+                                        content_prompt = f"""请根据以下信息生成完整的笔记内容：
+
+【用户需求】：{user_query}
+
+【知识库内容】：
+{kb_context if kb_context else "（无相关知识库内容）"}
+{tool_results_context}
+
+【任务】：根据用户的具体需求，生成一份详细的技术总结文档（Markdown格式）。
+- 如果用户要求分析某个主题，请提供全面的分析
+- 如果用户要求总结前沿内容，请重点关注最新进展和未来方向
+- 如果用户要求识别创新点，请明确指出突破性的技术点
+- 文档应结构清晰、内容充实、逻辑连贯
+
+请直接输出完整的Markdown文档内容，不要有任何前缀说明。"""
+                                        
+                                        content, _ = await invoke_llm(
+                                            messages=[{"role": "user", "content": content_prompt}],
+                                            settings=settings,
+                                            temperature=0.7,
+                                            max_tokens=4000,
+                                        )
+                                        tool_args["content"] = content.strip()
+                                        logger.info(f"✅ 已生成笔记内容，长度：{len(content)} 字符")
+                                
+                                elif tool_key == "draw_diagram":
+                                    # 确保有filename
+                                    if not tool_args.get("filename"):
+                                        tool_args["filename"] = f"diagram_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                                    
+                                    # 如果diagram_code为空或太短，则生成代码
+                                    if not tool_args.get("diagram_code") or len(str(tool_args.get("diagram_code", ""))) < 50:
+                                        logger.info(f"🎨 为draw_diagram工具生成图表代码...")
+                                        kb_context = ""
+                                        if retrieval_results.get("knowledge_base"):
+                                            kb_context = "\n\n".join([f"【文档片段 {i+1}】\n{ctx.content}" 
+                                                                      for i, ctx in enumerate(retrieval_results.get("knowledge_base", [])[:5])])
+                                        
+                                        # 收集所有可用的上下文信息（包括其他工具的结果）
+                                        tool_results_context = ""
+                                        if retrieval_results:
+                                            for tool_name, tool_data in retrieval_results.items():
+                                                if tool_name != "knowledge_base" and isinstance(tool_data, dict):
+                                                    result_str = tool_data.get("result", "")
+                                                    if result_str:
+                                                        tool_results_context += f"\n\n【{tool_name}工具结果】：\n{result_str[:1500]}"  # 限制长度
+                                        
+                                        diagram_prompt = f"""请根据以下信息生成Mermaid思维导图代码：
+
+【用户需求】：{user_query}
+
+【知识库内容】：
+{kb_context if kb_context else "（无相关知识库内容）"}
+{tool_results_context}
+
+【任务】：根据用户需求和提供的信息，生成一个结构清晰的Mermaid思维导图（graph TD格式）。
+- 提取核心主题和关键概念
+- 构建合理的层级结构
+- 突出重要的关联关系
+- 确保图表易于理解
+
+【语法要求】：
+- 使用标准的 graph TD 格式
+- 节点格式：A[文本内容]
+- 连接格式：A --> B
+- 不要使用 ::icon、:::class、classDef 等高级语法
+- 不要使用 subgraph（子图）
+- 保持语法简洁标准
+
+请直接输出完整的Mermaid代码，不要有markdown代码块标记（不要```mermaid），不要有任何前缀说明。
+示例格式：
+graph TD
+    A[主题] --> B[子概念1]
+    A --> C[子概念2]
+    B --> B1[细节]
+"""
+                                        
+                                        diagram_code, _ = await invoke_llm(
+                                            messages=[{"role": "user", "content": diagram_prompt}],
+                                            settings=settings,
+                                            temperature=0.7,
+                                            max_tokens=2000,
+                                        )
+                                        # 清理可能的markdown代码块标记
+                                        diagram_code = diagram_code.strip()
+                                        if diagram_code.startswith("```"):
+                                            diagram_code = diagram_code.split("```", 2)[1]
+                                            if diagram_code.startswith("mermaid"):
+                                                diagram_code = diagram_code[7:]
+                                            diagram_code = diagram_code.strip()
+                                        if diagram_code.endswith("```"):
+                                            diagram_code = diagram_code[:-3].strip()
+                                        
+                                        # 清理不支持的Mermaid语法
+                                        import re
+                                        # 移除 ::icon(...) 语法
+                                        diagram_code = re.sub(r'\s*::icon\([^)]*\)', '', diagram_code)
+                                        # 移除 :::className 语法
+                                        diagram_code = re.sub(r'\s*:::[^\s\n]+', '', diagram_code)
+                                        # 移除 classDef 定义
+                                        diagram_code = re.sub(r'classDef\s+\w+\s+[^\n]+\n?', '', diagram_code)
+                                        # 移除 class 赋值
+                                        diagram_code = re.sub(r'class\s+[\w,]+\s+\w+\s*\n?', '', diagram_code)
+                                        
+                                        tool_args["diagram_code"] = diagram_code
+                                        logger.info(f"✅ 已生成图表代码，长度：{len(diagram_code)} 字符")
                                 
                                 # 执行工具
                                 result = execute_tool(
@@ -577,6 +715,7 @@ async def summarization_specialist_node(
     state: MultiAgentState,
     settings: Settings,
     session: Session,
+    tool_records: Optional[List["ToolRecord"]] = None,
 ) -> Dict[str, Any]:
     """
     总结专家智能体
@@ -785,11 +924,156 @@ async def summarization_specialist_node(
         
         observations.append(f"总结完成，生成回答长度：{len(final_answer)} 字符")
         
-        # 4. 存储结果
+        # 4. 检查是否需要保存文件（write_note、draw_diagram）
+        if tool_records:
+            # 检查用户是否要求保存文件
+            save_keywords = ["写入", "保存", "写", "生成文件", "创建文件", "保存到", "写入笔记", "绘制", "画", "思维导图"]
+            user_wants_save = any(keyword in user_query for keyword in save_keywords)
+            
+            if user_wants_save:
+                logger.info("📝 检测到用户要求保存文件，准备调用文件保存工具...")
+                
+                # 构建可用工具映射
+                from .tool_service import BUILTIN_TOOLS
+                available_tools_map = {}
+                for tool in tool_records:
+                    try:
+                        config = json.loads(tool.config or "{}")
+                        builtin_key = config.get("builtin_key")
+                        if builtin_key and builtin_key in BUILTIN_TOOLS:
+                            available_tools_map[builtin_key] = tool
+                    except:
+                        continue
+                
+                # 从用户查询中提取文件名（如果指定了）
+                specified_filename = None
+                if "名字为" in user_query or "名为" in user_query:
+                    import re
+                    match = re.search(r'(?:名字为|名为)\s*([^\s，。]+\.md)', user_query)
+                    if match:
+                        specified_filename = match.group(1)
+                
+                # 检查是否需要生成思维导图
+                needs_diagram = "draw_diagram" in available_tools_map and any(kw in user_query for kw in ["思维导图", "绘制", "画图", "图表"])
+                diagram_code = None
+                
+                if needs_diagram:
+                    try:
+                        # 生成思维导图代码
+                        logger.info(f"🎨 为思维导图生成Mermaid代码...")
+                        diagram_prompt = f"""请根据以下报告内容生成Mermaid思维导图代码：
+
+【报告内容】：
+{final_answer[:3000]}
+
+【任务】：提取报告的核心主题和关键概念，生成一个结构清晰的Mermaid思维导图（graph TD格式）。
+- 提取核心主题和关键概念
+- 构建合理的层级结构
+- 突出重要的关联关系
+
+【语法要求】：
+- 使用标准的 graph TD 格式
+- 节点格式：A[文本内容]
+- 连接格式：A --> B
+- 不要使用 ::icon、:::class、classDef 等高级语法
+- 不要使用 subgraph（子图）
+- 保持语法简洁标准
+
+请直接输出完整的Mermaid代码，不要有markdown代码块标记（不要```mermaid），不要有任何前缀说明。
+示例格式：
+graph TD
+    A[主题] --> B[子概念1]
+    A --> C[子概念2]
+    B --> B1[细节]
+"""
+                        
+                        diagram_code, _ = await invoke_llm(
+                            messages=[{"role": "user", "content": diagram_prompt}],
+                            settings=settings,
+                            temperature=0.7,
+                            max_tokens=2000,
+                        )
+                        # 清理可能的markdown代码块标记
+                        diagram_code = diagram_code.strip()
+                        if diagram_code.startswith("```"):
+                            diagram_code = diagram_code.split("```", 2)[1]
+                            if diagram_code.startswith("mermaid"):
+                                diagram_code = diagram_code[7:]
+                            diagram_code = diagram_code.strip()
+                        if diagram_code.endswith("```"):
+                            diagram_code = diagram_code[:-3].strip()
+                        
+                        # 清理不支持的Mermaid语法
+                        import re
+                        # 移除 ::icon(...) 语法
+                        diagram_code = re.sub(r'\s*::icon\([^)]*\)', '', diagram_code)
+                        # 移除 :::className 语法
+                        diagram_code = re.sub(r'\s*:::[^\s\n]+', '', diagram_code)
+                        # 移除 classDef 定义
+                        diagram_code = re.sub(r'classDef\s+\w+\s+[^\n]+\n?', '', diagram_code)
+                        # 移除 class 赋值
+                        diagram_code = re.sub(r'class\s+[\w,]+\s+\w+\s*\n?', '', diagram_code)
+                        
+                        logger.info(f"✅ 已生成思维导图代码，长度：{len(diagram_code)} 字符")
+                    except Exception as e:
+                        logger.error(f"❌ 生成思维导图代码失败: {e}")
+                        thoughts.append(f"⚠️ 思维导图生成失败: {str(e)}")
+                
+                # 检查是否需要write_note
+                if "write_note" in available_tools_map and any(kw in user_query for kw in ["笔记", "报告", "总结", "写入", "保存"]):
+                    try:
+                        # 构建文件内容：报告 + 思维导图（如果生成）
+                        file_content = final_answer
+                        
+                        if diagram_code:
+                            # 如果用户指定了同一个文件名，将思维导图追加到报告中
+                            if specified_filename:
+                                file_content += f"\n\n---\n\n# 思维导图\n\n```mermaid\n{diagram_code}\n```\n"
+                                thoughts.append("✅ 已将报告和思维导图合并写入同一文件")
+                            else:
+                                # 如果没指定文件名，思维导图会单独保存
+                                pass
+                        
+                        # 确定文件名
+                        filename = specified_filename if specified_filename else f"note_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                        
+                        logger.info(f"📝 调用write_note工具，文件名：{filename}")
+                        result = execute_tool(
+                            tool=available_tools_map["write_note"],
+                            arguments={"filename": filename, "content": file_content},
+                            settings=settings,
+                            session=session,
+                        )
+                        thoughts.append(f"✅ 已保存报告到文件：{filename}")
+                        observations.append(f"报告已保存到 {filename}")
+                        logger.info(f"✅ 文件保存成功：{filename}")
+                    except Exception as e:
+                        logger.error(f"❌ 保存文件失败: {e}")
+                        thoughts.append(f"⚠️ 文件保存失败: {str(e)}")
+                
+                # 如果用户没有指定文件名，且需要单独保存思维导图
+                if needs_diagram and diagram_code and not specified_filename:
+                    try:
+                        filename = f"diagram_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                        logger.info(f"🎨 调用draw_diagram工具，文件名：{filename}")
+                        result = execute_tool(
+                            tool=available_tools_map["draw_diagram"],
+                            arguments={"filename": filename, "diagram_code": diagram_code},
+                            settings=settings,
+                            session=session,
+                        )
+                        thoughts.append(f"✅ 已保存思维导图到文件：{filename}")
+                        observations.append(f"思维导图已保存到 {filename}")
+                        logger.info(f"✅ 思维导图保存成功：{filename}")
+                    except Exception as e:
+                        logger.error(f"❌ 保存思维导图失败: {e}")
+                        thoughts.append(f"⚠️ 思维导图保存失败: {str(e)}")
+        
+        # 5. 存储结果
         workspace.store_agent_result(agent_id, {"final_answer": final_answer})
         workspace.set_shared_data("final_answer", final_answer)
         
-        # 5. 发送结果消息
+        # 6. 发送结果消息
         workspace.send_message(
             from_agent=agent_id,
             to_agent="orchestrator",
