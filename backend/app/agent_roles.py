@@ -57,17 +57,24 @@ async def retrieval_specialist_node(
     observations = []
     
     try:
-        # 1. 知识库检索
+        # 1. 知识库检索（智能版：带置信度评估）
         if use_knowledge_base:
             try:
-                logger.info("📚 执行知识库检索...")
-                contexts = retrieve_context(
+                logger.info("📚 执行知识库检索（带置信度评估）...")
+                
+                # 使用带置信度的检索函数
+                from .rag_service import retrieve_context_with_confidence
+                
+                contexts, confidence = retrieve_context_with_confidence(
                     query=user_query,
                     settings=settings,
                     top_k=5,
+                    confidence_threshold=0.3,  # 置信度阈值
                 )
                 
-                if contexts:
+                # 根据置信度判断是否使用检索结果
+                if contexts and confidence == "high":
+                    # 高置信度：使用检索结果
                     retrieval_results["knowledge_base"] = [
                         {
                             "document_id": ctx.document_id,
@@ -76,66 +83,167 @@ async def retrieval_specialist_node(
                         }
                         for ctx in contexts
                     ]
-                    thoughts.append(f"从知识库检索到 {len(contexts)} 个相关片段")
+                    thoughts.append(f"✅ 从知识库检索到 {len(contexts)} 个高相关性片段")
                     observations.append(
-                        f"知识库检索完成：找到 {len(contexts)} 个文档片段"
+                        f"知识库检索完成：找到 {len(contexts)} 个相关文档（高置信度）"
                     )
+                    logger.info(f"✅ 知识库检索成功，置信度：{confidence}")
+                    
+                elif contexts and confidence == "low":
+                    # 低置信度：不使用检索结果，记录日志
+                    thoughts.append(f"⚠️ 知识库检索置信度较低，内容可能不相关")
+                    observations.append(
+                        f"知识库检索完成，但相关性较低（将优先使用其他信息源）"
+                    )
+                    logger.warning(f"⚠️ 知识库检索置信度低，跳过使用检索结果")
+                    # 不添加到 retrieval_results，让后续流程使用工具调用
+                    
                 else:
+                    # 未找到内容
                     thoughts.append("知识库检索未找到相关内容")
                     observations.append("知识库为空或未找到相关内容")
+                    logger.info("知识库检索为空")
             
             except Exception as e:
                 logger.error(f"知识库检索失败: {e}")
                 thoughts.append(f"知识库检索失败: {str(e)}")
         
-        # 2. 网络搜索（如果有搜索工具）
-        search_tool = None
+        # 2. 智能工具调用（通用方案）- 让LLM自己判断需要什么工具
+        has_kb_results = "knowledge_base" in retrieval_results and len(retrieval_results["knowledge_base"]) > 0
+        
+        # 构建工具描述
+        from .tool_service import BUILTIN_TOOLS
+        
+        tool_descriptions = []
+        available_tools_map = {}  # tool_key -> tool_record
+        
         for tool in tool_records:
             try:
                 import json
                 config = json.loads(tool.config or "{}")
-                if config.get("builtin_key") == "web_search":
-                    search_tool = tool
-                    break
+                builtin_key = config.get("builtin_key")
+                
+                if builtin_key and builtin_key in BUILTIN_TOOLS:
+                    tool_def = BUILTIN_TOOLS[builtin_key]
+                    tool_descriptions.append(
+                        f"- **{tool_def.name}** ({builtin_key}): {tool_def.description}"
+                    )
+                    available_tools_map[builtin_key] = tool
             except:
                 continue
         
-        if search_tool and any(
-            keyword in user_query.lower()
-            for keyword in ["搜索", "查找", "最新", "search", "find"]
-        ):
+        if available_tools_map:
+            # 使用LLM智能判断需要调用哪些工具
+            tool_selection_prompt = f"""你是一个工具调用专家。请分析用户问题，判断是否需要调用工具来获取信息。
+
+【用户问题】：{user_query}
+
+【知识库检索状态】：{"✅ 已找到 " + str(len(retrieval_results.get("knowledge_base", []))) + " 个相关内容" if has_kb_results else "❌ 知识库无相关内容或未启用"}
+
+【可用工具】：
+{chr(10).join(tool_descriptions)}
+
+【判断规则】：
+1. 如果用户问题需要实时数据（天气、新闻、最新信息等），应该调用相应工具
+2. 如果知识库已有足够信息，可以不调用工具
+3. 如果知识库无相关内容，优先考虑调用工具获取信息
+4. 可以同时调用多个工具（例如：查天气+搜索新闻）
+
+请以JSON格式输出需要调用的工具：
+{{
+  "need_tools": true/false,
+  "tools_to_call": [
+    {{
+      "tool_key": "get_weather",
+      "reason": "用户询问天气信息",
+      "arguments": {{"city": "北京"}}
+    }},
+    {{
+      "tool_key": "web_search", 
+      "reason": "需要搜索最新信息",
+      "arguments": {{"query": "搜索关键词", "num_results": 5}}
+    }}
+  ],
+  "reasoning": "判断理由"
+}}
+
+如果不需要调用工具，返回：
+{{
+  "need_tools": false,
+  "tools_to_call": [],
+  "reasoning": "知识库已有足够信息" 或 "问题无需外部数据"
+}}
+
+只返回JSON，不要其他解释。
+"""
+            
             try:
-                logger.info("🌐 执行网络搜索...")
+                logger.info("🤖 使用LLM智能判断需要调用的工具...")
                 
-                # 提取搜索关键词
-                from .graph_agent import extract_search_query
-                search_query = extract_search_query(user_query)
-                
-                # 执行搜索
-                search_result = execute_tool(
-                    tool=search_tool,
-                    arguments={"query": search_query, "num_results": 5},
+                tool_decision, _ = await invoke_llm(
+                    messages=[{"role": "user", "content": tool_selection_prompt}],
                     settings=settings,
-                    session=session,
+                    temperature=0.2,
+                    max_tokens=800,
                 )
                 
-                retrieval_results["web_search"] = {
-                    "query": search_query,
-                    "results": search_result,
-                }
+                decision_data = parse_json_from_llm(tool_decision)
+                need_tools = decision_data.get("need_tools", False)
+                tools_to_call = decision_data.get("tools_to_call", [])
+                reasoning = decision_data.get("reasoning", "")
                 
-                thoughts.append(f"执行了网络搜索：{search_query}")
-                observations.append(f"网络搜索完成，关键词：{search_query}")
+                logger.info(f"🧠 LLM判断：need_tools={need_tools}, 理由={reasoning}")
                 
+                if need_tools and tools_to_call:
+                    thoughts.append(f"LLM决策：需要调用 {len(tools_to_call)} 个工具")
+                    
+                    # 执行LLM建议的工具调用
+                    for tool_call in tools_to_call:
+                        tool_key = tool_call.get("tool_key")
+                        tool_reason = tool_call.get("reason", "")
+                        tool_args = tool_call.get("arguments", {})
+                        
+                        if tool_key in available_tools_map:
+                            try:
+                                tool_record = available_tools_map[tool_key]
+                                logger.info(f"🔧 执行工具：{tool_key}，原因：{tool_reason}")
+                                
+                                # 执行工具
+                                result = execute_tool(
+                                    tool=tool_record,
+                                    arguments=tool_args,
+                                    settings=settings,
+                                    session=session,
+                                )
+                                
+                                # 保存结果
+                                retrieval_results[tool_key] = {
+                                    "arguments": tool_args,
+                                    "result": result,
+                                }
+                                
+                                thoughts.append(f"✅ 工具调用成功：{tool_key}")
+                                observations.append(f"工具 {tool_key} 执行完成：{tool_reason}")
+                                logger.info(f"✅ 工具 {tool_key} 调用成功")
+                                
+                            except Exception as e:
+                                logger.error(f"工具 {tool_key} 调用失败: {e}")
+                                thoughts.append(f"❌ 工具 {tool_key} 调用失败: {str(e)}")
+                        else:
+                            logger.warning(f"⚠️ 工具 {tool_key} 不可用")
+                else:
+                    thoughts.append(f"LLM判断：无需调用工具（{reasoning}）")
+                    logger.info(f"💡 LLM判断无需工具调用：{reasoning}")
+                    
             except Exception as e:
-                logger.error(f"网络搜索失败: {e}")
-                thoughts.append(f"网络搜索失败: {str(e)}")
+                logger.error(f"智能工具判断失败: {e}")
+                thoughts.append(f"智能工具判断失败，跳过工具调用")
         
-        # 3. 存储结果到共享工作空间
+        # 4. 存储结果到共享工作空间
         workspace.store_agent_result(agent_id, retrieval_results)
         workspace.set_shared_data("retrieval_results", retrieval_results)
         
-        # 4. 发送结果消息给协调器
+        # 5. 发送结果消息给协调器
         workspace.send_message(
             from_agent=agent_id,
             to_agent="orchestrator",
@@ -410,26 +518,44 @@ async def summarization_specialist_node(
         retrieval_results = workspace.get_shared_data("retrieval_results", {})
         analysis_result = workspace.get_shared_data("analysis_result", {})
         
-        # 2. 构建总结上下文
+        # 2. 构建总结上下文（通用处理所有工具结果）
         context_parts = []
         
         if retrieval_results:
-            context_parts.append("## 检索结果")
+            context_parts.append("## 检索与工具执行结果")
             
+            # 知识库检索结果
             if "knowledge_base" in retrieval_results:
                 kb_contexts = retrieval_results["knowledge_base"]
                 context_parts.append(
-                    f"知识库内容（{len(kb_contexts)} 个片段）:\n"
+                    f"### 知识库内容（{len(kb_contexts)} 个片段）\n"
                     + "\n".join([
                         f"{i+1}. {ctx.get('content', '')[:300]}"
                         for i, ctx in enumerate(kb_contexts)
                     ])
                 )
             
-            if "web_search" in retrieval_results:
-                search_data = retrieval_results["web_search"]
+            # 通用工具结果处理 - 自动处理所有工具（天气、搜索、笔记等）
+            tool_result_keys = [k for k in retrieval_results.keys() if k != "knowledge_base"]
+            
+            for tool_key in tool_result_keys:
+                tool_data = retrieval_results[tool_key]
+                
+                # 获取工具名称
+                from .tool_service import BUILTIN_TOOLS
+                tool_name = BUILTIN_TOOLS.get(tool_key, type('obj', (object,), {'name': tool_key.replace('_', ' ').title()})).name
+                
+                # 提取结果内容
+                if isinstance(tool_data, dict):
+                    result_content = tool_data.get("result", "") or tool_data.get("data", "") or str(tool_data)
+                else:
+                    result_content = str(tool_data)
+                
+                # 限制长度
+                result_preview = result_content[:1000] if len(result_content) > 1000 else result_content
+                
                 context_parts.append(
-                    f"网络搜索结果:\n{search_data.get('results', '')[:800]}"
+                    f"### {tool_name} 执行结果\n{result_preview}"
                 )
         
         if analysis_result:
@@ -452,57 +578,69 @@ async def summarization_specialist_node(
         # 检查是否有深度分析结果
         has_deep_analysis = analysis_result and "core_concepts" in analysis_result
         
-        summarization_prompt = f"""你是一个资深的研究报告撰写专家。请基于以下信息，为用户生成一份高质量、结构化的研究报告或答案。
-
-【任务要求】：{task_description}
+        # 判断信息质量（通用方案）
+        has_kb_info = "knowledge_base" in retrieval_results and len(retrieval_results.get("knowledge_base", [])) > 0
+        
+        # 构建信息源说明 - 自动识别所有已执行的工具
+        info_sources = []
+        if has_kb_info:
+            info_sources.append("知识库内容")
+        
+        # 通用处理：列出所有已执行的工具
+        tool_result_keys = [k for k in retrieval_results.keys() if k != "knowledge_base"]
+        if tool_result_keys:
+            from .tool_service import BUILTIN_TOOLS
+            for tool_key in tool_result_keys:
+                tool_name = BUILTIN_TOOLS.get(tool_key, type('obj', (object,), {'name': tool_key.replace('_', ' ').title()})).name
+                info_sources.append(tool_name)
+        
+        if info_sources:
+            info_quality_note = f"✅ 已获取：{' + '.join(info_sources)}"
+        else:
+            info_quality_note = "⚠️ 检索信息有限，请基于自身知识合理回答，并说明信息来源的局限性"
+        
+        summarization_prompt = f"""你是一个资深的智能助手。请基于以下信息，为用户生成清晰、准确的回答。
 
 【用户问题】：{user_query}
 
 【收集到的信息】：
-{full_context}
+{full_context if full_context else "（未检索到特定信息）"}
 
-【报告撰写要求】：
+【信息来源说明】：{info_quality_note}
 
-1. **结构化组织**：
-   - 使用清晰的 Markdown 格式
-   - 合理的标题层级（# ## ### ）
-   - 如果是研究报告，包含：引言、主要内容、结论
-   - 如果是技术分析，包含：概述、技术原理、应用案例、趋势分析
+【回答要求】：
 
-2. **内容深度**：
-   - 不要只是罗列信息，要进行深度整合和提炼
-   - 建立不同信息点之间的逻辑联系
-   - 提供清晰的论证和推理过程
-   - 突出关键发现和核心洞察
+1. **智能选择信息源**：
+   - 如果有多个信息源（知识库、网络搜索），优先使用最相关的
+   - 不要强制使用不相关的知识库内容
+   - 如果网络搜索更准确，优先使用搜索结果
+   - 如果信息不足或不相关，请诚实说明
 
-3. **表达质量**：
-   - 语言流畅、专业、准确
-   - 避免重复和冗余
-   - 使用具体的数据和案例支撑论点
-   - 适当使用列表、表格等形式
+2. **回答方式**：
+   - **简单对话问题**：直接、简洁地回答（200-400字）
+   - **信息查询**：提供准确信息，列出关键点（400-800字）
+   - **研究报告**：使用 Markdown 格式，结构化组织（800-1500字）
 
-4. **信息来源**：
-   - 优先使用提供的检索结果和分析结果
-   - 如果引用具体数据或观点，可注明来源
-   - 区分事实陈述和推理结论
+3. **内容质量**：
+   - 准确性第一：不编造不确定的信息
+   - 直接回答用户问题，不要过度铺陈
+   - 使用清晰的 Markdown 格式（标题、列表、引用）
+   - 语言自然流畅，避免生硬的报告体
 
-5. **完整性**：
-   - 全面回答用户提出的所有问题点
-   - 不遗漏关键信息
-   - 如果信息不足，明确指出
+4. **特殊情况处理**：
+   - 如果知识库内容与问题无关 → 忽略知识库，使用其他信息源或自身知识
+   - 如果网络搜索结果更准确 → 优先使用搜索结果
+   - 如果信息不足 → 坦诚说明，给出建议
 
-6. **长度要求**：
-   - 简单问题：300-600字
-   - 中等复杂度：600-1200字
-   - 复杂研究报告：1200-2000字
+5. **禁止行为**：
+   - ❌ 不要强制凑字数成为冗长的报告
+   - ❌ 不要使用无关的知识库内容
+   - ❌ 不要编造数据或引用
+   - ❌ 不要使用过于正式的报告模板（除非用户明确要求报告）
 
-【特别注意】：
-- 这是多智能体协作的最终输出，要体现高质量
-- 整合所有前序智能体的工作成果
-- 确保报告的专业性和可读性
-{"- 已有深度分析结果，请充分利用分析专家提供的洞察" if has_deep_analysis else ""}
+{"【补充】：已有深度分析结果，请充分利用分析专家提供的洞察" if has_deep_analysis else ""}
 
-现在请生成最终报告：
+现在请直接、准确地回答用户问题：
 """
         
         final_answer, _ = await invoke_llm(
