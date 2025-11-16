@@ -1121,11 +1121,20 @@ async def chat_with_langgraph_agent_stream(
                             "content": node_data["final_answer"]
                         })
                         logger.info(f"📤 已发送最终答案到前端，长度: {len(node_data['final_answer'])}")
-                        
+
                         # 保存对话并提取记忆（异步进行，不阻塞流式响应）
+                        # 同时将知识库检索结果和工具结果写入元数据，供前端作为来源展示
                         try:
                             from .memory_service import save_conversation_and_extract_memories
+
                             user_query = payload.messages[-1].content if payload.messages else ""
+                            metadata: Dict[str, Any] = {}
+
+                            if node_data.get("retrieved_contexts"):
+                                metadata["sources"] = node_data["retrieved_contexts"]
+                            if node_data.get("tool_results"):
+                                metadata["tool_results"] = node_data["tool_results"]
+
                             saved_memories = await save_conversation_and_extract_memories(
                                 session=session,
                                 session_id=session_id,
@@ -1133,6 +1142,7 @@ async def chat_with_langgraph_agent_stream(
                                 assistant_reply=node_data["final_answer"],
                                 settings=settings,
                                 user_id=payload.user_id,
+                                metadata=metadata or None,
                             )
                             if saved_memories:
                                 logger.info(f"💾 流式对话保存了 {len(saved_memories)} 条新记忆")
@@ -2301,15 +2311,15 @@ class MemoryItem(BaseModel):
 
 
 class ConversationMessage(BaseModel):
-    """对话消息模型"""
-    model_config = ConfigDict(from_attributes=True)
-    
+    """对话消息模型（包含可选的元数据）"""
+
     id: str
     user_id: Optional[str]
     session_id: str
     role: str
     content: str
     created_at: datetime
+    metadata: Optional[Dict[str, Any]] = None
 
 
 @app.get("/memory/search", response_model=List[MemoryItem])
@@ -2372,7 +2382,30 @@ async def get_conversation_history_api(
         limit=limit,
         user_id=user_id,
     )
-    return [ConversationMessage.model_validate(msg) for msg in history]
+
+    messages: List[ConversationMessage] = []
+    for msg in history:
+        metadata: Optional[Dict[str, Any]] = None
+        extra = getattr(msg, "extra_metadata", None)
+        if extra:
+            try:
+                metadata = json.loads(extra)
+            except Exception:
+                metadata = None
+
+        messages.append(
+            ConversationMessage(
+                id=msg.id,
+                user_id=msg.user_id,
+                session_id=msg.session_id,
+                role=msg.role,
+                content=msg.content,
+                created_at=msg.created_at,
+                metadata=metadata,
+            )
+        )
+
+    return messages
 
 
 @app.get("/memory/context")
