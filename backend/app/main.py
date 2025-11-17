@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Literal
 
 import httpx
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -48,11 +48,19 @@ from .memory_service import (
     format_memories_for_context,
     get_conversation_context,
 )
+from .auth import (
+    authenticate_user,
+    create_access_token,
+    create_refresh_token,
+    get_password_hash,
+    verify_token,
+)
 from .database import (
     AgentConfig,
     ConversationHistory,
     LongTermMemory,
     PromptTemplate,
+    User,
     get_agent_config_by_id,
     list_agent_configs,
     get_conversation_history,
@@ -572,6 +580,209 @@ def format_sse(event: str, data: Dict[str, Any]) -> bytes:
 async def health(settings: Settings = Depends(get_settings)) -> Dict[str, str]:
     _ = settings.deepseek_api_key
     return {"status": "ok"}
+
+
+# ==================== 认证相关 API ====================
+
+class UserRegister(BaseModel):
+    """用户注册请求模型"""
+    username: str
+    email: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    """用户登录请求模型"""
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    """Token 响应模型"""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user_id: str
+    username: str
+
+
+class RefreshTokenRequest(BaseModel):
+    """刷新 Token 请求模型"""
+    refresh_token: str
+
+
+@app.post("/api/auth/register", response_model=TokenResponse)
+async def register(
+    user_data: UserRegister,
+    session: Session = Depends(get_db_session)
+):
+    """用户注册接口"""
+    # 检查邮箱是否已被注册
+    existing_user = session.query(User).filter(User.email == user_data.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="邮箱已被注册"
+        )
+    
+    # 检查用户名是否已被使用
+    existing_username = session.query(User).filter(
+        User.username == user_data.username
+    ).first()
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="用户名已被使用"
+        )
+    
+    # 验证密码长度
+    if len(user_data.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="密码至少需要8位字符"
+        )
+    
+    # 加密密码
+    hashed_password = get_password_hash(user_data.password)
+    
+    # 创建新用户
+    new_user = User(
+        username=user_data.username,
+        email=user_data.email,
+        hashed_password=hashed_password
+    )
+    
+    # 保存到数据库
+    session.add(new_user)
+    session.commit()
+    session.refresh(new_user)
+    
+    # 生成 JWT token
+    access_token = create_access_token(data={"sub": new_user.id})
+    refresh_token = create_refresh_token(data={"sub": new_user.id})
+    
+    logger.info(f"✅ 新用户注册成功: {user_data.email}")
+    
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user_id=new_user.id,
+        username=new_user.username
+    )
+
+
+@app.post("/api/auth/login", response_model=TokenResponse)
+async def login(
+    user_data: UserLogin,
+    session: Session = Depends(get_db_session)
+):
+    """用户登录接口"""
+    user = authenticate_user(session, user_data.email, user_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="邮箱或密码错误",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # 更新最后登录时间
+    user.last_login = datetime.utcnow()
+    session.commit()
+    
+    # 生成 JWT token
+    access_token = create_access_token(data={"sub": user.id})
+    refresh_token = create_refresh_token(data={"sub": user.id})
+    
+    logger.info(f"✅ 用户登录成功: {user_data.email}")
+    
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user_id=user.id,
+        username=user.username
+    )
+
+
+@app.post("/api/auth/refresh")
+async def refresh_token_endpoint(
+    token_data: RefreshTokenRequest,
+    session: Session = Depends(get_db_session)
+):
+    """刷新 Access Token 接口"""
+    payload = verify_token(token_data.refresh_token)
+    if payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的刷新 token"
+        )
+    
+    user_id = payload.get("sub")
+    user = session.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+    
+    # 生成新的 access token
+    new_access_token = create_access_token(data={"sub": user.id})
+    
+    return {
+        "access_token": new_access_token,
+        "token_type": "bearer"
+    }
+
+
+# 定义 get_current_user 依赖（需要在这里定义以避免循环导入）
+from .auth import oauth2_scheme
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    session: Session = Depends(get_db_session)
+) -> User:
+    """获取当前登录用户（FastAPI 依赖注入）"""
+    from .auth import verify_token
+    
+    payload = verify_token(token)
+    user_id: str = payload.get("sub")
+    
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的认证凭据：缺少用户ID",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # 从数据库查询用户
+    user = session.query(User).filter(User.id == user_id).first()
+    
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户不存在",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # 检查用户是否被禁用
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="用户已被禁用",
+        )
+    
+    return user
+
+
+@app.get("/api/auth/me")
+async def get_me(current_user: User = Depends(get_current_user)):
+    """获取当前登录用户信息"""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "created_at": current_user.created_at,
+        "last_login": current_user.last_login
+    }
 
 
 @app.post("/chat", response_model=ChatResponse)
