@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>对话历史 - AI Agent</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="common.css">
     <style>
         * {
             margin: 0;
@@ -13,23 +15,75 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
-            background: #f7f7f8;
+            background: var(--bg-secondary);
             min-height: 100vh;
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
         }
 
         .header {
-            background: white;
-            padding: 16px 24px;
-            border-bottom: 1px solid #e5e5e5;
+            background: var(--bg-primary);
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-primary);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .header h1 {
-            font-size: 20px;
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            font-size: 24px;
+        }
+
+        .header-title-sub {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .header-nav {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            margin-left: 40px;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 14px;
+        }
+
+        .nav-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 6px 10px;
+            border-radius: 999px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-link span {
+            font-size: 13px;
+        }
+
+        .nav-link:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .nav-link.active {
+            background: var(--primary-light);
+            color: var(--primary-color);
             font-weight: 600;
-            color: #202123;
         }
 
         .header-actions {
@@ -37,53 +91,26 @@
             gap: 12px;
         }
 
-        .btn {
-            padding: 8px 16px;
-            border-radius: 6px;
-            border: none;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
-            text-decoration: none;
-            display: inline-block;
-        }
-
-        .btn-primary {
-            background: #10a37f;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #0d8f6e;
-        }
-
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-
         .search-box {
-            background: white;
+            background: var(--bg-primary);
             padding: 16px 24px;
-            border-bottom: 1px solid #e5e5e5;
+            border-bottom: 1px solid var(--border-primary);
         }
 
         .search-input {
             width: 100%;
             max-width: 600px;
             padding: 10px 16px;
-            border: 1px solid #e5e5e5;
+            border: 1px solid var(--border-primary);
             border-radius: 6px;
             font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
         }
 
         .search-input:focus {
             outline: none;
-            border-color: #10a37f;
+            border-color: var(--primary-color);
         }
 
         .container {
@@ -98,8 +125,8 @@
         }
 
         .conversation-item {
-            background: white;
-            border: 1px solid #e5e5e5;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
             border-radius: 8px;
             padding: 16px;
             cursor: pointer;
@@ -110,8 +137,8 @@
         }
 
         .conversation-item:hover {
-            border-color: #10a37f;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-color: var(--primary-color);
+            box-shadow: var(--shadow-md);
         }
 
         .conversation-info {
@@ -121,25 +148,27 @@
         .conversation-title {
             font-size: 16px;
             font-weight: 600;
-            color: #202123;
+            color: var(--text-primary);
             margin-bottom: 4px;
         }
 
         .conversation-preview {
             font-size: 14px;
-            color: #8e8ea0;
+            color: var(--text-secondary);
             margin-bottom: 8px;
             overflow: hidden;
             text-overflow: ellipsis;
-            white-space: nowrap;
-            max-width: 600px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
         }
 
         .conversation-meta {
             display: flex;
             gap: 16px;
             font-size: 12px;
-            color: #8e8ea0;
+            color: var(--text-tertiary);
         }
 
         .conversation-actions {
@@ -147,41 +176,42 @@
             gap: 8px;
         }
 
-        .btn-icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 6px;
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: transparent;
-            transition: all 0.2s;
-            font-size: 16px;
-        }
-
-        .btn-icon:hover {
-            background: #f0f0f0;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 64px 24px;
-            color: #8e8ea0;
-        }
-
         .loading {
             text-align: center;
             padding: 32px;
-            color: #8e8ea0;
+            color: var(--text-secondary);
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>📚 对话历史</h1>
+        <div class="header-left">
+            <div class="logo">🤖</div>
+            <div class="header-title">
+                <h1>AI Agent Studio</h1>
+                <div class="header-title-sub">对话历史</div>
+            </div>
+            <div class="header-nav">
+                <div class="nav-links">
+                    <a href="agent_chat.html" class="nav-link">
+                        <span>💬 对话工作台</span>
+                    </a>
+                    <a href="prompt_management.html" class="nav-link">
+                        <span>📝 Prompt 模板</span>
+                    </a>
+                    <a href="knowledge_base.html" class="nav-link">
+                        <span>📁 知识库</span>
+                    </a>
+                    <a href="conversation_history.html" class="nav-link active">
+                        <span>📚 会话历史</span>
+                    </a>
+                </div>
+            </div>
+        </div>
         <div class="header-actions">
+            <button class="btn btn-icon" id="themeToggle" onclick="toggleTheme()" title="切换主题">
+                <span id="themeIcon">🌙</span>
+            </button>
             <a href="agent_chat.html" class="btn btn-primary">
                 ➕ 新建对话
             </a>
@@ -205,6 +235,32 @@
     </div>
 
     <script>
+        // ========== 主题切换功能 ==========
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+        }
+        
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        }
+        
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+            }
+        }
+        
+        // 页面加载时初始化主题
+        initTheme();
+
         const API_BASE = 'http://127.0.0.1:8000';
         let allConversations = [];
         let currentPage = 0;
@@ -256,7 +312,7 @@
             }
 
             listEl.innerHTML = conversations.map(conv => `
-                <div class="conversation-item" onclick="openConversation('${conv.session_id}')">
+                <div class="conversation-item card card-hoverable" onclick="openConversation('${conv.session_id}')">
                     <div class="conversation-info">
                         <div class="conversation-title">${escapeHtml(conv.title)}</div>
                         <div class="conversation-preview">${escapeHtml(conv.preview)}</div>

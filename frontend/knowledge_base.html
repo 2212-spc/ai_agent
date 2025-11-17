@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>知识库管理 - AI Agent</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="common.css">
     <style>
         * {
             margin: 0;
@@ -13,9 +15,11 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--bg-secondary);
             min-height: 100vh;
             padding: 20px;
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
         }
 
         .container {
@@ -24,8 +28,8 @@
         }
 
         .header {
-            background: white;
-            padding: 24px 32px;
+            background: var(--bg-primary);
+            padding: 16px 24px;
             border-radius: 12px;
             margin-bottom: 24px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -34,12 +38,70 @@
             align-items: center;
         }
 
-        .header h1 {
-            font-size: 28px;
-            color: #1f2937;
+        .header-main {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 16px;
+        }
+
+        .logo {
+            font-size: 28px;
+        }
+
+        .header-title {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .header-title h1 {
+            font-size: 22px;
+            color: var(--text-primary);
+        }
+
+        .header-title-sub {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .header-nav {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            margin-left: 40px;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 14px;
+        }
+
+        .nav-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 6px 10px;
+            border-radius: 999px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-link span {
+            font-size: 13px;
+        }
+
+        .nav-link:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .nav-link.active {
+            background: var(--primary-light);
+            color: var(--primary-color);
+            font-weight: 600;
         }
 
         .header-actions {
@@ -47,39 +109,8 @@
             gap: 12px;
         }
 
-        .btn {
-            padding: 10px 20px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .btn-primary {
-            background: #10a37f;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #0e9168;
-        }
-
-        .btn-secondary {
-            background: #f3f4f6;
-            color: #374151;
-        }
-
-        .btn-secondary:hover {
-            background: #e5e7eb;
-        }
-
         .stats-bar {
-            background: white;
+            background: var(--bg-primary);
             padding: 20px 32px;
             border-radius: 12px;
             margin-bottom: 24px;
@@ -96,17 +127,17 @@
 
         .stat-label {
             font-size: 13px;
-            color: #6b7280;
+            color: var(--text-secondary);
         }
 
         .stat-value {
             font-size: 24px;
             font-weight: 600;
-            color: #1f2937;
+            color: var(--text-primary);
         }
 
         .upload-area {
-            background: white;
+            background: var(--bg-primary);
             padding: 32px;
             border-radius: 12px;
             margin-bottom: 24px;
@@ -114,22 +145,17 @@
         }
 
         .upload-box {
-            border: 2px dashed #d1d5db;
+            border: 2px dashed var(--border-secondary);
             border-radius: 8px;
-            padding: 40px;
+            padding: 48px;
             text-align: center;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.3s;
         }
 
         .upload-box:hover {
-            border-color: #10a37f;
-            background: #f9fafb;
-        }
-
-        .upload-box.dragover {
-            border-color: #10a37f;
-            background: #f0fdf4;
+            border-color: var(--primary-color);
+            background: var(--bg-hover);
         }
 
         .upload-icon {
@@ -139,17 +165,17 @@
 
         .upload-text {
             font-size: 16px;
-            color: #374151;
+            color: var(--text-primary);
             margin-bottom: 8px;
         }
 
         .upload-hint {
             font-size: 13px;
-            color: #9ca3af;
+            color: var(--text-tertiary);
         }
 
         .documents-list {
-            background: white;
+            background: var(--bg-primary);
             padding: 32px;
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -164,31 +190,34 @@
 
         .documents-header h2 {
             font-size: 20px;
-            color: #1f2937;
+            color: var(--text-primary);
         }
 
         .search-box {
             padding: 8px 16px;
-            border: 1px solid #d1d5db;
+            border: 1px solid var(--border-secondary);
             border-radius: 8px;
             font-size: 14px;
             width: 300px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
         }
 
         .document-item {
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 16px 20px;
-            margin-bottom: 12px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            margin-bottom: 12px;
             transition: all 0.2s;
+            background: var(--bg-primary);
         }
 
         .document-item:hover {
-            border-color: #10a37f;
-            background: #f9fafb;
+            border-color: var(--primary-color);
+            background: var(--bg-hover);
         }
 
         .document-info {
@@ -198,13 +227,13 @@
         .document-name {
             font-size: 15px;
             font-weight: 500;
-            color: #1f2937;
+            color: var(--text-primary);
             margin-bottom: 6px;
         }
 
         .document-meta {
             font-size: 13px;
-            color: #6b7280;
+            color: var(--text-secondary);
             display: flex;
             gap: 16px;
         }
@@ -228,29 +257,18 @@
         }
 
         .btn-icon:hover {
-            background: #f3f4f6;
+            background: var(--bg-hover);
         }
 
         .btn-delete:hover {
-            background: #fee2e2;
-            color: #dc2626;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #9ca3af;
-        }
-
-        .empty-icon {
-            font-size: 64px;
-            margin-bottom: 16px;
+            background: var(--error-light);
+            color: var(--error-color);
         }
 
         .loading {
             text-align: center;
             padding: 40px;
-            color: #9ca3af;
+            color: var(--text-secondary);
         }
 
         .toast {
@@ -300,13 +318,38 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1>
-                <span>📚</span>
-                知识库管理
-            </h1>
+            <div class="header-main">
+                <div class="logo">🤖</div>
+                <div class="header-title">
+                    <h1>AI Agent Studio</h1>
+                    <div class="header-title-sub">知识库管理</div>
+                </div>
+                <div class="header-nav">
+                    <div class="nav-links">
+                        <a href="agent_chat.html" class="nav-link">
+                            <span>� 对话工作台</span>
+                        </a>
+                        <a href="prompt_management.html" class="nav-link">
+                            <span>📝 Prompt 模板</span>
+                        </a>
+                        <a href="knowledge_base.html" class="nav-link active">
+                            <span>📁 知识库</span>
+                        </a>
+                        <a href="conversation_history.html" class="nav-link">
+                            <span>📚 会话历史</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
             <div class="header-actions">
+                <button class="btn btn-icon" id="themeToggle" onclick="toggleTheme()" title="切换主题">
+                    <span id="themeIcon">🌙</span>
+                </button>
                 <button class="btn btn-secondary" onclick="location.href='agent_chat.html'">
                     ← 返回聊天
+                </button>
+                <button class="btn btn-secondary" onclick="refreshDocuments()" title="刷新文档列表">
+                    🔄 刷新
                 </button>
                 <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
                     <span>📤</span>
@@ -363,6 +406,34 @@
     </div>
 
     <script>
+        // ========== 主题切换功能 ==========
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+        }
+        
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+            
+            showToast('success', newTheme === 'dark' ? '🌙 已切换到暗色模式' : '☀️ 已切换到亮色模式');
+        }
+        
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+            }
+        }
+        
+        // 页面加载时初始化主题
+        initTheme();
+
         const API_BASE = 'http://localhost:8000';
         let allDocuments = [];
 
@@ -402,7 +473,7 @@
             }
 
             container.innerHTML = documents.map(doc => `
-                <div class="document-item" data-id="${doc.id}">
+                <div class="document-item card card-hoverable" data-id="${doc.id}">
                     <div class="document-info">
                         <div class="document-name">📄 ${doc.original_name}</div>
                         <div class="document-meta">
@@ -561,9 +632,25 @@
             }
         });
 
+        // 刷新文档列表
+        async function refreshDocuments() {
+            console.log('🔄 手动刷新文档列表...');
+            showToast('info', '正在刷新...');
+            await loadDocuments();
+            showToast('success', '✅ 刷新完成');
+        }
+
         // 页面加载时初始化
         document.addEventListener('DOMContentLoaded', () => {
             loadDocuments();
+            
+            // 添加自动刷新（每30秒）
+            setInterval(() => {
+                console.log('🔄 自动刷新文档列表...');
+                loadDocuments();
+            }, 30000); // 30秒
+            
+            console.log('✅ 知识库页面已初始化（自动刷新已启用）');
         });
     </script>
 </body>

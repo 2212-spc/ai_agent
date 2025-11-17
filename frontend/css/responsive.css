@@ -1,0 +1,357 @@
+/* ===== 响应式设计 - 移动端优化 ===== */
+
+/* ========== 平板设备 (≤1024px) ========== */
+@media (max-width: 1024px) {
+    .builder-panel {
+        width: 100%;
+        height: 100vh;
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: var(--z-modal);
+    }
+    
+    .builder-content {
+        flex-direction: column;
+    }
+    
+    .builder-sidebar {
+        width: 100%;
+        max-height: 40vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border-primary);
+    }
+    
+    .builder-canvas-container {
+        flex: 1;
+        overflow: auto;
+    }
+    
+    .agent-timeline {
+        width: 100%;
+    }
+}
+
+/* ========== 移动设备 (≤768px) ========== */
+@media (max-width: 768px) {
+    /* Header优化 */
+    .header {
+        padding: 10px 12px;
+    }
+    
+    .header-title h1 {
+        font-size: 16px;
+    }
+    
+    .header-title-sub {
+        display: none; /* 隐藏副标题节省空间 */
+    }
+    
+    .header-nav {
+        display: none; /* 移动端隐藏导航，改用汉堡菜单 */
+    }
+    
+    .header-actions {
+        gap: 4px;
+    }
+    
+    .btn-icon {
+        width: 28px;
+        height: 28px;
+        font-size: 14px;
+    }
+    
+    /* 侧边栏优化 - 改为抽屉式 */
+    .sidebar {
+        position: fixed;
+        left: -100%;
+        top: var(--header-height);
+        height: calc(100vh - var(--header-height));
+        transition: left var(--transition-slow);
+        z-index: var(--z-fixed);
+        box-shadow: var(--shadow-lg);
+    }
+    
+    .sidebar.open {
+        left: 0;
+    }
+    
+    /* 侧边栏遮罩层 */
+    .sidebar-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: calc(var(--z-fixed) - 1);
+        animation: fadeIn var(--transition-normal);
+    }
+    
+    .sidebar.open ~ .sidebar-overlay {
+        display: block;
+    }
+    
+    /* 切换按钮优化 */
+    .toggle-sidebar-btn {
+        position: fixed;
+        left: 8px;
+        top: calc(var(--header-height) + 8px);
+        z-index: calc(var(--z-fixed) + 1);
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        box-shadow: var(--shadow-md);
+    }
+    
+    .sidebar.open + .toggle-sidebar-btn {
+        left: calc(var(--sidebar-width) - 16px);
+    }
+    
+    /* 消息容器优化 */
+    .messages-container {
+        max-width: 100%;
+        padding: 16px;
+        margin-bottom: 8px;
+    }
+    
+    .message {
+        padding: 0 12px;
+        margin-bottom: 16px;
+    }
+    
+    .message-content {
+        margin-left: 0;
+        padding: 16px;
+        font-size: 14px;
+    }
+    
+    .message-time {
+        display: none; /* 移动端隐藏时间 */
+    }
+    
+    /* 输入区域优化 */
+    .input-container {
+        padding: 0 12px 12px;
+        max-width: 100%;
+    }
+    
+    .input-box {
+        padding: 8px 10px;
+    }
+    
+    #messageInput {
+        font-size: 16px; /* 防止iOS自动缩放 */
+    }
+    
+    /* 通知优化 */
+    .notification {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        min-width: auto;
+    }
+    
+    /* 时间线优化 */
+    .agent-timeline {
+        position: fixed;
+        top: 0;
+        right: -100%;
+        width: 100%;
+        height: 100vh;
+        transition: right var(--transition-slow);
+        z-index: var(--z-modal);
+    }
+    
+    .agent-timeline.open {
+        right: 0;
+    }
+    
+    /* 构建器工具栏优化 */
+    .builder-toolbar {
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 8px;
+    }
+    
+    .toolbar-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+    
+    /* 示例Prompt优化 */
+    .example-prompts {
+        gap: 8px;
+    }
+    
+    .example-prompt {
+        padding: 10px 12px;
+    }
+    
+    .example-title {
+        font-size: 12px;
+    }
+    
+    .example-desc {
+        font-size: 12px;
+    }
+}
+
+/* ========== 小屏手机 (≤480px) ========== */
+@media (max-width: 480px) {
+    .header-left {
+        gap: 8px;
+    }
+    
+    .logo {
+        font-size: 20px;
+    }
+    
+    .header-title h1 {
+        font-size: 14px;
+    }
+    
+    .mode-switch-container {
+        display: none; /* 极小屏幕隐藏模式切换 */
+    }
+    
+    .message-header {
+        gap: 6px;
+    }
+    
+    .avatar {
+        width: 24px;
+        height: 24px;
+        font-size: 14px;
+    }
+    
+    .message-role {
+        font-size: 12px;
+    }
+    
+    .message-content {
+        padding: 12px;
+        font-size: 13px;
+    }
+    
+    /* 代码块优化 */
+    .message-content pre {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+    
+    .copy-btn {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+    
+    /* 按钮优化 */
+    .btn {
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+    
+    .btn-small {
+        padding: 3px 6px;
+        font-size: 11px;
+    }
+    
+    /* 卡片优化 */
+    .card {
+        padding: 12px;
+    }
+}
+
+/* ========== 触摸设备优化 ========== */
+@media (hover: none) {
+    /* 增大可点击区域 */
+    .btn-icon {
+        min-width: 44px;
+        min-height: 44px;
+    }
+    
+    .nav-link {
+        padding: 10px 14px;
+    }
+    
+    /* 移除hover效果，使用active */
+    .btn-icon:active {
+        background: var(--bg-tertiary);
+    }
+    
+    .nav-link:active {
+        background: var(--bg-tertiary);
+    }
+    
+    .example-prompt:active {
+        background: var(--primary-light);
+        border-color: var(--primary-color);
+    }
+    
+    /* 节点拖拽优化 */
+    .node-item {
+        touch-action: none; /* 禁用浏览器默认手势 */
+    }
+    
+    .builder-canvas {
+        touch-action: pan-x pan-y; /* 允许双指缩放 */
+    }
+}
+
+/* ========== 横屏优化 ========== */
+@media (max-width: 768px) and (orientation: landscape) {
+    .messages-container {
+        max-height: calc(100vh - var(--header-height) - 80px);
+    }
+    
+    .input-container {
+        padding-bottom: 8px;
+    }
+    
+    .sidebar {
+        width: 200px;
+    }
+    
+    .agent-timeline {
+        width: 300px;
+    }
+}
+
+/* ========== 打印样式 ========== */
+@media print {
+    .header,
+    .sidebar,
+    .input-container,
+    .agent-timeline,
+    .btn,
+    .notification {
+        display: none !important;
+    }
+    
+    .messages-container {
+        max-width: 100%;
+        box-shadow: none;
+        border: 1px solid #e5e5e5;
+    }
+    
+    .message {
+        page-break-inside: avoid;
+    }
+}
+
+/* ========== 暗色模式适配（预留） ========== */
+@media (prefers-color-scheme: dark) {
+    /* 当系统启用暗色模式时自动应用 */
+    /* body[data-theme="auto"] {
+        // 应用暗色主题变量
+    } */
+}
+
+/* ========== 减少动画（辅助功能） ========== */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prompt模板管理 - AI Agent</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="common.css">
     <style>
         * {
             margin: 0;
@@ -13,14 +15,16 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
-            background: #f7f7f8;
+            background: var(--bg-secondary);
             min-height: 100vh;
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
         }
 
         .header {
-            background: white;
-            padding: 16px 24px;
-            border-bottom: 1px solid #e5e5e5;
+            background: var(--bg-primary);
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-primary);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -29,57 +33,68 @@
         .header h1 {
             font-size: 20px;
             font-weight: 600;
-            color: #202123;
+            color: var(--text-primary);
         }
 
-        .header-actions {
+        .header-left {
             display: flex;
-            gap: 12px;
+            align-items: center;
+            gap: 16px;
         }
 
-        .btn {
-            padding: 8px 16px;
-            border-radius: 6px;
-            border: none;
-            cursor: pointer;
+        .logo {
+            font-size: 24px;
+        }
+
+        .header-title-sub {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+
+        .header-nav {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            margin-left: 40px;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 16px;
             font-size: 14px;
-            transition: all 0.2s;
+        }
+
+        .nav-link {
+            color: #6b7280;
             text-decoration: none;
+            padding: 6px 10px;
+            border-radius: 999px;
+            transition: all 0.2s;
             display: inline-flex;
             align-items: center;
             gap: 6px;
         }
 
-        .btn-primary {
-            background: #10a37f;
-            color: white;
+        .nav-link span {
+            font-size: 13px;
         }
 
-        .btn-primary:hover {
-            background: #0d8f6e;
-        }
-
-        .btn-secondary {
+        .nav-link:hover {
             background: #f3f4f6;
-            color: #374151;
+            color: #111827;
         }
 
-        .btn-secondary:hover {
-            background: #e5e7eb;
+        .nav-link.active {
+            background: #e6f4f1;
+            color: #047857;
+            font-weight: 600;
         }
 
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-
-        .btn-small {
-            padding: 4px 8px;
-            font-size: 12px;
+        .header-actions {
+            display: flex;
+            gap: 12px;
         }
 
         .main-container {
@@ -89,16 +104,16 @@
 
         .sidebar {
             width: 280px;
-            background: white;
-            border-right: 1px solid #e5e5e5;
+            background: var(--bg-primary);
+            border-right: 1px solid var(--border-primary);
             overflow-y: auto;
         }
 
         .sidebar-header {
             padding: 16px;
-            border-bottom: 1px solid #e5e5e5;
+            border-bottom: 1px solid var(--border-primary);
             font-weight: 600;
-            color: #202123;
+            color: var(--text-primary);
         }
 
         .agent-list {
@@ -114,23 +129,23 @@
         }
 
         .agent-item:hover {
-            background: #f3f4f6;
+            background: var(--bg-hover);
         }
 
         .agent-item.active {
-            background: #e8f5e9;
-            border-left: 3px solid #10a37f;
+            background: var(--primary-light);
+            border-left: 3px solid var(--primary-color);
         }
 
         .agent-name {
             font-weight: 500;
-            color: #202123;
+            color: var(--text-primary);
             margin-bottom: 4px;
         }
 
         .agent-description {
             font-size: 12px;
-            color: #6b7280;
+            color: var(--text-secondary);
         }
 
         .content-area {
@@ -148,7 +163,7 @@
 
         .content-header h2 {
             font-size: 24px;
-            color: #202123;
+            color: var(--text-primary);
         }
 
         .prompt-list {
@@ -157,7 +172,7 @@
         }
 
         .prompt-card {
-            background: white;
+            background: var(--bg-primary);
             border-radius: 8px;
             padding: 20px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -178,7 +193,7 @@
 
         .prompt-card.inactive {
             opacity: 0.7;
-            background: #f9fafb;
+            background: var(--bg-tertiary);
         }
 
         .toggle-switch {
@@ -250,7 +265,7 @@
         .prompt-name {
             font-weight: 600;
             font-size: 16px;
-            color: #202123;
+            color: var(--text-primary);
         }
 
         .badge {
@@ -278,17 +293,17 @@
         }
 
         .prompt-description {
-            color: #6b7280;
+            color: var(--text-secondary);
             font-size: 14px;
             margin-bottom: 12px;
         }
 
         .prompt-content {
-            background: #f9fafb;
+            background: var(--bg-tertiary);
             border-radius: 6px;
             padding: 12px;
             font-size: 13px;
-            color: #374151;
+            color: var(--text-primary);
             max-height: 150px;
             overflow-y: auto;
             white-space: pre-wrap;
@@ -300,18 +315,7 @@
             gap: 16px;
             margin-top: 12px;
             font-size: 12px;
-            color: #9ca3af;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 64px 24px;
-            color: #9ca3af;
-        }
-
-        .empty-state-icon {
-            font-size: 48px;
-            margin-bottom: 16px;
+            color: var(--text-tertiary);
         }
 
         /* 模态框样式 */
@@ -333,7 +337,7 @@
         }
 
         .modal-content {
-            background: white;
+            background: var(--bg-primary);
             border-radius: 12px;
             width: 90%;
             max-width: 800px;
@@ -352,7 +356,7 @@
 
         .modal-header h3 {
             font-size: 18px;
-            color: #202123;
+            color: var(--text-primary);
         }
 
         .modal-close {
@@ -360,7 +364,7 @@
             border: none;
             font-size: 24px;
             cursor: pointer;
-            color: #6b7280;
+            color: var(--text-secondary);
             padding: 0;
             width: 32px;
             height: 32px;
@@ -371,7 +375,7 @@
         }
 
         .modal-close:hover {
-            background: #f3f4f6;
+            background: var(--bg-hover);
         }
 
         .modal-body {
@@ -386,7 +390,7 @@
             display: block;
             margin-bottom: 8px;
             font-weight: 500;
-            color: #374151;
+            color: var(--text-primary);
             font-size: 14px;
         }
 
@@ -395,19 +399,19 @@
         .form-select {
             width: 100%;
             padding: 10px 12px;
-            border: 1px solid #d1d5db;
+            border: 1px solid var(--border-secondary);
             border-radius: 6px;
             font-size: 14px;
-            font-family: inherit;
-            transition: all 0.2s;
+            background: var(--bg-primary);
+            color: var(--text-primary);
         }
 
         .form-input:focus,
         .form-textarea:focus,
         .form-select:focus {
             outline: none;
-            border-color: #10a37f;
-            box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.1);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
         .form-textarea {
@@ -417,13 +421,13 @@
 
         .form-hint {
             font-size: 12px;
-            color: #6b7280;
+            color: var(--text-secondary);
             margin-top: 4px;
         }
 
         .modal-footer {
             padding: 16px 24px;
-            border-top: 1px solid #e5e5e5;
+            border-top: 1px solid var(--border-primary);
             display: flex;
             justify-content: flex-end;
             gap: 12px;
@@ -432,7 +436,7 @@
         .loading {
             text-align: center;
             padding: 32px;
-            color: #9ca3af;
+            color: var(--text-secondary);
         }
 
         .toast {
@@ -448,11 +452,11 @@
         }
 
         .toast.success {
-            background: #10a37f;
+            background: var(--success-color);
         }
 
         .toast.error {
-            background: #ef4444;
+            background: var(--error-color);
         }
 
         @keyframes slideIn {
@@ -468,9 +472,35 @@
     </style>
 </head>
 <body>
+
     <div class="header">
-        <h1>📝 Prompt模板管理</h1>
+        <div class="header-left">
+            <div class="logo">🤖</div>
+            <div class="header-title">
+                <h1>AI Agent Studio</h1>
+                <div class="header-title-sub">Prompt 模板管理</div>
+            </div>
+            <div class="header-nav">
+                <div class="nav-links">
+                    <a href="agent_chat.html" class="nav-link">
+                        <span>💬 对话工作台</span>
+                    </a>
+                    <a href="prompt_management.html" class="nav-link active">
+                        <span>📝 Prompt 模板</span>
+                    </a>
+                    <a href="knowledge_base.html" class="nav-link">
+                        <span>📁 知识库</span>
+                    </a>
+                    <a href="conversation_history.html" class="nav-link">
+                        <span>📚 会话历史</span>
+                    </a>
+                </div>
+            </div>
+        </div>
         <div class="header-actions">
+            <button class="btn btn-icon" id="themeToggle" onclick="toggleTheme()" title="切换主题">
+                <span id="themeIcon">🌙</span>
+            </button>
             <a href="agent_chat.html" class="btn btn-secondary">返回聊天</a>
         </div>
     </div>
@@ -631,6 +661,34 @@
     </div>
 
     <script>
+        // ========== 主题切换功能 ==========
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+        }
+        
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+            
+            showToast(newTheme === 'dark' ? '🌙 已切换到暗色模式' : '☀️ 已切换到亮色模式', 'success');
+        }
+        
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+            }
+        }
+        
+        // 页面加载时初始化主题
+        initTheme();
+
         const API_BASE = 'http://localhost:8000';
         let agents = [];
         let currentAgentId = null;
@@ -751,7 +809,7 @@
             }
 
             container.innerHTML = agentPrompts.map(prompt => `
-                <div class="prompt-card ${prompt.is_default ? 'default' : ''} ${prompt.is_active ? 'active' : 'inactive'}">
+                <div class="prompt-card card card-hoverable ${prompt.is_default ? 'default' : ''} ${prompt.is_active ? 'active' : 'inactive'}">
                     <div class="prompt-header">
                         <div class="prompt-title">
                             <span class="prompt-name">${escapeHtml(prompt.name)}</span>
