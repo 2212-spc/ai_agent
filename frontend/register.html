@@ -428,7 +428,9 @@
             }
         });
 
-        function handleRegister(event) {
+        const API_BASE_URL = 'http://localhost:8000';
+
+        async function handleRegister(event) {
             event.preventDefault();
             
             const username = document.getElementById('username').value;
@@ -436,21 +438,31 @@
             const password = document.getElementById('password').value;
             const confirmPassword = document.getElementById('confirmPassword').value;
             const agreeTerms = document.getElementById('agreeTerms').checked;
+            const btn = document.getElementById('registerBtn');
+            
+            // 清除之前的错误
+            clearErrors();
             
             // 验证
             let hasError = false;
             
+            if (!username || username.trim().length < 2) {
+                showFieldError('username', '用户名至少需要2个字符');
+                hasError = true;
+            }
+            
+            if (!email || !email.includes('@')) {
+                showFieldError('email', '请输入有效的邮箱地址');
+                hasError = true;
+            }
+            
             if (password.length < 8) {
-                document.getElementById('password').classList.add('error');
-                document.getElementById('passwordError').textContent = '密码至少需要8位字符';
-                document.getElementById('passwordError').classList.add('show');
+                showFieldError('password', '密码至少需要8位字符');
                 hasError = true;
             }
             
             if (password !== confirmPassword) {
-                document.getElementById('confirmPassword').classList.add('error');
-                document.getElementById('confirmPasswordError').textContent = '两次输入的密码不一致';
-                document.getElementById('confirmPasswordError').classList.add('show');
+                showFieldError('confirmPassword', '两次输入的密码不一致');
                 hasError = true;
             }
             
@@ -463,24 +475,74 @@
                 return;
             }
             
-            // 演示模式：直接注册成功
-            const userData = {
-                username: username,
-                email: email,
-                registerTime: new Date().toISOString(),
-                remember: false
-            };
-            
-            localStorage.setItem('userInfo', JSON.stringify(userData));
-            
             // 添加注册动画
-            const btn = document.getElementById('registerBtn');
             btn.textContent = '注册中...';
             btn.disabled = true;
             
-            setTimeout(() => {
-                window.location.href = 'login.html';
-            }, 800);
+            try {
+                // 调用后端注册 API
+                const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, email, password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || '注册失败');
+                }
+
+                // 注册成功，保存 token 和用户信息
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                localStorage.setItem('user_id', data.user_id);
+                localStorage.setItem('username', data.username);
+                localStorage.setItem('email', email);
+
+                // 注册成功，跳转到聊天页面
+                btn.textContent = '注册成功！';
+                setTimeout(() => {
+                    window.location.href = 'agent_chat.html';
+                }, 500);
+
+            } catch (error) {
+                console.error('注册错误:', error);
+                showFieldError('email', error.message || '注册失败，请稍后重试');
+                btn.textContent = '注册';
+                btn.disabled = false;
+            }
+        }
+
+        function showFieldError(fieldId, message) {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.classList.add('error');
+            }
+            
+            const errorId = fieldId + 'Error';
+            let errorDiv = document.getElementById(errorId);
+            if (!errorDiv) {
+                errorDiv = document.createElement('div');
+                errorDiv.id = errorId;
+                errorDiv.className = 'field-error';
+                errorDiv.style.cssText = 'color: #ff4444; font-size: 12px; margin-top: 4px;';
+                if (field && field.parentNode) {
+                    field.parentNode.appendChild(errorDiv);
+                }
+            }
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+        }
+
+        function clearErrors() {
+            document.querySelectorAll('.error').forEach(el => el.classList.remove('error'));
+            document.querySelectorAll('.field-error').forEach(el => {
+                el.classList.remove('show');
+                el.textContent = '';
+            });
         }
 
         // 回车提交
@@ -492,13 +554,10 @@
 
         // 检查是否已登录
         window.onload = function() {
-            const userInfo = localStorage.getItem('userInfo');
-            if (userInfo) {
-                const user = JSON.parse(userInfo);
-                if (user.registerTime) {
-                    // 如果已注册，直接跳转到登录页
-                    window.location.href = 'login.html';
-                }
+            const accessToken = localStorage.getItem('access_token');
+            if (accessToken) {
+                // 如果已登录，直接跳转到聊天页面
+                window.location.href = 'agent_chat.html';
             }
         };
     </script>

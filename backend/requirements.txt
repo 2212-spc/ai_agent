@@ -36,3 +36,7 @@ rank-bm25==0.2.2
 # 网页解析
 beautifulsoup4==4.12.3
 lxml==5.1.0
+
+# 认证和安全
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4

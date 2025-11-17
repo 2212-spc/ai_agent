@@ -29,12 +29,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #d0d0d0;
+    background: var(--border-secondary);
     border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #b0b0b0;
+    background: var(--text-tertiary);
 }
 
 /* 无障碍 - 仅屏幕阅读器可见 */
@@ -60,6 +60,11 @@ body {
 ::selection {
     background: var(--primary-light);
     color: var(--text-primary);
+}
+
+[data-theme="dark"] ::selection {
+    background: var(--primary-color);
+    color: var(--text-inverse);
 }
 
 /* 容器 */

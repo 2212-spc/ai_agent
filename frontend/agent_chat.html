@@ -140,7 +140,7 @@
             align-items: center;
             gap: 8px;
             padding: 4px 10px;
-            background: #f0f0f0;
+            background: var(--bg-tertiary);
             border-radius: 6px;
         }
         
@@ -169,7 +169,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #ccc;
+            background-color: var(--border-secondary);
             transition: .3s;
             border-radius: 20px;
         }
@@ -181,13 +181,13 @@
             width: 14px;
             left: 3px;
             bottom: 3px;
-            background-color: white;
+            background-color: var(--bg-primary);
             transition: .3s;
             border-radius: 50%;
         }
         
         .mode-switch input:checked + .mode-slider {
-            background-color: #10a37f;
+            background-color: var(--success-color);
         }
         
         .mode-switch input:checked + .mode-slider:before {
@@ -328,8 +328,8 @@
             transform: translateY(-50%);
             width: 20px;
             height: 60px;
-            background: white;
-            border: 1px solid #e5e5e5;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
             border-left: none;
             border-radius: 0 6px 6px 0;
             cursor: pointer;
@@ -337,13 +337,13 @@
             align-items: center;
             justify-content: center;
             font-size: 12px;
-            color: #8e8ea0;
+            color: var(--text-secondary);
             transition: all 0.3s ease;
             z-index: 10;
         }
 
         .toggle-sidebar-btn:hover {
-            background: #f7f7f8;
+            background: var(--bg-secondary);
         }
 
         .sidebar.collapsed + .toggle-sidebar-btn {
@@ -405,11 +405,11 @@
         }
 
         .user-message .avatar {
-            background: #19c37d;
+            background: var(--success-color);
         }
 
         .agent-message .avatar {
-            background: #ab68ff;
+            background: var(--secondary-color);
         }
 
         .message-role {
@@ -517,6 +517,11 @@
             margin: 12px 0;
             position: relative;
             border: 1px solid #3e4451;
+        }
+        
+        [data-theme="dark"] .message-content pre {
+            background: #1e293b !important;
+            border: 1px solid var(--border-primary);
         }
         
         .message-content pre code {
@@ -696,10 +701,10 @@
         
         /* 行内代码 */
         .message-content :not(pre) > code {
-            background: #f3f4f6;
+            background: var(--bg-tertiary);
             padding: 2px 6px;
             border-radius: 4px;
-            color: #1f2937;
+            color: var(--text-primary);
             font-size: 0.9em;
         }
         
@@ -720,6 +725,12 @@
             font-weight: 500;
         }
         
+        [data-theme="dark"] .copy-btn {
+            background: var(--bg-tertiary) !important;
+            border: 1px solid var(--border-primary);
+            color: var(--text-secondary) !important;
+        }
+        
         .copy-btn:hover {
             background: #4e5564 !important;
             border-color: #6c737f;
@@ -727,13 +738,19 @@
             transform: translateY(-1px);
         }
         
+        [data-theme="dark"] .copy-btn:hover {
+            background: var(--bg-hover) !important;
+            border-color: var(--border-secondary);
+            color: var(--text-primary) !important;
+        }
+        
         /* Mermaid 图表样式 */
         .message-content .mermaid {
-            background: white;
+            background: var(--bg-primary);
             padding: 20px;
             border-radius: 8px;
             margin: 16px 0;
-            border: 1px solid #e5e5e5;
+            border: 1px solid var(--border-primary);
             overflow-x: auto;
             cursor: zoom-in;
             transition: all 0.3s ease;
@@ -741,7 +758,7 @@
         }
         
         .message-content .mermaid:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            box-shadow: var(--shadow-md);
         }
         
         .message-content .mermaid svg {
@@ -754,9 +771,9 @@
             width: 32px;
             height: 32px;
             border-radius: 8px;
-            background: #ef4444;
+            background: var(--error-color);
             border: none;
-            color: white;
+            color: var(--text-inverse);
             font-size: 16px;
             cursor: pointer;
             transition: all 0.2s;
@@ -766,7 +783,7 @@
         }
         
         .stop-btn:hover {
-            background: #dc2626;
+            background: var(--error-dark);
             transform: scale(1.05);
         }
         
@@ -785,6 +802,10 @@
             height: 100%;
             background-color: rgba(0, 0, 0, 0.9);
             animation: fadeIn 0.3s;
+        }
+        
+        [data-theme="dark"] .image-modal {
+            background-color: rgba(0, 0, 0, 0.95);
         }
         
         .image-modal.active {
@@ -2269,16 +2290,17 @@
 
         .history-btn {
             padding: 4px 8px;
-            background: #f3f4f6;
-            border: 1px solid #e5e7eb;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
             border-radius: 4px;
             cursor: pointer;
             font-size: 12px;
             transition: all 0.2s;
+            color: var(--text-primary);
         }
 
         .history-btn:hover:not(:disabled) {
-            background: #e5e7eb;
+            background: var(--bg-hover);
         }
 
         /* ========== 知识来源 Source Cards ========== */
@@ -2404,7 +2426,7 @@
             left: 0;
             width: 100%;
             height: 100vh;
-            background: white;
+            background: var(--bg-primary);
             z-index: 2000;
             display: none;
             flex-direction: column;
@@ -2416,7 +2438,7 @@
         
         .builder-header {
             padding: 16px;
-            border-bottom: 1px solid #e5e5e5;
+            border-bottom: 1px solid var(--border-primary);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -2425,6 +2447,7 @@
         .builder-title {
             font-size: 18px;
             font-weight: 600;
+            color: var(--text-primary);
         }
         
         .builder-actions {
@@ -2440,20 +2463,20 @@
         
         .builder-sidebar {
             width: 250px;
-            border-right: 1px solid #e5e5e5;
+            border-right: 1px solid var(--border-primary);
             padding: 16px;
             overflow-y: auto;
-            background: #f9fafb;
+            background: var(--bg-secondary);
         }
         
         .builder-canvas {
             flex: 1;
             position: relative;
             background: 
-                linear-gradient(90deg, #f0f0f0 1px, transparent 1px),
-                linear-gradient(#f0f0f0 1px, transparent 1px);
+                linear-gradient(90deg, var(--border-primary) 1px, transparent 1px),
+                linear-gradient(var(--border-primary) 1px, transparent 1px);
             background-size: 20px 20px;
-            background-color: #fafafa;
+            background-color: var(--bg-tertiary);
             overflow: hidden;
             cursor: grab;
             user-select: none;
@@ -2476,23 +2499,24 @@
             font-size: 14px;
             font-weight: 600;
             margin-bottom: 12px;
-            color: #374151;
+            color: var(--text-primary);
         }
         
         .palette-item {
             padding: 10px;
             margin-bottom: 8px;
-            background: white;
-            border: 1px solid #e5e5e5;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
             border-radius: 6px;
             cursor: grab;
             transition: all 0.2s;
             font-size: 13px;
+            color: var(--text-primary);
         }
         
         .palette-item:hover {
-            border-color: #10a37f;
-            background: #f0fdf4;
+            border-color: var(--success-color);
+            background: var(--success-light);
         }
         
         .palette-item:active {
@@ -2503,11 +2527,11 @@
             position: absolute;
             min-width: 160px;
             padding: 0;
-            background: white;
-            border: 2px solid #10a37f;
+            background: var(--bg-primary);
+            border: 2px solid var(--success-color);
             border-radius: 10px;
             cursor: move;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            box-shadow: var(--shadow-md);
             transition: box-shadow 0.2s, border-color 0.2s;
             overflow: hidden;
             will-change: transform;
@@ -2579,16 +2603,16 @@
         .node-content {
             padding: 10px 12px;
             font-size: 12px;
-            color: #6b7280;
-            background: white;
+            color: var(--text-secondary);
+            background: var(--bg-primary);
         }
         
         .node-ports {
             display: flex;
             justify-content: space-between;
             padding: 4px 8px;
-            background: #f9fafb;
-            border-top: 1px solid #e5e7eb;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-primary);
         }
         
         .node-port {
@@ -2653,16 +2677,17 @@
         
         .config-panel {
             width: 300px;
-            border-left: 1px solid #e5e5e5;
+            border-left: 1px solid var(--border-primary);
             padding: 16px;
             overflow-y: auto;
-            background: white;
+            background: var(--bg-primary);
         }
         
         .config-title {
             font-size: 14px;
             font-weight: 600;
             margin-bottom: 12px;
+            color: var(--text-primary);
         }
         
         .config-field {
@@ -2671,7 +2696,7 @@
         
         .config-label {
             font-size: 12px;
-            color: #6b7280;
+            color: var(--text-secondary);
             margin-bottom: 6px;
             display: block;
         }
@@ -2679,26 +2704,30 @@
         .config-input {
             width: 100%;
             padding: 8px;
-            border: 1px solid #d1d5db;
+            border: 1px solid var(--border-secondary);
             border-radius: 4px;
             font-size: 13px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
         }
         
         .config-select {
             width: 100%;
             padding: 8px;
-            border: 1px solid #d1d5db;
+            border: 1px solid var(--border-secondary);
             border-radius: 4px;
             font-size: 13px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
         }
         
         /* 右键菜单 */
         .context-menu {
             position: fixed;
-            background: white;
-            border: 1px solid #e5e5e5;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: var(--shadow-lg);
             padding: 4px;
             z-index: 3000;
             min-width: 150px;
@@ -2709,37 +2738,37 @@
             padding: 8px 12px;
             cursor: pointer;
             font-size: 13px;
-            color: #374151;
+            color: var(--text-primary);
             border-radius: 4px;
             transition: all 0.2s;
         }
         
         .context-menu-item:hover {
-            background: #f3f4f6;
+            background: var(--bg-tertiary);
         }
         
         .context-menu-item.danger {
-            color: #ef4444;
+            color: var(--error-color);
         }
         
         .context-menu-item.danger:hover {
-            background: #fee2e2;
+            background: var(--error-light);
         }
         
         /* 工具栏 */
         .builder-toolbar {
             padding: 12px 16px;
-            border-bottom: 1px solid #e5e5e5;
+            border-bottom: 1px solid var(--border-primary);
             display: flex;
             gap: 8px;
             align-items: center;
-            background: #f9fafb;
+            background: var(--bg-secondary);
         }
         
         .toolbar-btn {
             padding: 6px 12px;
-            background: white;
-            border: 1px solid #d1d5db;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-secondary);
             border-radius: 6px;
             cursor: pointer;
             font-size: 12px;
@@ -2747,16 +2776,17 @@
             display: flex;
             align-items: center;
             gap: 4px;
+            color: var(--text-primary);
         }
         
         .toolbar-btn:hover {
-            background: #f3f4f6;
-            border-color: #10a37f;
+            background: var(--bg-tertiary);
+            border-color: var(--success-color);
         }
         
         .toolbar-btn.danger:hover {
-            border-color: #ef4444;
-            color: #ef4444;
+            border-color: var(--error-color);
+            color: var(--error-color);
         }
         
         /* 连线预览 */
@@ -2783,9 +2813,9 @@
             width: 40px;
             height: 40px;
             border-radius: 8px;
-            background: white;
-            border: 1px solid #e5e5e5;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            box-shadow: var(--shadow-md);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -2793,13 +2823,14 @@
             font-size: 18px;
             transition: all 0.2s;
             user-select: none;
+            color: var(--text-primary);
         }
         
         .canvas-control-btn:hover {
-            background: #f9fafb;
-            border-color: #10a37f;
+            background: var(--bg-secondary);
+            border-color: var(--success-color);
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: var(--shadow-lg);
         }
         
         .canvas-control-btn:active {
@@ -2813,16 +2844,16 @@
             left: 50%;
             transform: translateX(-50%);
             padding: 6px 12px;
-            background: rgba(255, 255, 255, 0.95);
-            border: 1px solid #e5e5e5;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
             border-radius: 6px;
             font-size: 13px;
-            color: #374151;
+            color: var(--text-primary);
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.3s;
             z-index: 99;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: var(--shadow-md);
         }
         
         .zoom-indicator.show {
@@ -2836,7 +2867,7 @@
             left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
-            color: #9ca3af;
+            color: var(--text-tertiary);
             font-size: 14px;
             pointer-events: none;
         }
@@ -2852,11 +2883,11 @@
             left: 50%;
             transform: translateX(-50%);
             padding: 8px 16px;
-            background: rgba(16, 163, 127, 0.1);
-            border: 1px solid rgba(16, 163, 127, 0.3);
+            background: var(--success-light);
+            border: 1px solid var(--success-color);
             border-radius: 8px;
             font-size: 12px;
-            color: #10a37f;
+            color: var(--success-color);
             pointer-events: none;
             z-index: 98;
             opacity: 0.8;
@@ -2864,7 +2895,7 @@
         }
         
         .canvas-usage-hint code {
-            background: rgba(16, 163, 127, 0.15);
+            background: var(--success-light);
             padding: 2px 6px;
             border-radius: 3px;
             font-family: 'SF Mono', 'Consolas', monospace;
@@ -3127,7 +3158,7 @@
                         ↷ 重做
                     </button>
                 </div>
-                <div style="font-size: 12px; color: #6b7280;">
+                <div style="font-size: 12px; color: var(--text-secondary);">
                     提示：拖拽节点移动 | 双击节点连接 | 右键删除 | Delete键删除选中节点
                 </div>
             </div>
@@ -3162,7 +3193,7 @@
                         <div class="builder-hint" id="builderHint">
                             <div style="font-size: 24px; margin-bottom: 8px;">🎨</div>
                             <div>从左侧拖拽节点到画布</div>
-                            <div style="font-size: 12px; margin-top: 4px; color: #9ca3af;">或点击节点类型快速添加</div>
+                            <div style="font-size: 12px; margin-top: 4px; color: var(--text-tertiary);">或点击节点类型快速添加</div>
                         </div>
                         <svg id="connectionSvg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
                         </svg>
@@ -3181,7 +3212,7 @@
                 </div>
                 <div class="config-panel" id="configPanel">
                     <div class="config-title">节点配置</div>
-                    <div id="configContent" style="color: #9ca3af; font-size: 13px;">选择一个节点进行配置</div>
+                    <div id="configContent" style="color: var(--text-tertiary); font-size: 13px;">选择一个节点进行配置</div>
                 </div>
             </div>
         </div>
@@ -3714,6 +3745,42 @@
         const loadingProgress = new LoadingProgress();
 
         const API_BASE = 'http://127.0.0.1:8000';
+        
+        // 获取认证 headers（如果已登录）
+        function getAuthHeaders() {
+            const token = localStorage.getItem('access_token');
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            return headers;
+        }
+        
+        // 检查登录状态，如果未登录则跳转到登录页
+        function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                window.location.href = 'login.html';
+                return false;
+            }
+            return true;
+        }
+        
+        // 页面加载时检查登录状态
+        window.addEventListener('DOMContentLoaded', function() {
+            if (!checkAuth()) {
+                return;
+            }
+            // 显示当前用户信息
+            const username = localStorage.getItem('username');
+            if (username) {
+                // 可以在页面上显示用户名
+                console.log('当前用户:', username);
+            }
+        });
+        
         let nodeCount = 0;
         let toolCount = 0;
         let currentThreadId = null;
@@ -3847,18 +3914,22 @@
             listEl.innerHTML = '<div class="history-loading">加载中...</div>';
 
             try {
-                const userInfo = localStorage.getItem('userInfo');
-                const userId = userInfo ? JSON.parse(userInfo).user_id : null;
+                const userId = localStorage.getItem('user_id');
 
                 let url = `${API_BASE}/conversations?limit=50&offset=0`;
                 if (userId) url += `&user_id=${userId}`;
 
                 console.log('🔗 请求URL:', url);
+                const headers = {
+                    'Accept': 'application/json',
+                };
+                const token = localStorage.getItem('access_token');
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
                 const response = await fetch(url, {
                     method: 'GET',
-                    headers: {
-                        'Accept': 'application/json',
-                    },
+                    headers: headers,
                 });
                 
                 if (!response.ok) {
@@ -4427,8 +4498,7 @@
             console.log('📖 开始加载历史消息，会话ID:', sessionId);
             
             try {
-                const userInfo = localStorage.getItem('userInfo');
-                const userId = userInfo ? JSON.parse(userInfo).user_id : null;
+                const userId = localStorage.getItem('user_id');
                 
                 let url = `${API_BASE}/conversation/${sessionId}/history?limit=100`;
                 if (userId) {
@@ -4436,7 +4506,14 @@
                 }
                 
                 console.log('🔗 请求URL:', url);
-                const response = await fetch(url);
+                const headers = {};
+                const token = localStorage.getItem('access_token');
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                const response = await fetch(url, {
+                    headers: headers
+                });
                 
                 if (!response.ok) {
                     console.error('❌ HTTP错误:', response.status, response.statusText);
@@ -4880,30 +4957,75 @@
                 // 更新进度
                 loadingProgress.updateStatus('🔍 检索知识库...', '(2/3)', 30);
                 
-                // 统一使用聊天API（文件已在知识库中，通过知识库检索使用）
-                const apiEndpoint = isMultiAgentMode 
-                    ? `${API_BASE}/chat/multi-agent/stream` 
-                    : `${API_BASE}/chat/agent/stream`;
-                
-                console.log(`🚀 使用 ${isMultiAgentMode ? '多智能体' : '单智能体'} API: ${apiEndpoint}`);
-                
-                const response = await fetch(apiEndpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        messages: [{role: 'user', content: message}],
-                        use_knowledge_base: document.getElementById('useKB').checked,
-                        use_tools: document.getElementById('useTools').checked,
-                        session_id: getCurrentSessionId(),
-                        execution_mode: 'sequential', // 多智能体执行模式: sequential 或 parallel
-                    }),
-                    signal: currentAbortController.signal,
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                // 如果有附件，使用 FormData 上传
+                if (attachedFiles.length > 0) {
+                    const formData = new FormData();
+                    formData.append('message', message || '请分析这些文件');
+                    formData.append('use_knowledge_base', document.getElementById('useKB').checked);
+                    formData.append('use_tools', document.getElementById('useTools').checked);
+                    formData.append('session_id', getCurrentSessionId());
+                    
+                    attachedFiles.forEach((file) => {
+                        formData.append('files', file);
+                    });
+                    
+                    const uploadUrl = `${API_BASE}/chat/agent/stream-with-files`;
+                    console.log('📤 上传到:', uploadUrl);
+                    console.log('📦 FormData 内容:', {
+                        message: formData.get('message'),
+                        use_knowledge_base: formData.get('use_knowledge_base'),
+                        use_tools: formData.get('use_tools'),
+                        session_id: formData.get('session_id'),
+                        files_count: attachedFiles.length
+                    });
+                    
+                    // 文件上传请求，需要添加 token（FormData 不能设置 Content-Type）
+                    const uploadHeaders = {};
+                    const token = localStorage.getItem('access_token');
+                    if (token) {
+                        uploadHeaders['Authorization'] = `Bearer ${token}`;
+                    }
+                    
+                    response = await fetch(uploadUrl, {
+                        method: 'POST',
+                        headers: uploadHeaders,
+                        body: formData,
+                        signal: currentAbortController.signal,
+                    });
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`服务器错误: ${response.status} ${errorText}`);
+                    }
+                } else {
+                    // 无附件，使用 JSON
+                    // 根据模式选择不同的API端点
+                    const apiEndpoint = isMultiAgentMode 
+                        ? `${API_BASE}/chat/multi-agent/stream` 
+                        : `${API_BASE}/chat/agent/stream`;
+                    
+                    console.log(`🚀 使用 ${isMultiAgentMode ? '多智能体' : '单智能体'} API: ${apiEndpoint}`);
+                    
+                    // 获取用户ID（如果已登录）
+                    const userId = localStorage.getItem('user_id');
+                    
+                    response = await fetch(apiEndpoint, {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({
+                            messages: [{role: 'user', content: message}],
+                            use_knowledge_base: document.getElementById('useKB').checked,
+                            use_tools: document.getElementById('useTools').checked,
+                            session_id: getCurrentSessionId(),
+                            user_id: userId, // 添加用户ID
+                            execution_mode: 'sequential', // 多智能体执行模式: sequential 或 parallel
+                        }),
+                        signal: currentAbortController.signal,
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
                 }
 
                 const reader = response.body.getReader();
@@ -5401,6 +5523,13 @@
 
         function logout() {
             if (confirm('确定要退出登录吗？')) {
+                // 清除所有登录相关的 localStorage
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                localStorage.removeItem('user_id');
+                localStorage.removeItem('username');
+                localStorage.removeItem('email');
+                localStorage.removeItem('remember_me');
                 localStorage.removeItem('userInfo');
                 localStorage.removeItem('currentSessionId');
                 window.location.href = 'login.html';
@@ -5423,7 +5552,14 @@
         
         async function loadTools() {
             try {
-                const response = await fetch(`${API_BASE}/tools`);
+                const headers = {};
+                const token = localStorage.getItem('access_token');
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                const response = await fetch(`${API_BASE}/tools`, {
+                    headers: headers
+                });
                 availableTools = await response.json();
                 
                 const toolsList = document.getElementById('toolsList');
@@ -5915,7 +6051,7 @@
             if (selectedNodeId === nodeId) {
                 selectedNodeId = null;
                 document.getElementById('configContent').innerHTML = 
-                    '<div style="color: #9ca3af; font-size: 13px;">选择一个节点进行配置</div>';
+                    '<div style="color: var(--text-tertiary); font-size: 13px;">选择一个节点进行配置</div>';
             }
             
             stateManager.setState({ nodes: builderNodes, edges: builderEdges });
@@ -6306,7 +6442,7 @@
             try {
                 const response = await fetch(`${API_BASE}/agents`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({
                         name: name,
                         description: '自定义Agent配置',
@@ -6364,7 +6500,7 @@
             try {
                 const saveResponse = await fetch(`${API_BASE}/agents`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({
                         name: '临时测试Agent_' + Date.now(),
                         description: '临时测试',
@@ -6382,14 +6518,16 @@
                 console.log('✅ Agent配置已保存:', agent.id);
                 
                 // 执行Agent（流式）
+                const userId = localStorage.getItem('user_id');
                 const executeResponse = await fetch(`${API_BASE}/agents/${agent.id}/execute/stream`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({
                         agent_id: agent.id,
                         messages: [{ role: 'user', content: query }],
                         use_knowledge_base: false,
-                        use_tools: true
+                        use_tools: true,
+                        user_id: userId
                     })
                 });
                 
@@ -6565,11 +6703,9 @@
             // 初始化主题
             initTheme();
             
-            // 检查登录状态
-            const userInfo = localStorage.getItem('userInfo');
-            if (!userInfo) {
-                // 未登录，跳转到登录页
-                window.location.href = 'login.html';
+            // 检查登录状态（使用 access_token 而不是 userInfo）
+            if (!checkAuth()) {
+                // 未登录，checkAuth 已经跳转到登录页
                 return;
             }
             

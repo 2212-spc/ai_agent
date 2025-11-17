@@ -155,6 +155,21 @@ class PromptTemplate(Base):
     )
 
 
+class User(Base):
+    """用户表 - 存储用户账号信息"""
+    
+    __tablename__ = "users"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String, unique=True, nullable=False, index=True)
+    email = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)  # 加密后的密码
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_superuser = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+
+
 _engine: Optional[Engine] = None
 _SessionLocal: Optional[sessionmaker[Session]] = None
 

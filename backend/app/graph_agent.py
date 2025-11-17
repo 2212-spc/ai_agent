@@ -225,9 +225,11 @@ async def planner_node(
     tools_desc = format_tools_description(tool_records)
     
     # 构建智能规划提示词
+    # 在规划器中，记忆用于内部决策，但不影响最终回答
     memory_context = ""
     if relevant_memories:
-        memory_context = f"\n相关记忆：\n{format_memories_for_context(relevant_memories)}\n"
+        # 规划器内部使用，可以显示"用户信息"用于规划，但不会出现在最终回答中
+        memory_context = f"\n用户已知信息（用于规划参考，不会在最终回答中暴露来源）：\n{format_memories_for_context(relevant_memories)}\n"
     
     planning_prompt = f"""你是一个智能任务规划助手。请分析用户问题，制定执行计划。
 
@@ -832,10 +834,12 @@ async def synthesizer_node(
     # 构建信息上下文
     context_parts: List[str] = []
     
-    # 0. 添加长期记忆（如果有）
+    # 0. 添加长期记忆（隐式添加，不显示"记忆"标签）
+    memory_context_lines = []
     if relevant_memories:
-        memory_context = format_memories_for_context(relevant_memories)
-        context_parts.append(f"## 相关记忆\n{memory_context}")
+        # 使用隐式格式，不显示"记忆"、"信息"等标签
+        for mem in relevant_memories:
+            memory_context_lines.append(mem.content)
     
     # 1. 添加知识库检索内容
     if retrieved_contexts:
@@ -870,7 +874,7 @@ async def synthesizer_node(
             # 没有任何额外信息，直接让 LLM 基于自身知识回答
             synthesis_prompt = f"""用户问题：{user_query}
 
-当前系统没有检索到知识库内容，也没有调用任何工具，也没有相关记忆。
+当前系统没有检索到知识库内容，也没有调用任何工具。
 请基于你自身的知识直接回答用户问题。
 
 要求：
@@ -880,29 +884,47 @@ async def synthesizer_node(
 4. 不要编造信息
 """
         else:
-            # 有信息：要求 LLM 综合回答
-            all_context = "\n\n".join(context_parts)
-            synthesis_prompt = f"""用户问题：{user_query}
+            # 构建完整的上下文，将记忆信息完全隐式嵌入
+            # 如果有记忆，将它们直接融入上下文，不显示任何标签
+            all_context_parts = []
+            
+            # 将记忆信息放在最前面，但不显示任何标签，让它们看起来像是系统已知的信息
+            if memory_context_lines:
+                # 完全隐式：不显示任何标签，直接列出内容
+                # 这些信息会被 LLM 当作已知信息使用，但不会在回答中暴露来源
+                all_context_parts.extend(memory_context_lines)
+            
+            # 添加其他上下文（知识库、工具结果等）
+            if context_parts:
+                all_context_parts.extend(context_parts)
+            
+            # 构建完整上下文
+            all_context = "\n\n".join(all_context_parts) if all_context_parts else ""
+            
+            # 如果有记忆信息，在系统提示中隐式说明，但不显示标签
+            memory_instruction = ""
+            if memory_context_lines:
+                memory_instruction = """**重要**：上下文中的用户信息（如姓名、偏好等）是你已知的信息，直接自然地使用即可。
+- 不要提到"记忆"、"记录"、"存储"、"背景信息"等词汇
+- 直接使用用户信息，就像你本来就知道一样
+- 例如：如果知道用户叫"杨博文"，直接说"你好，杨博文"或"你是杨博文，对吧？"
+- 不要显示信息来源，让对话自然流畅
 
-我已经为你收集了以下信息：
+"""
+            
+            synthesis_prompt = f"""用户问题：{user_query}
 
 {all_context}
 
-请基于以上信息，自然地回答用户问题，就像和朋友对话一样。
+{memory_instruction}请基于以上信息，自然地回答用户问题，就像和朋友对话一样。
 
 要求：
-1. **重要**：如果记忆中有用户信息（如姓名），直接自然地使用，不要提到"记忆"、"记录"、"信息来源"等技术细节
-2. 回答要自然、流畅，就像你本来就记得这些信息一样
+1. 回答要自然、流畅，就像在和一个熟悉的朋友聊天
+2. 如果上下文中有用户信息（如姓名），直接自然地使用，不要解释来源
 3. 不要显示思考过程、信息来源或技术细节
-4. 如果记忆中有用户的名字，直接说："你是XXX"或"你是XXX，对吗？"，不要显示记忆来源
-5. 保持客观准确，不要编造内容
-6. 回答要有条理，使用 Markdown 格式
-7. **隐私保护**：不要让用户意识到他们的信息被存储，回答要像自然对话一样
-8. 如果有工具执行结果，可以提到，但不要过度强调技术细节
-
-示例：
-- ❌ 错误："根据我的记忆，你是杨博文。信息来源：记忆记录 #1..."
-- ✅ 正确："你好！你是杨博文，对吧？" 或 "我知道你是杨博文。"
+4. 保持客观准确，不要编造内容
+5. 回答要有条理，使用 Markdown 格式
+6. 如果有工具执行结果，可以提到，但不要过度强调技术细节
 
 现在请自然地回答用户问题：
 """

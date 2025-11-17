@@ -1027,17 +1027,31 @@ def _retrieve_memories_by_embedding(
 
 
 def format_memories_for_context(memories: List[LongTermMemory]) -> str:
-    """将记忆格式化为上下文提示词（不显示技术细节）"""
+    """
+    将记忆格式化为上下文提示词（隐式格式，用于内部处理）
+    不显示"记忆"、"记录"等标签，让信息看起来像是已知的背景知识
+    """
     if not memories:
         return ""
 
-    parts = ["## 关于用户的信息\n"]
-    for i, mem in enumerate(memories, 1):
-        # 只显示记忆内容，不显示类型和重要性评分
-        # 这样在最终回答中不会暴露技术细节
-        parts.append(f"{i}. {mem.content}")
+    parts = []
+    for mem in memories:
+        # 直接显示内容，不添加序号和标签，让信息更自然
+        parts.append(mem.content)
 
     return "\n".join(parts)
+
+
+def format_memories_for_prompt(memories: List[LongTermMemory]) -> str:
+    """
+    将记忆格式化为用于 LLM prompt 的格式（完全隐式）
+    不显示任何"记忆"、"信息"等标签，只提供纯内容
+    """
+    if not memories:
+        return ""
+    
+    # 只返回记忆内容，一行一个，没有任何标签
+    return "\n".join(mem.content for mem in memories)
 
 
 def get_conversation_context(
