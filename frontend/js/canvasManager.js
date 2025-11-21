@@ -341,6 +341,149 @@ class CanvasManager {
     }
 
     /**
+     * 添加节点到画布
+     */
+    addNode(type, label) {
+        if (!this.contentLayer) {
+            console.warn('画布内容层未找到');
+            return;
+        }
+        
+        // 创建节点元素
+        const node = document.createElement('div');
+        node.className = `canvas-node node-${type}`;
+        node.setAttribute('data-type', type);
+        node.setAttribute('data-label', label);
+        
+        // 随机位置（避免重叠）
+        const rect = this.canvas.getBoundingClientRect();
+        const x = Math.random() * (rect.width - 200) + 100;
+        const y = Math.random() * (rect.height - 100) + 50;
+        
+        node.style.position = 'absolute';
+        node.style.left = x + 'px';
+        node.style.top = y + 'px';
+        node.style.width = '160px';
+        node.style.padding = '12px';
+        node.style.background = this.getNodeColor(type);
+        node.style.border = '2px solid #e5e7eb';
+        node.style.borderRadius = '8px';
+        node.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+        node.style.cursor = 'move';
+        node.style.userSelect = 'none';
+        
+        // 节点图标和标签
+        const icon = this.getNodeIcon(type);
+        node.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span style="font-size: 20px;">${icon}</span>
+                <span style="font-weight: 600; font-size: 14px; color: #1f2937;">${label}</span>
+            </div>
+            <div style="font-size: 12px; color: #6b7280;">${type}</div>
+        `;
+        
+        // 添加拖拽功能
+        this.makeNodeDraggable(node);
+        
+        this.contentLayer.appendChild(node);
+        
+        console.log(`✅ 节点已添加: ${label} (${type})`);
+        
+        if (window.notificationManager) {
+            window.notificationManager.show(`✅ 已添加${label}节点`, 'success', 2000);
+        }
+        
+        return node;
+    }
+    
+    /**
+     * 获取节点颜色
+     */
+    getNodeColor(type) {
+        const colors = {
+            'planner': '#dbeafe',      // 蓝色
+            'executor': '#dcfce7',     // 绿色
+            'tool': '#fef3c7',         // 黄色
+            'llm': '#e0e7ff',          // 紫色
+            'knowledge': '#fce7f3',    // 粉色
+            'custom': '#f3f4f6'        // 灰色
+        };
+        return colors[type] || colors['custom'];
+    }
+    
+    /**
+     * 获取节点图标
+     */
+    getNodeIcon(type) {
+        const icons = {
+            'planner': '🧠',
+            'executor': '⚙️',
+            'tool': '🔧',
+            'llm': '🤖',
+            'knowledge': '📚',
+            'custom': '⭐'
+        };
+        return icons[type] || icons['custom'];
+    }
+    
+    /**
+     * 使节点可拖拽
+     */
+    makeNodeDraggable(node) {
+        let isDragging = false;
+        let startX, startY, initialLeft, initialTop;
+        
+        node.addEventListener('mousedown', (e) => {
+            if (e.target !== node && !e.target.closest('.node')) return;
+            
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            initialLeft = parseInt(node.style.left) || 0;
+            initialTop = parseInt(node.style.top) || 0;
+            
+            node.style.cursor = 'grabbing';
+            node.style.zIndex = '1000';
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            
+            node.style.left = (initialLeft + dx / this.scale) + 'px';
+            node.style.top = (initialTop + dy / this.scale) + 'px';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                node.style.cursor = 'move';
+                node.style.zIndex = '';
+            }
+        });
+    }
+    
+    /**
+     * 清空画布
+     */
+    clear() {
+        if (this.contentLayer) {
+            this.contentLayer.innerHTML = '';
+            console.log('✅ 画布已清空');
+        }
+    }
+    
+    /**
+     * 重置缩放（别名）
+     */
+    resetZoom() {
+        this.resetView();
+    }
+
+    /**
      * 销毁管理器
      */
     destroy() {

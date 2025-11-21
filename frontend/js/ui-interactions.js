@@ -308,6 +308,72 @@ function closeBuilder() {
     if (overlay) overlay.classList.remove('active');
 }
 
+function clearBuilder() {
+    if (!confirm('确定要清空构建器吗？所有节点将被删除。')) {
+        return;
+    }
+    
+    console.log('清空构建器');
+    
+    const canvas = document.getElementById('canvasContentLayer');
+    if (canvas) {
+        canvas.innerHTML = '';
+    }
+    
+    if (window.canvasManager && typeof window.canvasManager.clear === 'function') {
+        window.canvasManager.clear();
+    }
+    
+    if (window.notificationManager) {
+        window.notificationManager.show('✅ 构建器已清空', 'success', 2000);
+    }
+}
+
+function saveAgentConfig() {
+    console.log('保存Agent配置');
+    
+    if (window.notificationManager) {
+        window.notificationManager.show('💾 配置保存功能开发中...', 'info', 2000);
+    }
+    
+    // TODO: 实现配置保存逻辑
+    // 1. 收集所有节点信息
+    // 2. 生成配置JSON
+    // 3. 调用API保存
+}
+
+function testAgentConfig() {
+    console.log('测试Agent配置');
+    
+    if (window.notificationManager) {
+        window.notificationManager.show('▶️ 配置测试功能开发中...', 'info', 2000);
+    }
+    
+    // TODO: 实现配置测试逻辑
+}
+
+function autoLayout() {
+    console.log('自动布局');
+    
+    if (window.canvasManager && typeof window.canvasManager.autoLayout === 'function') {
+        window.canvasManager.autoLayout();
+    } else {
+        if (window.notificationManager) {
+            window.notificationManager.show('📐 自动布局功能开发中...', 'info', 2000);
+        }
+    }
+}
+
+function undoBuilder() {
+    console.log('撤销操作');
+    
+    if (window.notificationManager) {
+        window.notificationManager.show('↩️ 撤销功能开发中...', 'info', 2000);
+    }
+    
+    // TODO: 实现撤销功能
+}
+
 // ========== 画布节点管理 ==========
 function addNode(type, label) {
     console.log(`添加节点: ${type} - ${label}`);
@@ -357,19 +423,28 @@ function closeContextMenu() {
 }
 
 // ========== 时间线过滤 ==========
-function toggleTimelineFilter(filter) {
+function toggleTimelineFilter(filter, element) {
     console.log(`切换时间线过滤: ${filter}`);
     
-    const buttons = document.querySelectorAll('.timeline-filter-btn');
-    buttons.forEach(btn => {
-        if (btn.textContent.includes(filter)) {
-            btn.classList.toggle('active');
-        }
-    });
-    
-    if (window.notificationManager) {
-        window.notificationManager.show(`过滤: ${filter}`, 'info', 1500);
+    // 切换当前元素的active状态
+    if (element) {
+        element.classList.toggle('active');
     }
+    
+    // 根据过滤器显示/隐藏时间线内容
+    const timelineContent = document.getElementById('timelineContent');
+    if (timelineContent) {
+        const items = timelineContent.querySelectorAll(`[data-type="${filter}"]`);
+        items.forEach(item => {
+            if (element && element.classList.contains('active')) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+    
+    console.log(`时间线过滤已切换: ${filter}`);
 }
 
 // ========== 历史记录管理 ==========
@@ -447,6 +522,12 @@ window.closeBuilder = closeBuilder;
 window.refreshHistoryList = refreshHistoryList;
 window.loadHistorySession = loadHistorySession;
 window.deleteHistorySession = deleteHistorySession;
+// 构建器管理
+window.clearBuilder = clearBuilder;
+window.saveAgentConfig = saveAgentConfig;
+window.testAgentConfig = testAgentConfig;
+window.autoLayout = autoLayout;
+window.undoBuilder = undoBuilder;
 // 画布节点管理
 window.addNode = addNode;
 window.resetZoom = resetZoom;
