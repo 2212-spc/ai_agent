@@ -7190,15 +7190,6 @@
             startOnboarding();
         });
     </script>
-    
-    <!-- ========== 模块化JavaScript引入（解决代码脑裂） ========== -->
-    <!-- 注意：必须按照依赖顺序引入 -->
-    <script src="js/utils.js"></script>
-    <script src="js/errorHandler.js"></script>
-    <script src="js/canvasManager.js"></script>
-    <script src="js/chatManager.js"></script>
-    <script src="js/init.js"></script>
-    
 </body>
 </html>
 
