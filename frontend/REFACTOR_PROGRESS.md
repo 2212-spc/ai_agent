@@ -21,9 +21,29 @@
 #### 3. Git提交 ✅
 - [x] Commit: "feat(phase0): add modular JS architecture and initialization script"
 
+### ✅ 已完成的工作（续）
+
+#### 4. 处理内联重复代码 ✅
+- [x] 注释掉重复代码块 #1 (3235-6967行，约3700行)
+- [x] 注释掉重复代码块 #2 (6976-7018行，约40行)
+- [x] 保留独立功能代码块 #3 (onboarding)
+
+#### 5. 恢复UI交互功能 ✅
+- [x] 创建 `js/ui-interactions.js`
+- [x] 提取所有UI交互函数：
+  - toggleSidebar / closeSidebar
+  - toggleTimeline
+  - toggleMultiAgentMode
+  - exportChat / clearChat
+  - stopGeneration
+  - toggleTheme
+  - 模态框控制
+  - newChat / openSettings
+- [x] 在HTML中引入ui-interactions.js
+
 ### 🔄 进行中的工作
 
-#### 4. 处理内联重复代码 (当前步骤)
+#### 6. 功能验证测试 (当前步骤)
 
 发现的重复代码块：
 
