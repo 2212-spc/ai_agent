@@ -308,6 +308,70 @@ function closeBuilder() {
     if (overlay) overlay.classList.remove('active');
 }
 
+// ========== 画布节点管理 ==========
+function addNode(type, label) {
+    console.log(`添加节点: ${type} - ${label}`);
+    
+    if (window.canvasManager && typeof window.canvasManager.addNode === 'function') {
+        window.canvasManager.addNode(type, label);
+    } else {
+        if (window.notificationManager) {
+            window.notificationManager.show(`添加${label}节点`, 'info', 2000);
+        }
+    }
+}
+
+function resetZoom() {
+    console.log('重置画布缩放');
+    
+    if (window.canvasManager && typeof window.canvasManager.resetZoom === 'function') {
+        window.canvasManager.resetZoom();
+    } else {
+        if (window.notificationManager) {
+            window.notificationManager.show('画布已重置', 'info', 2000);
+        }
+    }
+}
+
+function deleteSelectedNode() {
+    console.log('删除选中节点');
+    
+    if (window.canvasManager && typeof window.canvasManager.deleteSelected === 'function') {
+        window.canvasManager.deleteSelected();
+    }
+}
+
+function duplicateNode() {
+    console.log('复制节点');
+    
+    if (window.notificationManager) {
+        window.notificationManager.show('复制节点功能开发中', 'info', 2000);
+    }
+}
+
+function closeContextMenu() {
+    const contextMenu = document.getElementById('contextMenu');
+    if (contextMenu) {
+        contextMenu.style.display = 'none';
+    }
+}
+
+// ========== 时间线过滤 ==========
+function toggleTimelineFilter(filter) {
+    console.log(`切换时间线过滤: ${filter}`);
+    
+    const buttons = document.querySelectorAll('.timeline-filter-btn');
+    buttons.forEach(btn => {
+        if (btn.textContent.includes(filter)) {
+            btn.classList.toggle('active');
+        }
+    });
+    
+    if (window.notificationManager) {
+        window.notificationManager.show(`过滤: ${filter}`, 'info', 1500);
+    }
+}
+
 // ========== 历史记录管理 ==========
 function refreshHistoryList() {
     if (window.notificationManager) {
@@ -383,3 +447,11 @@ window.closeBuilder = closeBuilder;
 window.refreshHistoryList = refreshHistoryList;
 window.loadHistorySession = loadHistorySession;
 window.deleteHistorySession = deleteHistorySession;
+// 画布节点管理
+window.addNode = addNode;
+window.resetZoom = resetZoom;
+window.deleteSelectedNode = deleteSelectedNode;
+window.duplicateNode = duplicateNode;
+window.closeContextMenu = closeContextMenu;
+// 时间线过滤
+window.toggleTimelineFilter = toggleTimelineFilter;
