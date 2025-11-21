@@ -2890,4 +2890,39 @@
             font-family: 'SF Mono', 'Consolas', monospace;
             font-size: 11px;
         }
-    
+        
+        /* ========== 画布节点样式 ========== */
+        .canvas-node {
+            transition: all 0.2s ease;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+        }
+        
+        .canvas-node.selected {
+            box-shadow: 0 0 0 3px #3b82f6 !important;
+            border-color: #3b82f6 !important;
+        }
+        
+        .canvas-node.connecting {
+            box-shadow: 0 0 0 3px #10b981 !important;
+            border-color: #10b981 !important;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        /* 画布内容层保持清晰 */
+        #canvasContentLayer {
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+        }
+        
+        #canvasContentLayer * {
+            image-rendering: auto;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }

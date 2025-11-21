@@ -260,9 +260,10 @@ function startNewChat() {
 
 // ========== 设置面板 ==========
 function openSettings() {
-    if (window.notificationManager) {
-        window.notificationManager.show('设置功能开发中...', 'info', 2000);
-    }
+    // 打开设置页面（新标签页）
+    window.open('conversation_settings.html', '_blank');
+    
+    console.log('打开设置页面');
 }
 
 // ========== 快捷示例 ==========
@@ -332,14 +333,40 @@ function clearBuilder() {
 function saveAgentConfig() {
     console.log('保存Agent配置');
     
-    if (window.notificationManager) {
-        window.notificationManager.show('💾 配置保存功能开发中...', 'info', 2000);
+    if (!window.canvasManager) {
+        if (window.notificationManager) {
+            window.notificationManager.show('⚠️ 画布管理器未初始化', 'warning', 2000);
+        }
+        return;
     }
     
-    // TODO: 实现配置保存逻辑
-    // 1. 收集所有节点信息
-    // 2. 生成配置JSON
-    // 3. 调用API保存
+    try {
+        // 导出配置
+        const config = window.canvasManager.exportConfig();
+        
+        // 转换为JSON字符串
+        const json = JSON.stringify(config, null, 2);
+        
+        // 创建Blob并下载
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `agent-config-${Date.now()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        
+        console.log('配置已导出:', config);
+        
+        if (window.notificationManager) {
+            window.notificationManager.show('💾 配置已保存为JSON文件', 'success', 2000);
+        }
+    } catch (error) {
+        console.error('保存配置失败:', error);
+        if (window.notificationManager) {
+            window.notificationManager.show('❌ 保存失败', 'error', 2000);
+        }
+    }
 }
 
 function testAgentConfig() {
@@ -367,11 +394,25 @@ function autoLayout() {
 function undoBuilder() {
     console.log('撤销操作');
     
-    if (window.notificationManager) {
-        window.notificationManager.show('↩️ 撤销功能开发中...', 'info', 2000);
+    if (window.canvasManager && typeof window.canvasManager.undo === 'function') {
+        window.canvasManager.undo();
+    } else {
+        if (window.notificationManager) {
+            window.notificationManager.show('⚠️ 画布管理器未初始化', 'warning', 2000);
+        }
     }
+}
+
+function redoBuilder() {
+    console.log('重做操作');
     
-    // TODO: 实现撤销功能
+    if (window.canvasManager && typeof window.canvasManager.redo === 'function') {
+        window.canvasManager.redo();
+    } else {
+        if (window.notificationManager) {
+            window.notificationManager.show('⚠️ 画布管理器未初始化', 'warning', 2000);
+        }
+    }
 }
 
 // ========== 画布节点管理 ==========
@@ -420,14 +461,6 @@ function zoomOut() {
         if (window.notificationManager) {
             window.notificationManager.show('🔍 缩小', 'info', 1000);
         }
-    }
-}
-
-function redoBuilder() {
-    console.log('重做操作');
-    
-    if (window.notificationManager) {
-        window.notificationManager.show('↪️ 重做功能开发中...', 'info', 2000);
     }
 }
 

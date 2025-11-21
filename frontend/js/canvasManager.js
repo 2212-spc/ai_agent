@@ -28,6 +28,11 @@ class CanvasManager {
         this.connections = [];
         this.connectingFrom = null; // 正在连接的起始节点
         
+        // 历史记录
+        this.history = [];
+        this.historyIndex = -1;
+        this.maxHistory = 50;
+        
         // 配置
         this.config = {
             minScale: 0.3,
@@ -410,6 +415,9 @@ class CanvasManager {
         
         this.contentLayer.appendChild(node);
         
+        // 保存状态到历史记录
+        this.saveState();
+        
         console.log(`✅ 节点已添加: ${label} (${type})`);
         
         if (window.notificationManager) {
@@ -678,6 +686,159 @@ class CanvasManager {
         this.connectingFrom = null;
         
         console.log('✅ 画布已清空');
+    }
+    
+    /**
+     * 保存当前状态到历史记录
+     */
+    saveState() {
+        const state = {
+            nodes: this.nodes.map(node => ({
+                type: node.getAttribute('data-type'),
+                label: node.getAttribute('data-label'),
+                left: node.style.left,
+                top: node.style.top,
+                html: node.outerHTML
+            })),
+            connections: this.connections.map(conn => ({
+                fromIndex: this.nodes.indexOf(conn.from),
+                toIndex: this.nodes.indexOf(conn.to)
+            }))
+        };
+        
+        // 删除当前位置之后的历史
+        this.history = this.history.slice(0, this.historyIndex + 1);
+        
+        // 添加新状态
+        this.history.push(state);
+        
+        // 限制历史记录数量
+        if (this.history.length > this.maxHistory) {
+            this.history.shift();
+        } else {
+            this.historyIndex++;
+        }
+        
+        console.log(`历史记录已保存 (${this.historyIndex + 1}/${this.history.length})`);
+    }
+    
+    /**
+     * 撤销操作
+     */
+    undo() {
+        if (this.historyIndex <= 0) {
+            if (window.notificationManager) {
+                window.notificationManager.show('没有可撤销的操作', 'warning', 2000);
+            }
+            return false;
+        }
+        
+        this.historyIndex--;
+        this.restoreState(this.history[this.historyIndex]);
+        
+        if (window.notificationManager) {
+            window.notificationManager.show(`↩️ 已撤销 (${this.historyIndex + 1}/${this.history.length})`, 'success', 2000);
+        }
+        
+        console.log(`撤销到历史记录 ${this.historyIndex + 1}`);
+        return true;
+    }
+    
+    /**
+     * 重做操作
+     */
+    redo() {
+        if (this.historyIndex >= this.history.length - 1) {
+            if (window.notificationManager) {
+                window.notificationManager.show('没有可重做的操作', 'warning', 2000);
+            }
+            return false;
+        }
+        
+        this.historyIndex++;
+        this.restoreState(this.history[this.historyIndex]);
+        
+        if (window.notificationManager) {
+            window.notificationManager.show(`↪️ 已重做 (${this.historyIndex + 1}/${this.history.length})`, 'success', 2000);
+        }
+        
+        console.log(`重做到历史记录 ${this.historyIndex + 1}`);
+        return true;
+    }
+    
+    /**
+     * 恢复状态
+     */
+    restoreState(state) {
+        // 清空当前内容
+        if (this.contentLayer) {
+            this.contentLayer.innerHTML = '';
+        }
+        this.nodes = [];
+        this.connections = [];
+        
+        // 恢复节点
+        state.nodes.forEach(nodeData => {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = nodeData.html;
+            const node = tempDiv.firstChild;
+            
+            // 重新绑定拖拽
+            this.makeNodeDraggable(node);
+            
+            // 重新绑定双击
+            node.addEventListener('dblclick', () => {
+                if (this.connectingFrom === null) {
+                    this.startConnection(node);
+                } else {
+                    this.finishConnection(node);
+                }
+            });
+            
+            this.contentLayer.appendChild(node);
+            this.nodes.push(node);
+        });
+        
+        // 恢复连接
+        state.connections.forEach(connData => {
+            if (connData.fromIndex >= 0 && connData.toIndex >= 0) {
+                this.connections.push({
+                    from: this.nodes[connData.fromIndex],
+                    to: this.nodes[connData.toIndex],
+                    id: `conn_${Date.now()}_${Math.random()}`
+                });
+            }
+        });
+        
+        // 重绘连接
+        this.drawConnections();
+    }
+    
+    /**
+     * 导出配置为JSON
+     */
+    exportConfig() {
+        const config = {
+            nodes: this.nodes.map((node, index) => ({
+                id: index,
+                type: node.getAttribute('data-type'),
+                label: node.getAttribute('data-label'),
+                position: {
+                    x: parseInt(node.style.left),
+                    y: parseInt(node.style.top)
+                }
+            })),
+            connections: this.connections.map(conn => ({
+                from: this.nodes.indexOf(conn.from),
+                to: this.nodes.indexOf(conn.to)
+            })),
+            metadata: {
+                created: new Date().toISOString(),
+                version: '1.0'
+            }
+        };
+        
+        return config;
     }
     
     /**
