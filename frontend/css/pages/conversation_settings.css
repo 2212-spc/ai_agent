@@ -1,0 +1,160 @@
+/* CSS extracted from conversation_settings.html */
+
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: #f7f7f8;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: white;
+            padding: 16px 24px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .back-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            background: #f0f0f0;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #202123;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .settings-card {
+            background: white;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+
+        .settings-card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #202123;
+            margin-bottom: 16px;
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .setting-item:last-child {
+            border-bottom: none;
+        }
+
+        .setting-info {
+            flex: 1;
+        }
+
+        .setting-title {
+            font-size: 16px;
+            font-weight: 500;
+            color: #202123;
+            margin-bottom: 4px;
+        }
+
+        .setting-desc {
+            font-size: 14px;
+            color: #8e8ea0;
+        }
+
+        /* Toggle Switch 样式 */
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .toggle-slider {
+            background-color: #10a37f;
+        }
+
+        input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        .save-status {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .save-status.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .save-status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    

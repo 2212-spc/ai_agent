@@ -1,0 +1,178 @@
+/* CSS extracted from conversation_history.html */
+
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: var(--bg-secondary);
+            min-height: 100vh;
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .header {
+            background: var(--bg-primary);
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-primary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            font-size: 24px;
+        }
+
+        .header-title-sub {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .header-nav {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            margin-left: 40px;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 14px;
+        }
+
+        .nav-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 6px 10px;
+            border-radius: 999px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-link span {
+            font-size: 13px;
+        }
+
+        .nav-link:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .nav-link.active {
+            background: var(--primary-light);
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .search-box {
+            background: var(--bg-primary);
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .search-input {
+            width: 100%;
+            max-width: 600px;
+            padding: 10px 16px;
+            border: 1px solid var(--border-primary);
+            border-radius: 6px;
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .conversation-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .conversation-item {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .conversation-item:hover {
+            border-color: var(--primary-color);
+            box-shadow: var(--shadow-md);
+        }
+
+        .conversation-info {
+            flex: 1;
+        }
+
+        .conversation-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .conversation-preview {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        .conversation-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .conversation-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 32px;
+            color: var(--text-secondary);
+        }
+    

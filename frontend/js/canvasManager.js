@@ -511,20 +511,21 @@ class CanvasManager {
             if (!isDragging) return;
             
             e.preventDefault();
+            e.stopPropagation();
             
-            // 使用RAF优化性能
+            // 直接更新位置，不使用RAF（更流畅）
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            
+            node.style.left = (initialLeft + dx / this.scale) + 'px';
+            node.style.top = (initialTop + dy / this.scale) + 'px';
+            
+            // 使用RAF优化连线更新
             if (rafId) {
                 cancelAnimationFrame(rafId);
             }
             
             rafId = requestAnimationFrame(() => {
-                const dx = e.clientX - startX;
-                const dy = e.clientY - startY;
-                
-                node.style.left = (initialLeft + dx / this.scale) + 'px';
-                node.style.top = (initialTop + dy / this.scale) + 'px';
-                
-                // 实时更新连线
                 this.updateConnectionsForNode(node);
             });
         };
@@ -914,7 +915,7 @@ class CanvasManager {
         panel.id = 'nodeConfigPanel';
         panel.className = 'node-config-panel';
         panel.innerHTML = `
-            <div class="config-panel-header">
+            <div class="config-panel-header" id="configPanelHeader">
                 <h3 class="config-panel-title">节点配置</h3>
                 <button class="config-panel-close" onclick="window.canvasManager.closeNodeConfig()">✕</button>
             </div>
@@ -939,7 +940,58 @@ class CanvasManager {
         `;
         
         document.body.appendChild(panel);
+        
+        // 让面板可拖动
+        this.makeConfigPanelDraggable(panel);
+        
         return panel;
+    }
+    
+    /**
+     * 让配置面板可拖动
+     */
+    makeConfigPanelDraggable(panel) {
+        const header = panel.querySelector('.config-panel-header');
+        let isDragging = false;
+        let startX, startY, initialX, initialY;
+        
+        header.style.cursor = 'move';
+        
+        header.addEventListener('mousedown', (e) => {
+            if (e.target.classList.contains('config-panel-close')) return;
+            
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            const rect = panel.getBoundingClientRect();
+            initialX = rect.left;
+            initialY = rect.top;
+            
+            panel.style.transition = 'none';
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            e.preventDefault();
+            
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            
+            panel.style.left = (initialX + dx) + 'px';
+            panel.style.top = (initialY + dy) + 'px';
+            panel.style.right = 'auto';
+            panel.style.transform = 'none';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                panel.style.transition = '';
+            }
+        });
     }
     
     /**
