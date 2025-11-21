@@ -6,8 +6,8 @@
 
 // ========== 侧边栏控制 ==========
 function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
+    const sidebar = document.getElementById('historySidebar');
+    const toggleBtn = document.getElementById('toggleSidebarBtn');
     
     if (!sidebar) {
         console.warn('侧边栏元素未找到');
@@ -16,20 +16,22 @@ function toggleSidebar() {
     
     if (sidebar.classList.contains('open')) {
         sidebar.classList.remove('open');
-        if (overlay) overlay.classList.remove('active');
+        if (toggleBtn) toggleBtn.textContent = '◀';
     } else {
         sidebar.classList.add('open');
-        if (overlay) overlay.classList.add('active');
+        if (toggleBtn) toggleBtn.textContent = '▶';
     }
 }
 
 // 关闭侧边栏
 function closeSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
+    const sidebar = document.getElementById('historySidebar');
+    const toggleBtn = document.getElementById('toggleSidebarBtn');
     
-    if (sidebar) sidebar.classList.remove('open');
-    if (overlay) overlay.classList.remove('active');
+    if (sidebar) {
+        sidebar.classList.remove('open');
+        if (toggleBtn) toggleBtn.textContent = '◀';
+    }
 }
 
 // ========== 时间线控制 ==========
@@ -232,6 +234,11 @@ function newChat() {
     }
 }
 
+// startNewChat 别名（兼容旧代码）
+function startNewChat() {
+    newChat();
+}
+
 // ========== 设置面板 ==========
 function openSettings() {
     if (window.notificationManager) {
@@ -252,6 +259,77 @@ function sendQuickExample(example) {
     }
 }
 
+// ========== 构建器面板控制 ==========
+function toggleBuilder() {
+    const builderPanel = document.getElementById('builderPanel');
+    const overlay = document.getElementById('builderOverlay');
+    
+    if (!builderPanel) {
+        console.warn('构建器面板未找到');
+        if (window.notificationManager) {
+            window.notificationManager.show('构建器功能开发中...', 'info', 2000);
+        }
+        return;
+    }
+    
+    if (builderPanel.classList.contains('open')) {
+        builderPanel.classList.remove('open');
+        if (overlay) overlay.classList.remove('active');
+    } else {
+        builderPanel.classList.add('open');
+        if (overlay) overlay.classList.add('active');
+    }
+}
+
+function closeBuilder() {
+    const builderPanel = document.getElementById('builderPanel');
+    const overlay = document.getElementById('builderOverlay');
+    
+    if (builderPanel) builderPanel.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+}
+
+// ========== 历史记录管理 ==========
+function refreshHistoryList() {
+    if (window.notificationManager) {
+        window.notificationManager.show('🔄 刷新历史记录...', 'info', 1000);
+    }
+    
+    // TODO: 实现历史记录刷新逻辑
+    // 这里可以调用API获取历史记录列表
+    console.log('刷新历史记录列表');
+}
+
+function loadHistorySession(sessionId) {
+    if (!sessionId) {
+        console.warn('会话ID为空');
+        return;
+    }
+    
+    console.log('加载历史会话:', sessionId);
+    
+    if (window.chatManager && typeof window.chatManager.loadHistoryMessages === 'function') {
+        window.chatManager.currentSessionId = sessionId;
+        window.chatManager.loadHistoryMessages(sessionId);
+    }
+    
+    // 关闭侧边栏
+    closeSidebar();
+}
+
+function deleteHistorySession(sessionId) {
+    if (!confirm('确定要删除这个会话吗？')) {
+        return;
+    }
+    
+    console.log('删除会话:', sessionId);
+    
+    // TODO: 调用API删除会话
+    if (window.notificationManager) {
+        window.notificationManager.show('会话删除功能开发中...', 'info', 2000);
+    }
+}
+
 // ========== 初始化 ==========
 document.addEventListener('DOMContentLoaded', () => {
     console.log('✅ UI交互函数已加载');
@@ -259,10 +337,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化主题
     initTheme();
     
-    // 绑定侧边栏覆盖层点击事件
-    const sidebarOverlay = document.getElementById('sidebarOverlay');
-    if (sidebarOverlay) {
-        sidebarOverlay.addEventListener('click', closeSidebar);
+    // 绑定构建器覆盖层点击事件
+    const builderOverlay = document.getElementById('builderOverlay');
+    if (builderOverlay) {
+        builderOverlay.addEventListener('click', closeBuilder);
     }
 });
 
@@ -278,5 +356,11 @@ window.toggleTheme = toggleTheme;
 window.closeImageModal = closeImageModal;
 window.closeMermaidModal = closeMermaidModal;
 window.newChat = newChat;
+window.startNewChat = startNewChat;
 window.openSettings = openSettings;
 window.sendQuickExample = sendQuickExample;
+window.toggleBuilder = toggleBuilder;
+window.closeBuilder = closeBuilder;
+window.refreshHistoryList = refreshHistoryList;
+window.loadHistorySession = loadHistorySession;
+window.deleteHistorySession = deleteHistorySession;
