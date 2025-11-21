@@ -21,6 +21,12 @@ class CanvasManager {
         // DOM元素
         this.canvas = null;
         this.contentLayer = null;
+        this.connectionsLayer = null; // 连线层
+        
+        // 节点和连接
+        this.nodes = [];
+        this.connections = [];
+        this.connectingFrom = null; // 正在连接的起始节点
         
         // 配置
         this.config = {
@@ -385,12 +391,29 @@ class CanvasManager {
         // 添加拖拽功能
         this.makeNodeDraggable(node);
         
+        // 添加双击连接功能
+        node.addEventListener('dblclick', () => {
+            if (this.connectingFrom === null) {
+                this.startConnection(node);
+            } else {
+                this.finishConnection(node);
+            }
+        });
+        
+        // 添加到节点列表
+        this.nodes.push(node);
+        
+        // 创建连线层（如果还不存在）
+        if (!this.connectionsLayer) {
+            this.createConnectionsLayer();
+        }
+        
         this.contentLayer.appendChild(node);
         
         console.log(`✅ 节点已添加: ${label} (${type})`);
         
         if (window.notificationManager) {
-            window.notificationManager.show(`✅ 已添加${label}节点`, 'success', 2000);
+            window.notificationManager.show(`✅ 已添加${label}节点\n提示：双击节点开始连线`, 'success', 3000);
         }
         
         return node;
@@ -427,14 +450,19 @@ class CanvasManager {
     }
     
     /**
-     * 使节点可拖拽
+     * 使节点可拖拽（改进版）
      */
     makeNodeDraggable(node) {
         let isDragging = false;
         let startX, startY, initialLeft, initialTop;
         
-        node.addEventListener('mousedown', (e) => {
-            if (e.target !== node && !e.target.closest('.node')) return;
+        const handleMouseDown = (e) => {
+            // 只在节点本身或其直接子元素上触发
+            const isValidTarget = e.target === node || 
+                                 e.target.parentElement === node || 
+                                 e.target.closest('.canvas-node') === node;
+            
+            if (!isValidTarget) return;
             
             isDragging = true;
             startX = e.clientX;
@@ -444,10 +472,18 @@ class CanvasManager {
             
             node.style.cursor = 'grabbing';
             node.style.zIndex = '1000';
+            
+            // 添加选中状态
+            document.querySelectorAll('.canvas-node').forEach(n => {
+                n.classList.remove('selected');
+            });
+            node.classList.add('selected');
+            
             e.preventDefault();
-        });
+            e.stopPropagation();
+        };
         
-        document.addEventListener('mousemove', (e) => {
+        const handleMouseMove = (e) => {
             if (!isDragging) return;
             
             const dx = e.clientX - startX;
@@ -455,15 +491,174 @@ class CanvasManager {
             
             node.style.left = (initialLeft + dx / this.scale) + 'px';
             node.style.top = (initialTop + dy / this.scale) + 'px';
-        });
+            
+            e.preventDefault();
+        };
         
-        document.addEventListener('mouseup', () => {
+        const handleMouseUp = () => {
             if (isDragging) {
                 isDragging = false;
                 node.style.cursor = 'move';
                 node.style.zIndex = '';
             }
+        };
+        
+        node.addEventListener('mousedown', handleMouseDown);
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        
+        // 保存事件处理器引用以便后续清理
+        node._dragHandlers = {
+            mousedown: handleMouseDown,
+            mousemove: handleMouseMove,
+            mouseup: handleMouseUp
+        };
+    }
+    
+    /**
+     * 创建连线层（SVG）
+     */
+    createConnectionsLayer() {
+        if (!this.canvas) return;
+        
+        // 创建SVG层用于绘制连线
+        let svg = document.getElementById('connectionsLayer');
+        if (!svg) {
+            svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.id = 'connectionsLayer';
+            svg.style.position = 'absolute';
+            svg.style.top = '0';
+            svg.style.left = '0';
+            svg.style.width = '100%';
+            svg.style.height = '100%';
+            svg.style.pointerEvents = 'none';
+            svg.style.zIndex = '0';
+            
+            this.canvas.insertBefore(svg, this.contentLayer);
+        }
+        
+        this.connectionsLayer = svg;
+        return svg;
+    }
+    
+    /**
+     * 连接两个节点
+     */
+    connectNodes(fromNode, toNode) {
+        if (!fromNode || !toNode || fromNode === toNode) return;
+        
+        // 检查是否已经存在连接
+        const exists = this.connections.some(conn => 
+            conn.from === fromNode && conn.to === toNode
+        );
+        
+        if (exists) {
+            console.log('⚠️ 连接已存在');
+            return;
+        }
+        
+        // 添加连接
+        const connection = {
+            from: fromNode,
+            to: toNode,
+            id: `conn_${Date.now()}`
+        };
+        
+        this.connections.push(connection);
+        this.drawConnections();
+        
+        console.log('✅ 节点已连接');
+        
+        if (window.notificationManager) {
+            window.notificationManager.show('✅ 节点已连接', 'success', 2000);
+        }
+    }
+    
+    /**
+     * 绘制所有连接线
+     */
+    drawConnections() {
+        if (!this.connectionsLayer) {
+            this.createConnectionsLayer();
+        }
+        
+        // 清空现有连线
+        this.connectionsLayer.innerHTML = '';
+        
+        // 绘制每条连线
+        this.connections.forEach(conn => {
+            const fromRect = conn.from.getBoundingClientRect();
+            const toRect = conn.to.getBoundingClientRect();
+            const canvasRect = this.canvas.getBoundingClientRect();
+            
+            // 计算节点中心点
+            const fromX = fromRect.left + fromRect.width / 2 - canvasRect.left;
+            const fromY = fromRect.top + fromRect.height / 2 - canvasRect.top;
+            const toX = toRect.left + toRect.width / 2 - canvasRect.left;
+            const toY = toRect.top + toRect.height / 2 - canvasRect.top;
+            
+            // 创建路径
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            
+            // 使用贝塞尔曲线
+            const controlX = (fromX + toX) / 2;
+            const d = `M ${fromX} ${fromY} Q ${controlX} ${fromY}, ${controlX} ${(fromY + toY) / 2} T ${toX} ${toY}`;
+            
+            path.setAttribute('d', d);
+            path.setAttribute('stroke', '#6366f1');
+            path.setAttribute('stroke-width', '2');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('marker-end', 'url(#arrowhead)');
+            
+            this.connectionsLayer.appendChild(path);
         });
+        
+        // 添加箭头标记定义
+        if (this.connections.length > 0 && !document.getElementById('arrowhead')) {
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.id = 'arrowhead';
+            marker.setAttribute('markerWidth', '10');
+            marker.setAttribute('markerHeight', '10');
+            marker.setAttribute('refX', '9');
+            marker.setAttribute('refY', '3');
+            marker.setAttribute('orient', 'auto');
+            
+            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            polygon.setAttribute('points', '0 0, 10 3, 0 6');
+            polygon.setAttribute('fill', '#6366f1');
+            
+            marker.appendChild(polygon);
+            defs.appendChild(marker);
+            this.connectionsLayer.appendChild(defs);
+        }
+    }
+    
+    /**
+     * 开始连接模式
+     */
+    startConnection(node) {
+        this.connectingFrom = node;
+        node.classList.add('connecting');
+        
+        if (window.notificationManager) {
+            window.notificationManager.show('点击目标节点完成连接', 'info', 3000);
+        }
+    }
+    
+    /**
+     * 完成连接
+     */
+    finishConnection(toNode) {
+        if (this.connectingFrom && toNode !== this.connectingFrom) {
+            this.connectNodes(this.connectingFrom, toNode);
+        }
+        
+        if (this.connectingFrom) {
+            this.connectingFrom.classList.remove('connecting');
+        }
+        
+        this.connectingFrom = null;
     }
     
     /**
@@ -472,8 +667,17 @@ class CanvasManager {
     clear() {
         if (this.contentLayer) {
             this.contentLayer.innerHTML = '';
-            console.log('✅ 画布已清空');
         }
+        
+        if (this.connectionsLayer) {
+            this.connectionsLayer.innerHTML = '';
+        }
+        
+        this.nodes = [];
+        this.connections = [];
+        this.connectingFrom = null;
+        
+        console.log('✅ 画布已清空');
     }
     
     /**

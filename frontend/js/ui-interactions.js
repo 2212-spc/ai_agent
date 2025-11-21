@@ -399,6 +399,38 @@ function resetZoom() {
     }
 }
 
+function zoomIn() {
+    console.log('放大画布');
+    
+    if (window.canvasManager && typeof window.canvasManager.zoomIn === 'function') {
+        window.canvasManager.zoomIn();
+    } else {
+        if (window.notificationManager) {
+            window.notificationManager.show('🔍 放大', 'info', 1000);
+        }
+    }
+}
+
+function zoomOut() {
+    console.log('缩小画布');
+    
+    if (window.canvasManager && typeof window.canvasManager.zoomOut === 'function') {
+        window.canvasManager.zoomOut();
+    } else {
+        if (window.notificationManager) {
+            window.notificationManager.show('🔍 缩小', 'info', 1000);
+        }
+    }
+}
+
+function redoBuilder() {
+    console.log('重做操作');
+    
+    if (window.notificationManager) {
+        window.notificationManager.show('↪️ 重做功能开发中...', 'info', 2000);
+    }
+}
+
 function deleteSelectedNode() {
     console.log('删除选中节点');
     
@@ -528,9 +560,12 @@ window.saveAgentConfig = saveAgentConfig;
 window.testAgentConfig = testAgentConfig;
 window.autoLayout = autoLayout;
 window.undoBuilder = undoBuilder;
+window.redoBuilder = redoBuilder;
 // 画布节点管理
 window.addNode = addNode;
 window.resetZoom = resetZoom;
+window.zoomIn = zoomIn;
+window.zoomOut = zoomOut;
 window.deleteSelectedNode = deleteSelectedNode;
 window.duplicateNode = duplicateNode;
 window.closeContextMenu = closeContextMenu;
