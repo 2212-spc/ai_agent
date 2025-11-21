@@ -14,11 +14,12 @@ function toggleSidebar() {
         return;
     }
     
-    if (sidebar.classList.contains('open')) {
-        sidebar.classList.remove('open');
+    // 桌面视图使用 collapsed 类控制
+    if (sidebar.classList.contains('collapsed')) {
+        sidebar.classList.remove('collapsed');
         if (toggleBtn) toggleBtn.textContent = '◀';
     } else {
-        sidebar.classList.add('open');
+        sidebar.classList.add('collapsed');
         if (toggleBtn) toggleBtn.textContent = '▶';
     }
 }
@@ -29,34 +30,36 @@ function closeSidebar() {
     const toggleBtn = document.getElementById('toggleSidebarBtn');
     
     if (sidebar) {
-        sidebar.classList.remove('open');
-        if (toggleBtn) toggleBtn.textContent = '◀';
+        sidebar.classList.add('collapsed');
+        if (toggleBtn) toggleBtn.textContent = '▶';
     }
 }
 
 // ========== 时间线控制 ==========
 function toggleTimeline() {
     const timeline = document.querySelector('.agent-timeline');
-    const toggleBtn = document.querySelector('.timeline-toggle-btn');
+    const toggleText = document.getElementById('timelineToggleText');
     
     if (!timeline) {
         console.warn('时间线元素未找到');
         return;
     }
     
-    if (timeline.classList.contains('collapsed')) {
-        timeline.classList.remove('collapsed');
-        if (toggleBtn) toggleBtn.innerHTML = '→';
+    // 切换 open 类来显示/隐藏时间线
+    if (timeline.classList.contains('open')) {
+        timeline.classList.remove('open');
+        if (toggleText) toggleText.textContent = '展开过程 →';
     } else {
-        timeline.classList.add('collapsed');
-        if (toggleBtn) toggleBtn.innerHTML = '←';
+        timeline.classList.add('open');
+        if (toggleText) toggleText.textContent = '← 收起过程';
     }
 }
 
 // ========== 多智能体模式切换 ==========
-function toggleMultiAgentMode(event) {
-    const checkbox = event?.target;
+function toggleMultiAgentMode() {
+    const checkbox = document.getElementById('multiAgentToggle');
     const isEnabled = checkbox?.checked || false;
+    const modeIndicator = document.getElementById('modeIndicator');
     
     console.log('多智能体模式:', isEnabled ? '开启' : '关闭');
     
@@ -65,11 +68,27 @@ function toggleMultiAgentMode(event) {
         window.chatManager.toggleMultiAgentMode(isEnabled);
     }
     
-    // 显示提示
-    if (window.notificationManager) {
-        const message = isEnabled ? '已切换到多智能体模式' : '已切换到单智能体模式';
-        window.notificationManager.show(message, 'info', 2000);
+    // 更新模式指示器
+    if (modeIndicator) {
+        if (isEnabled) {
+            modeIndicator.textContent = '多智能体🤖🤖🤖';
+            modeIndicator.classList.add('multi-agent');
+        } else {
+            modeIndicator.textContent = '单智能体';
+            modeIndicator.classList.remove('multi-agent');
+        }
     }
+    
+    // 显示系统消息
+    const message = isEnabled 
+        ? '✨ 已切换到多智能体模式！将由多个专家智能体协作处理您的问题。'
+        : '✨ 已切换到单智能体模式。';
+    
+    if (window.notificationManager) {
+        window.notificationManager.show(message, 'success', 3000);
+    }
+    
+    console.log(`模式切换: ${isEnabled ? '多智能体' : '单智能体'}`);
 }
 
 // ========== 聊天导出 ==========
