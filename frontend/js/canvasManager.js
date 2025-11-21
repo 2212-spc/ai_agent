@@ -472,12 +472,12 @@ class CanvasManager {
     }
     
     /**
-     * 使节点可拖拽（优化版 - 消除延迟）
+     * 使节点可拖拽（极致性能优化版）
      */
     makeNodeDraggable(node) {
         let isDragging = false;
-        let startX, startY, initialLeft, initialTop;
-        let rafId = null;
+        let currentX, currentY, initialX, initialY;
+        let xOffset = 0, yOffset = 0;
         
         const handleMouseDown = (e) => {
             // 只在节点本身或其直接子元素上触发
@@ -487,15 +487,19 @@ class CanvasManager {
             
             if (!isValidTarget) return;
             
+            // 获取当前位置
+            const rect = node.getBoundingClientRect();
+            const parentRect = this.contentLayer.getBoundingClientRect();
+            
+            initialX = e.clientX;
+            initialY = e.clientY;
+            xOffset = rect.left - parentRect.left;
+            yOffset = rect.top - parentRect.top;
+            
             isDragging = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            initialLeft = parseInt(node.style.left) || 0;
-            initialTop = parseInt(node.style.top) || 0;
             
             node.style.cursor = 'grabbing';
             node.style.zIndex = '1000';
-            node.style.willChange = 'transform'; // 优化性能
             
             // 添加选中状态
             document.querySelectorAll('.canvas-node').forEach(n => {
@@ -513,21 +517,16 @@ class CanvasManager {
             e.preventDefault();
             e.stopPropagation();
             
-            // 直接更新位置，不使用RAF（更流畅）
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
+            // 计算新位置（直接计算，零延迟）
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
             
-            node.style.left = (initialLeft + dx / this.scale) + 'px';
-            node.style.top = (initialTop + dy / this.scale) + 'px';
+            // 直接设置position（比transform更精确）
+            node.style.left = (xOffset + currentX / this.scale) + 'px';
+            node.style.top = (yOffset + currentY / this.scale) + 'px';
             
-            // 使用RAF优化连线更新
-            if (rafId) {
-                cancelAnimationFrame(rafId);
-            }
-            
-            rafId = requestAnimationFrame(() => {
-                this.updateConnectionsForNode(node);
-            });
+            // 实时更新连线（节流优化）
+            this.scheduleConnectionUpdate();
         };
         
         const handleMouseUp = () => {
@@ -535,12 +534,6 @@ class CanvasManager {
                 isDragging = false;
                 node.style.cursor = 'move';
                 node.style.zIndex = '';
-                node.style.willChange = 'auto';
-                
-                if (rafId) {
-                    cancelAnimationFrame(rafId);
-                    rafId = null;
-                }
                 
                 // 最后更新一次连线
                 this.updateConnectionsForNode(node);
@@ -551,7 +544,7 @@ class CanvasManager {
         };
         
         node.addEventListener('mousedown', handleMouseDown);
-        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mousemove', handleMouseMove, { passive: false });
         document.addEventListener('mouseup', handleMouseUp);
         
         // 保存事件处理器引用以便后续清理
@@ -560,6 +553,19 @@ class CanvasManager {
             mousemove: handleMouseMove,
             mouseup: handleMouseUp
         };
+    }
+    
+    /**
+     * 节流连线更新（避免过于频繁）
+     */
+    scheduleConnectionUpdate() {
+        if (!this._connectionUpdateScheduled) {
+            this._connectionUpdateScheduled = true;
+            requestAnimationFrame(() => {
+                this.drawConnections();
+                this._connectionUpdateScheduled = false;
+            });
+        }
     }
     
     /**
