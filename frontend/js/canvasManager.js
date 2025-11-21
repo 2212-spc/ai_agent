@@ -396,8 +396,22 @@ class CanvasManager {
         // 添加拖拽功能
         this.makeNodeDraggable(node);
         
+        // 添加单击配置功能
+        node.addEventListener('click', (e) => {
+            // 防止冒泡
+            e.stopPropagation();
+            
+            // 如果在连接模式，不显示配置
+            if (this.connectingFrom !== null) return;
+            
+            // 显示节点配置面板
+            this.showNodeConfig(node);
+        });
+        
         // 添加双击连接功能
-        node.addEventListener('dblclick', () => {
+        node.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            
             if (this.connectingFrom === null) {
                 this.startConnection(node);
             } else {
@@ -458,11 +472,12 @@ class CanvasManager {
     }
     
     /**
-     * 使节点可拖拽（改进版）
+     * 使节点可拖拽（优化版 - 消除延迟）
      */
     makeNodeDraggable(node) {
         let isDragging = false;
         let startX, startY, initialLeft, initialTop;
+        let rafId = null;
         
         const handleMouseDown = (e) => {
             // 只在节点本身或其直接子元素上触发
@@ -480,6 +495,7 @@ class CanvasManager {
             
             node.style.cursor = 'grabbing';
             node.style.zIndex = '1000';
+            node.style.willChange = 'transform'; // 优化性能
             
             // 添加选中状态
             document.querySelectorAll('.canvas-node').forEach(n => {
@@ -494,13 +510,23 @@ class CanvasManager {
         const handleMouseMove = (e) => {
             if (!isDragging) return;
             
-            const dx = e.clientX - startX;
-            const dy = e.clientY - startY;
-            
-            node.style.left = (initialLeft + dx / this.scale) + 'px';
-            node.style.top = (initialTop + dy / this.scale) + 'px';
-            
             e.preventDefault();
+            
+            // 使用RAF优化性能
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+            }
+            
+            rafId = requestAnimationFrame(() => {
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                
+                node.style.left = (initialLeft + dx / this.scale) + 'px';
+                node.style.top = (initialTop + dy / this.scale) + 'px';
+                
+                // 实时更新连线
+                this.updateConnectionsForNode(node);
+            });
         };
         
         const handleMouseUp = () => {
@@ -508,6 +534,18 @@ class CanvasManager {
                 isDragging = false;
                 node.style.cursor = 'move';
                 node.style.zIndex = '';
+                node.style.willChange = 'auto';
+                
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                    rafId = null;
+                }
+                
+                // 最后更新一次连线
+                this.updateConnectionsForNode(node);
+                
+                // 保存状态
+                this.saveState();
             }
         };
         
@@ -595,30 +633,7 @@ class CanvasManager {
         
         // 绘制每条连线
         this.connections.forEach(conn => {
-            const fromRect = conn.from.getBoundingClientRect();
-            const toRect = conn.to.getBoundingClientRect();
-            const canvasRect = this.canvas.getBoundingClientRect();
-            
-            // 计算节点中心点
-            const fromX = fromRect.left + fromRect.width / 2 - canvasRect.left;
-            const fromY = fromRect.top + fromRect.height / 2 - canvasRect.top;
-            const toX = toRect.left + toRect.width / 2 - canvasRect.left;
-            const toY = toRect.top + toRect.height / 2 - canvasRect.top;
-            
-            // 创建路径
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            
-            // 使用贝塞尔曲线
-            const controlX = (fromX + toX) / 2;
-            const d = `M ${fromX} ${fromY} Q ${controlX} ${fromY}, ${controlX} ${(fromY + toY) / 2} T ${toX} ${toY}`;
-            
-            path.setAttribute('d', d);
-            path.setAttribute('stroke', '#6366f1');
-            path.setAttribute('stroke-width', '2');
-            path.setAttribute('fill', 'none');
-            path.setAttribute('marker-end', 'url(#arrowhead)');
-            
-            this.connectionsLayer.appendChild(path);
+            this.drawSingleConnection(conn);
         });
         
         // 添加箭头标记定义
@@ -640,6 +655,52 @@ class CanvasManager {
             defs.appendChild(marker);
             this.connectionsLayer.appendChild(defs);
         }
+    }
+    
+    /**
+     * 绘制单条连接线
+     */
+    drawSingleConnection(conn) {
+        const fromRect = conn.from.getBoundingClientRect();
+        const toRect = conn.to.getBoundingClientRect();
+        const canvasRect = this.canvas.getBoundingClientRect();
+        
+        // 计算节点中心点
+        const fromX = fromRect.left + fromRect.width / 2 - canvasRect.left;
+        const fromY = fromRect.top + fromRect.height / 2 - canvasRect.top;
+        const toX = toRect.left + toRect.width / 2 - canvasRect.left;
+        const toY = toRect.top + toRect.height / 2 - canvasRect.top;
+        
+        // 创建路径
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        
+        // 使用贝塞尔曲线
+        const controlX = (fromX + toX) / 2;
+        const d = `M ${fromX} ${fromY} Q ${controlX} ${fromY}, ${controlX} ${(fromY + toY) / 2} T ${toX} ${toY}`;
+        
+        path.setAttribute('d', d);
+        path.setAttribute('stroke', '#6366f1');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('marker-end', 'url(#arrowhead)');
+        
+        this.connectionsLayer.appendChild(path);
+    }
+    
+    /**
+     * 更新指定节点的所有连线
+     */
+    updateConnectionsForNode(node) {
+        if (!this.connectionsLayer || this.connections.length === 0) return;
+        
+        // 使用RAF优化，避免频繁重绘
+        if (this._updateConnectionsRAF) {
+            cancelAnimationFrame(this._updateConnectionsRAF);
+        }
+        
+        this._updateConnectionsRAF = requestAnimationFrame(() => {
+            this.drawConnections();
+        });
     }
     
     /**
@@ -815,6 +876,126 @@ class CanvasManager {
     }
     
     /**
+     * 显示节点配置面板
+     */
+    showNodeConfig(node) {
+        const type = node.getAttribute('data-type');
+        const label = node.getAttribute('data-label');
+        
+        // 创建或获取配置面板
+        let configPanel = document.getElementById('nodeConfigPanel');
+        if (!configPanel) {
+            configPanel = this.createConfigPanel();
+        }
+        
+        // 更新配置面板内容
+        configPanel.querySelector('.config-panel-title').textContent = `配置 ${label}`;
+        configPanel.querySelector('#nodeTypeBadge').textContent = type;
+        
+        // 填充当前配置
+        configPanel.querySelector('#nodeName').value = label;
+        configPanel.querySelector('#nodeDescription').value = node.getAttribute('data-description') || '';
+        
+        // 显示面板
+        configPanel.classList.add('active');
+        configPanel.style.display = 'block';
+        
+        // 保存当前编辑的节点
+        configPanel._currentNode = node;
+        
+        console.log(`显示节点配置: ${label} (${type})`);
+    }
+    
+    /**
+     * 创建配置面板
+     */
+    createConfigPanel() {
+        const panel = document.createElement('div');
+        panel.id = 'nodeConfigPanel';
+        panel.className = 'node-config-panel';
+        panel.innerHTML = `
+            <div class="config-panel-header">
+                <h3 class="config-panel-title">节点配置</h3>
+                <button class="config-panel-close" onclick="window.canvasManager.closeNodeConfig()">✕</button>
+            </div>
+            <div class="config-panel-body">
+                <div class="config-field">
+                    <label class="config-label">节点类型</label>
+                    <span id="nodeTypeBadge" class="type-badge">-</span>
+                </div>
+                <div class="config-field">
+                    <label class="config-label">节点名称</label>
+                    <input type="text" id="nodeName" class="config-input" placeholder="输入节点名称">
+                </div>
+                <div class="config-field">
+                    <label class="config-label">描述</label>
+                    <textarea id="nodeDescription" class="config-textarea" rows="3" placeholder="输入节点描述"></textarea>
+                </div>
+            </div>
+            <div class="config-panel-footer">
+                <button class="btn btn-secondary btn-small" onclick="window.canvasManager.closeNodeConfig()">取消</button>
+                <button class="btn btn-primary btn-small" onclick="window.canvasManager.saveNodeConfig()">保存</button>
+            </div>
+        `;
+        
+        document.body.appendChild(panel);
+        return panel;
+    }
+    
+    /**
+     * 保存节点配置
+     */
+    saveNodeConfig() {
+        const configPanel = document.getElementById('nodeConfigPanel');
+        if (!configPanel || !configPanel._currentNode) return;
+        
+        const node = configPanel._currentNode;
+        const newName = configPanel.querySelector('#nodeName').value.trim();
+        const newDesc = configPanel.querySelector('#nodeDescription').value.trim();
+        
+        if (!newName) {
+            if (window.notificationManager) {
+                window.notificationManager.show('节点名称不能为空', 'warning', 2000);
+            }
+            return;
+        }
+        
+        // 更新节点属性
+        node.setAttribute('data-label', newName);
+        node.setAttribute('data-description', newDesc);
+        
+        // 更新节点显示
+        const labelSpan = node.querySelector('span:nth-child(2)');
+        if (labelSpan) {
+            labelSpan.textContent = newName;
+        }
+        
+        // 关闭面板
+        this.closeNodeConfig();
+        
+        // 保存状态
+        this.saveState();
+        
+        if (window.notificationManager) {
+            window.notificationManager.show('✅ 节点配置已保存', 'success', 2000);
+        }
+        
+        console.log(`节点配置已更新: ${newName}`);
+    }
+    
+    /**
+     * 关闭节点配置面板
+     */
+    closeNodeConfig() {
+        const configPanel = document.getElementById('nodeConfigPanel');
+        if (configPanel) {
+            configPanel.classList.remove('active');
+            configPanel.style.display = 'none';
+            configPanel._currentNode = null;
+        }
+    }
+    
+    /**
      * 导出配置为JSON
      */
     exportConfig() {
@@ -823,6 +1004,7 @@ class CanvasManager {
                 id: index,
                 type: node.getAttribute('data-type'),
                 label: node.getAttribute('data-label'),
+                description: node.getAttribute('data-description') || '',
                 position: {
                     x: parseInt(node.style.left),
                     y: parseInt(node.style.top)
