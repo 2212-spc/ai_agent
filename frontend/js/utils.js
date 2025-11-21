@@ -344,5 +344,10 @@ if (typeof module !== 'undefined' && module.exports) {
     };
 }
 
+// 暴露类到全局作用域（供init.js检测）
+window.NotificationManager = NotificationManager;
+window.InputValidator = InputValidator;
+
 // 创建全局实例
 const notificationManager = new NotificationManager();
+window.notificationManager = notificationManager;

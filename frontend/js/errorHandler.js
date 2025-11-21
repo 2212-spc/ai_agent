@@ -251,10 +251,16 @@ class RetryHandler {
     }
 }
 
+// 暴露类到全局作用域（供init.js检测）
+window.ErrorHandler = ErrorHandler;
+window.APIErrorHandler = APIErrorHandler;
+window.RetryHandler = RetryHandler;
+
 // 创建全局实例
 const errorHandler = new ErrorHandler();
+window.errorHandler = errorHandler;
 
-// 导出
+// 导出（用于模块系统）
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         ErrorHandler,
