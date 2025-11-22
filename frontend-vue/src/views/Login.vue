@@ -4,14 +4,14 @@ import { useRouter } from 'vue-router';
 import axios from 'axios';
 
 const router = useRouter();
-const username = ref('');
+const email = ref('');
 const password = ref('');
 const isLoading = ref(false);
 const error = ref('');
 
 async function handleLogin() {
-    if (!username.value || !password.value) {
-        error.value = '请输入用户名和密码';
+    if (!email.value || !password.value) {
+        error.value = '请输入邮箱和密码';
         return;
     }
     
@@ -20,20 +20,20 @@ async function handleLogin() {
     
     try {
         const response = await axios.post('http://127.0.0.1:8000/api/auth/login', {
-            username: username.value,
+            email: email.value,
             password: password.value
         });
         
         // 保存token
         localStorage.setItem('access_token', response.data.access_token);
         localStorage.setItem('refresh_token', response.data.refresh_token);
-        localStorage.setItem('user', username.value);
+        localStorage.setItem('user', email.value);
         
         // 跳转到聊天页面
         router.push('/chat');
     } catch (err) {
         console.error('登录失败:', err);
-        error.value = err.response?.data?.detail || '登录失败，请检查用户名和密码';
+        error.value = err.response?.data?.detail || '登录失败，请检查邮箱和密码';
     } finally {
         isLoading.value = false;
     }
@@ -58,13 +58,14 @@ function skipLogin() {
             
             <form @submit.prevent="handleLogin" class="login-form">
                 <div class="form-group">
-                    <label>用户名</label>
+                    <label>邮箱</label>
                     <input 
-                        type="text" 
-                        v-model="username" 
-                        placeholder="请输入用户名"
+                        type="email" 
+                        v-model="email" 
+                        placeholder="请输入注册时的邮箱"
                         :disabled="isLoading"
                         class="form-input"
+                        autocomplete="email"
                     />
                 </div>
                 
