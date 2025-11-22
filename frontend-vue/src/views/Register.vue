@@ -1,95 +1,276 @@
 <script setup>
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import axios from 'axios';
 
 const router = useRouter();
 const username = ref('');
+const email = ref('');
 const password = ref('');
 const confirmPassword = ref('');
+const isLoading = ref(false);
+const error = ref('');
+const success = ref('');
 
-function handleRegister() {
-    if (password.value !== confirmPassword.value) {
-        alert('两次密码不一致');
+async function handleRegister() {
+    // 验证
+    if (!username.value || !email.value || !password.value) {
+        error.value = '请填写所有字段';
         return;
     }
-    if (username.value && password.value) {
-        router.push('/login');
+    
+    if (password.value !== confirmPassword.value) {
+        error.value = '两次密码不一致';
+        return;
     }
+    
+    if (password.value.length < 6) {
+        error.value = '密码至少需要6个字符';
+        return;
+    }
+    
+    isLoading.value = true;
+    error.value = '';
+    success.value = '';
+    
+    try {
+        const response = await axios.post('http://127.0.0.1:8000/api/auth/register', {
+            username: username.value,
+            email: email.value,
+            password: password.value
+        });
+        
+        console.log('注册成功:', response.data);
+        success.value = '注册成功！3秒后跳转到登录页面...';
+        
+        // 3秒后跳转到登录
+        setTimeout(() => {
+            router.push('/login');
+        }, 3000);
+    } catch (err) {
+        console.error('注册失败:', err);
+        error.value = err.response?.data?.detail || '注册失败，请重试';
+    } finally {
+        isLoading.value = false;
+    }
+}
+
+function goToLogin() {
+    router.push('/login');
+}
+
+function skipRegister() {
+    router.push('/chat');
 }
 </script>
 
 <template>
-    <div class="login-page">
-        <div class="login-card">
-            <h1>🤖 AI Agent Studio</h1>
-            <h2>注册</h2>
+    <div class="register-container">
+        <div class="register-box">
+            <div class="register-header">
+                <h1>🤖 AI Agent Studio</h1>
+                <p class="register-subtitle">创建您的账户</p>
+            </div>
             
-            <form @submit.prevent="handleRegister">
-                <input v-model="username" type="text" placeholder="用户名" class="input" />
-                <input v-model="password" type="password" placeholder="密码" class="input" />
-                <input v-model="confirmPassword" type="password" placeholder="确认密码" class="input" />
-                <button type="submit" class="btn btn-primary full-width">注册</button>
+            <form @submit.prevent="handleRegister" class="register-form">
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input 
+                        type="text" 
+                        v-model="username" 
+                        placeholder="请输入用户名"
+                        :disabled="isLoading"
+                        class="form-input"
+                    />
+                </div>
+                
+                <div class="form-group">
+                    <label>邮箱</label>
+                    <input 
+                        type="email" 
+                        v-model="email" 
+                        placeholder="请输入邮箱"
+                        :disabled="isLoading"
+                        class="form-input"
+                    />
+                </div>
+                
+                <div class="form-group">
+                    <label>密码</label>
+                    <input 
+                        type="password" 
+                        v-model="password" 
+                        placeholder="至少6个字符"
+                        :disabled="isLoading"
+                        class="form-input"
+                    />
+                </div>
+                
+                <div class="form-group">
+                    <label>确认密码</label>
+                    <input 
+                        type="password" 
+                        v-model="confirmPassword" 
+                        placeholder="再次输入密码"
+                        :disabled="isLoading"
+                        class="form-input"
+                    />
+                </div>
+                
+                <div v-if="error" class="error-message">
+                    {{ error }}
+                </div>
+                
+                <div v-if="success" class="success-message">
+                    {{ success }}
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-block" :disabled="isLoading">
+                    {{ isLoading ? '注册中...' : '注册' }}
+                </button>
+                
+                <div class="register-footer">
+                    <span>已有账户？</span>
+                    <button type="button" class="btn-link" @click="goToLogin">立即登录</button>
+                </div>
+                
+                <div class="register-skip">
+                    <button type="button" class="btn-link" @click="skipRegister">
+                        跳过注册 →
+                    </button>
+                </div>
             </form>
-            
-            <p class="register-link">
-                已有账号？<router-link to="/login">登录</router-link>
-            </p>
         </div>
     </div>
 </template>
 
 <style scoped>
-.login-page {
+.register-container {
     display: flex;
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    background: var(--bg-secondary);
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    padding: 20px;
 }
 
-.login-card {
-    width: 400px;
-    padding: 40px;
+.register-box {
     background: var(--bg-primary);
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    padding: 40px;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    width: 100%;
+    max-width: 420px;
+    border: 1px solid var(--border-primary);
 }
 
-.login-card h1 {
+.register-header {
     text-align: center;
-    font-size: 32px;
-    margin-bottom: 8px;
-}
-
-.login-card h2 {
-    text-align: center;
-    font-size: 24px;
     margin-bottom: 32px;
+}
+
+.register-header h1 {
+    font-size: 28px;
+    margin-bottom: 8px;
     color: var(--text-primary);
 }
 
-.input {
-    width: 100%;
-    padding: 12px;
-    margin-bottom: 16px;
-    border: 1px solid var(--border-secondary);
-    border-radius: 6px;
+.register-subtitle {
+    color: var(--text-secondary);
     font-size: 14px;
 }
 
-.full-width {
-    width: 100%;
+.register-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
 }
 
-.register-link {
-    text-align: center;
-    margin-top: 16px;
-    font-size: 14px;
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-group label {
+    font-size: 13px;
+    font-weight: 600;
     color: var(--text-secondary);
 }
 
-.register-link a {
+.form-input {
+    padding: 12px 16px;
+    border: 1px solid var(--border-secondary);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    background: var(--bg-primary);
+}
+
+.form-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.error-message {
+    background: #fee;
+    color: #c00;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    border: 1px solid #fcc;
+}
+
+.success-message {
+    background: #d1fae5;
+    color: #065f46;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    border: 1px solid #6ee7b7;
+}
+
+.btn-block {
+    width: 100%;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.register-footer {
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-link {
+    background: none;
+    border: none;
     color: var(--primary-color);
-    text-decoration: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 0;
+}
+
+.btn-link:hover {
+    text-decoration: underline;
+}
+
+.register-skip {
+    text-align: center;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-primary);
 }
 </style>

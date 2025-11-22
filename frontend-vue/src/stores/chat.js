@@ -32,6 +32,12 @@ export const useChatStore = defineStore('chat', () => {
         isLoading.value = true;
         clearTimelineSteps(); // 清空之前的timeline
 
+        // 生成或使用已有的session_id
+        if (!currentSessionId.value) {
+            currentSessionId.value = `session-${Date.now()}`;
+            console.log('生成新的session_id:', currentSessionId.value);
+        }
+
         // 添加用户消息到本地
         const userMsg = {
             role: 'user',
@@ -82,15 +88,22 @@ export const useChatStore = defineStore('chat', () => {
             
             // 根据模式选择不同的API端点
             if (isMultiAgentMode.value) {
-                response = await axios.post(`${apiBase}/chat/multi-agent`, {
+                // 多智能体模式：使用LangGraph Agent（支持工具调用）
+                response = await axios.post(`${apiBase}/chat/agent`, {
                     messages: requestMessages,
-                    use_knowledge_base: useKnowledgeBase.value
+                    use_knowledge_base: useKnowledgeBase.value,
+                    session_id: currentSessionId.value,
+                    use_tools: true,
+                    model: 'deepseek-chat',
+                    temperature: 0.7
                 });
             } else {
+                // 单智能体模式：直接调用LLM
                 response = await axios.post(`${apiBase}/chat`, {
                     messages: requestMessages,
                     model: 'deepseek-chat',
-                    temperature: 0.7
+                    temperature: 0.7,
+                    session_id: currentSessionId.value
                 });
             }
             
