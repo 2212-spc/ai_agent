@@ -12,7 +12,6 @@ const canvasStore = useCanvasStore();
 const showBuilder = ref(false);
 const showTimeline = ref(false);
 const isSidebarOpen = ref(true);
-const isMultiAgent = ref(false);
 
 function toggleBuilder() {
     showBuilder.value = !showBuilder.value;
@@ -39,6 +38,17 @@ function clearChat() {
 function startNewChat() {
     chatStore.clearMessages();
     chatStore.setSessionId(null);
+}
+
+function onModeChange() {
+    const mode = chatStore.isMultiAgentMode ? '多智能体' : '单智能体';
+    console.log(`切换到 ${mode} 模式`);
+    // 可选：添加通知提示
+    chatStore.addMessage({
+        role: 'system',
+        content: `已切换到${mode}模式`,
+        type: 'info'
+    });
 }
 
 onMounted(() => {
@@ -73,10 +83,10 @@ onMounted(() => {
                 <div class="mode-switch-container">
                     <span class="mode-switch-label">模式:</span>
                     <label class="mode-switch">
-                        <input type="checkbox" v-model="isMultiAgent">
+                        <input type="checkbox" v-model="chatStore.isMultiAgentMode" @change="onModeChange">
                         <span class="mode-slider"></span>
                     </label>
-                    <span class="mode-indicator">{{ isMultiAgent ? '多智能体' : '单智能体' }}</span>
+                    <span class="mode-indicator">{{ chatStore.isMultiAgentMode ? '多智能体' : '单智能体' }}</span>
                 </div>
                 <button class="btn-icon" @click="openSettings" title="会话设置">⚙️</button>
                 <button class="btn-icon" @click="toggleBuilder" title="Agent构建器">🛠️</button>

@@ -60,7 +60,7 @@ watch(messages, () => {
                 v-for="msg in messages"
                 :key="msg.id"
                 class="message"
-                :class="[`message-${msg.role}`, msg.type === 'error' ? 'message-error' : '']"
+                :class="[`message-${msg.role}`, msg.type === 'error' ? 'message-error' : '', msg.type === 'info' ? 'message-info' : '']"
             >
                 <div class="message-avatar">
                     {{ msg.role === 'user' ? '👤' : msg.role === 'assistant' ? '🤖' : '⚠️' }}
@@ -164,6 +164,19 @@ watch(messages, () => {
 .message-error .message-content {
     background: #fee;
     border-color: #fcc;
+}
+
+.message-info .message-content {
+    background: #e3f2fd;
+    border-color: #90caf9;
+}
+
+.message-system .message-avatar {
+    background: #e3f2fd;
+}
+
+.message-info .message-avatar {
+    background: #e3f2fd;
 }
 
 .message-text {

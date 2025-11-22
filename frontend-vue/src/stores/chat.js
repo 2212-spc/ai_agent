@@ -8,6 +8,8 @@ export const useChatStore = defineStore('chat', () => {
     const currentSessionId = ref(null);
     const isLoading = ref(false);
     const apiBase = 'http://127.0.0.1:8000';
+    const isMultiAgentMode = ref(false);
+    const useKnowledgeBase = ref(true);
 
     // Computed
     const hasMessages = computed(() => messages.value.length > 0);
@@ -45,11 +47,21 @@ export const useChatStore = defineStore('chat', () => {
             }));
 
         try {
-            const response = await axios.post(`${apiBase}/chat`, {
-                messages: requestMessages,
-                model: 'deepseek-chat',
-                temperature: 0.7
-            });
+            let response;
+            
+            // 根据模式选择不同的API端点
+            if (isMultiAgentMode.value) {
+                response = await axios.post(`${apiBase}/chat/multi-agent`, {
+                    messages: requestMessages,
+                    use_knowledge_base: useKnowledgeBase.value
+                });
+            } else {
+                response = await axios.post(`${apiBase}/chat`, {
+                    messages: requestMessages,
+                    model: 'deepseek-chat',
+                    temperature: 0.7
+                });
+            }
 
             // 添加AI回复 (后端返回 reply 字段)
             if (response.data && response.data.reply) {
@@ -89,14 +101,31 @@ export const useChatStore = defineStore('chat', () => {
         currentSessionId.value = id;
     }
 
+    function toggleMultiAgentMode() {
+        isMultiAgentMode.value = !isMultiAgentMode.value;
+    }
+
+    function setMultiAgentMode(value) {
+        isMultiAgentMode.value = value;
+    }
+
+    function setUseKnowledgeBase(value) {
+        useKnowledgeBase.value = value;
+    }
+
     return {
         messages,
         currentSessionId,
         isLoading,
         hasMessages,
+        isMultiAgentMode,
+        useKnowledgeBase,
         addMessage,
         clearMessages,
         sendMessage,
-        setSessionId
+        setSessionId,
+        toggleMultiAgentMode,
+        setMultiAgentMode,
+        setUseKnowledgeBase
     };
 });
