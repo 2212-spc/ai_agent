@@ -8,6 +8,8 @@ const svgRef = ref(null);
 const isDragging = ref(false);
 const draggedNode = ref(null);
 const dragOffset = ref({ x: 0, y: 0 });
+const isConnecting = ref(false);
+const connectingFrom = ref(null);
 
 const nodes = computed(() => canvasStore.nodes);
 const connections = computed(() => canvasStore.connections);
@@ -67,7 +69,27 @@ function getConnectionPath(from, to) {
     return `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
 }
 
-function selectNode(node) {
+function selectNode(node, event) {
+    // 如果正在连线模式
+    if (isConnecting.value && connectingFrom.value) {
+        if (connectingFrom.value !== node.id) {
+            // 完成连线
+            canvasStore.addConnection(connectingFrom.value, node.id);
+        }
+        // 退出连线模式
+        isConnecting.value = false;
+        connectingFrom.value = null;
+        event.stopPropagation();
+        return;
+    }
+    
+    canvasStore.selectNode(node.id);
+}
+
+function startConnection(node, event) {
+    event.stopPropagation();
+    isConnecting.value = true;
+    connectingFrom.value = node.id;
     canvasStore.selectNode(node.id);
 }
 
@@ -78,6 +100,13 @@ watch([nodes, connections], () => {
     });
 }, { deep: true });
 
+function cancelConnection() {
+    if (isConnecting.value) {
+        isConnecting.value = false;
+        connectingFrom.value = null;
+    }
+}
+
 onMounted(() => {
     document.addEventListener('mousemove', onDrag);
     document.addEventListener('mouseup', endDrag);
@@ -85,7 +114,7 @@ onMounted(() => {
 </script>
 
 <template>
-    <div class="node-canvas" ref="canvasRef">
+    <div class="node-canvas" ref="canvasRef" @click="cancelConnection">
         <!-- SVG Layer for Connections -->
         <svg class="connections-layer" ref="svgRef">
             <defs>
@@ -119,13 +148,17 @@ onMounted(() => {
                 v-for="node in nodes"
                 :key="node.id"
                 class="canvas-node"
-                :class="{ 'selected': canvasStore.selectedNode === node.id }"
+                :class="{ 
+                    'selected': canvasStore.selectedNode === node.id,
+                    'connecting': isConnecting && connectingFrom === node.id
+                }"
                 :style="{
                     left: node.position.x + 'px',
                     top: node.position.y + 'px'
                 }"
                 @mousedown="startDrag(node, $event)"
-                @click="selectNode(node)"
+                @click="selectNode(node, $event)"
+                @dblclick="startConnection(node, $event)"
             >
                 <div class="node-header">
                     <span class="node-type">{{ node.type }}</span>
@@ -210,6 +243,21 @@ onMounted(() => {
 .canvas-node.selected {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.canvas-node.connecting {
+    border-color: #10a37f;
+    box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.3);
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(16, 163, 127, 0.5);
+    }
 }
 
 .node-header {

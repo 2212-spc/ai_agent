@@ -28,36 +28,53 @@ export const useChatStore = defineStore('chat', () => {
     async function sendMessage(content) {
         isLoading.value = true;
 
-        // 添加用户消息
-        addMessage({
+        // 添加用户消息到本地
+        const userMsg = {
             role: 'user',
             content,
             type: 'text'
-        });
+        };
+        addMessage(userMsg);
+
+        // 构建符合后端格式的请求
+        const requestMessages = messages.value
+            .filter(m => m.role === 'user' || m.role === 'assistant')
+            .map(m => ({
+                role: m.role,
+                content: m.content
+            }));
 
         try {
             const response = await axios.post(`${apiBase}/chat`, {
-                message: content,
-                session_id: currentSessionId.value
+                messages: requestMessages,
+                model: 'deepseek-chat',
+                temperature: 0.7
             });
 
             // 添加AI回复
-            addMessage({
-                role: 'assistant',
-                content: response.data.message,
-                type: 'text'
-            });
-
-            if (response.data.session_id) {
-                currentSessionId.value = response.data.session_id;
+            if (response.data && response.data.message) {
+                addMessage({
+                    role: 'assistant',
+                    content: response.data.message,
+                    type: 'text'
+                });
             }
 
             return response.data;
         } catch (error) {
             console.error('发送消息失败:', error);
+            
+            // 显示详细错误信息
+            let errorMsg = '消息发送失败，请重试';
+            if (error.response) {
+                errorMsg = `错误 ${error.response.status}: ${error.response.data?.detail || '未知错误'}`;
+            } else if (error.request) {
+                errorMsg = '无法连接到服务器，请检查后端是否启动';
+            }
+            
             addMessage({
                 role: 'system',
-                content: '消息发送失败，请重试',
+                content: errorMsg,
                 type: 'error'
             });
             throw error;

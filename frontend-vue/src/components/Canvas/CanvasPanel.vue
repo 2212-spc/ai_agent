@@ -83,6 +83,9 @@ function handleZoomOut() {
         <!-- Node Palette -->
         <div class="node-palette">
             <h4 class="palette-title">节点库</h4>
+            <div class="usage-hint">
+                💡 双击节点开始连线，点击目标节点完成连线
+            </div>
             <div class="node-list">
                 <div
                     v-for="node in nodeTypes"
@@ -143,6 +146,15 @@ function handleZoomOut() {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.usage-hint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    background: var(--bg-tertiary);
+    padding: 6px 10px;
+    border-radius: 4px;
     margin-bottom: 12px;
 }
 
