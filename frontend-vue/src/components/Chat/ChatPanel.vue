@@ -17,6 +17,26 @@ const useKnowledgeBase = computed({
     set: (val) => chatStore.setUseKnowledgeBase(val)
 });
 
+function handleFileSelect(event) {
+    const files = Array.from(event.target.files);
+    files.forEach(file => {
+        attachedFiles.value.push({
+            name: file.name,
+            size: file.size,
+            file: file
+        });
+    });
+    event.target.value = ''; // 清空input以允许重复选择
+}
+
+function removeFile(index) {
+    attachedFiles.value.splice(index, 1);
+}
+
+function toggleOptions() {
+    showOptions.value = !showOptions.value;
+}
+
 async function sendMessage() {
     const content = messageInput.value.trim();
     if (!content || isLoading.value) return;
@@ -92,21 +112,61 @@ watch(messages, () => {
 
         <!-- Input Area -->
         <div class="input-container">
-            <textarea
-                v-model="messageInput"
-                @keydown="handleKeyDown"
-                placeholder="输入消息... (Enter发送, Shift+Enter换行)"
-                class="message-input"
-                rows="3"
-                :disabled="isLoading"
-            ></textarea>
-            <button
-                @click="sendMessage"
-                class="btn btn-primary send-btn"
-                :disabled="!messageInput.trim() || isLoading"
-            >
-                {{ isLoading ? '发送中...' : '发送' }}
-            </button>
+            <!-- 附件显示 -->
+            <div v-if="attachedFiles.length > 0" class="attached-files">
+                <div v-for="(file, index) in attachedFiles" :key="index" class="attached-file">
+                    <span class="file-icon">📎</span>
+                    <span class="file-name">{{ file.name }}</span>
+                    <span class="file-size">({{ (file.size / 1024).toFixed(1) }}KB)</span>
+                    <button class="file-remove" @click="removeFile(index)">×</button>
+                </div>
+            </div>
+            
+            <div class="input-wrapper">
+                <!-- 选项面板 -->
+                <div v-show="showOptions" class="input-options-panel">
+                    <label class="option-label">
+                        <input type="checkbox" v-model="useKnowledgeBase">
+                        <span>知识库</span>
+                    </label>
+                    <button class="option-attach" @click="$refs.fileInput.click()">
+                        <span>📎 上传文件</span>
+                    </button>
+                </div>
+                
+                <div class="input-box">
+                    <textarea
+                        v-model="messageInput"
+                        @keydown="handleKeyDown"
+                        placeholder="输入消息... (Enter发送, Shift+Enter换行)"
+                        class="message-input"
+                        rows="3"
+                        :disabled="isLoading"
+                    ></textarea>
+                    <div class="input-controls">
+                        <button class="btn-icon" @click="toggleOptions" title="更多选项">
+                            ＋
+                        </button>
+                        <button
+                            @click="sendMessage"
+                            class="send-btn"
+                            :disabled="!messageInput.trim() || isLoading"
+                        >
+                            ↑
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 隐藏的文件输入 -->
+                <input
+                    ref="fileInput"
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx,.txt"
+                    @change="handleFileSelect"
+                    style="display: none;"
+                />
+            </div>
         </div>
     </div>
 </template>
@@ -232,11 +292,99 @@ watch(messages, () => {
 }
 
 .input-container {
-    padding: 16px;
+    padding: 16px 20px;
     background: var(--bg-primary);
     border-top: 1px solid var(--border-primary);
+}
+
+.attached-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.attached-file {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.file-icon {
+    font-size: 14px;
+}
+
+.file-name {
+    color: var(--text-primary);
+}
+
+.file-size {
+    color: var(--text-tertiary);
+    font-size: 11px;
+}
+
+.file-remove {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.file-remove:hover {
+    color: var(--error-color);
+}
+
+.input-wrapper {
+    position: relative;
+}
+
+.input-options-panel {
     display: flex;
     gap: 12px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border-radius: 8px 8px 0 0;
+    margin-bottom: -1px;
+}
+
+.option-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.option-label input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.option-attach {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.option-attach:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.input-box {
+    display: flex;
+    gap: 8px;
     align-items: flex-end;
 }
 
@@ -263,8 +411,34 @@ watch(messages, () => {
     cursor: not-allowed;
 }
 
+.input-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
 .send-btn {
+    width: 40px;
     height: 40px;
-    min-width: 80px;
+    border-radius: 8px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.send-btn:hover:not(:disabled) {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+.send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 </style>
