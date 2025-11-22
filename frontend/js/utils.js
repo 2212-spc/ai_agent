@@ -20,7 +20,28 @@ class NotificationManager {
      */
     show(message, type = 'info', duration = 3000) {
         const id = `notification-${Date.now()}-${Math.random()}`;
-        const notification = this.createNotification(id, message, type);
+        const notification = this.createNotification(id, message, type, false);
+        
+        document.body.appendChild(notification);
+        this.notifications.push({ id, element: notification });
+        
+        // 自动关闭
+        if (duration > 0) {
+            setTimeout(() => this.close(id), duration);
+        }
+        
+        return id;
+    }
+    
+    /**
+     * 显示富文本通知（支持HTML）
+     * @param {string} htmlContent - HTML内容
+     * @param {string} type - 类型: success, error, warning, info
+     * @param {number} duration - 持续时间(ms)
+     */
+    showRich(htmlContent, type = 'info', duration = 5000) {
+        const id = `notification-${Date.now()}-${Math.random()}`;
+        const notification = this.createNotification(id, htmlContent, type, true);
         
         document.body.appendChild(notification);
         this.notifications.push({ id, element: notification });
@@ -33,10 +54,11 @@ class NotificationManager {
         return id;
     }
 
-    createNotification(id, message, type) {
+    createNotification(id, content, type, isRich = false) {
         const div = document.createElement('div');
         div.id = id;
         div.className = `notification ${type}`;
+        div.style.cursor = 'pointer'; // 允许点击关闭
         
         const icons = {
             success: '✅',
@@ -45,13 +67,18 @@ class NotificationManager {
             info: 'ℹ️'
         };
         
+        const messageContent = isRich ? content : this.escapeHtml(content);
+        
         div.innerHTML = `
-            <div class="notification-icon">${icons[type] || icons.info}</div>
-            <div class="notification-content">
-                <div class="notification-message">${this.escapeHtml(message)}</div>
+            <div class="notification-icon" style="flex-shrink: 0;">${icons[type] || icons.info}</div>
+            <div class="notification-content" style="flex: 1; min-width: 0;">
+                <div class="notification-message">${messageContent}</div>
             </div>
             <button class="notification-close" onclick="notificationManager.close('${id}')" aria-label="关闭">×</button>
         `;
+        
+        // 点击通知本身也可以关闭
+        div.addEventListener('click', () => this.close(id));
         
         return div;
     }

@@ -274,7 +274,6 @@ textarea, input[type="text"], input[type="email"], input[type="password"] {
 /* ========== 通知提示 ========== */
 .notification {
     position: fixed;
-    top: 20px;
     right: 20px;
     padding: 16px 20px;
     background: var(--bg-primary);
@@ -282,11 +281,29 @@ textarea, input[type="text"], input[type="email"], input[type="password"] {
     box-shadow: var(--shadow-md);
     z-index: var(--z-tooltip);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
     min-width: 300px;
+    max-width: 420px;
     animation: slideInRight var(--transition-slow) ease-out;
-    max-width: 90vw;
+    border: 1px solid var(--border-primary);
+}
+
+/* 多通知堆叠：根据顺序自动计算top值 */
+.notification:nth-of-type(1) {
+    bottom: 20px;
+}
+
+.notification:nth-of-type(2) {
+    bottom: calc(20px + 90px * 1);
+}
+
+.notification:nth-of-type(3) {
+    bottom: calc(20px + 90px * 2);
+}
+
+.notification:nth-of-type(4) {
+    bottom: calc(20px + 90px * 3);
 }
 
 .notification.error {
@@ -546,7 +563,7 @@ textarea, input[type="text"], input[type="email"], input[type="password"] {
     transform: translateY(-1px);
 }
 
-/* ===== 通用空状态样�?===== */
+/* ===== 通用空状态样�?===== */
 .empty-state {
     text-align: center;
     padding: 64px 24px;

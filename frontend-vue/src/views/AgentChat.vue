@@ -1,15 +1,18 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useChatStore } from '../stores/chat';
 import { useCanvasStore } from '../stores/canvas';
 import { useTheme } from '../composables/useTheme';
+import { useNotification, NOTIFICATION_TYPES } from '../composables/useNotification';
 import ChatPanel from '../components/Chat/ChatPanel.vue';
 import CanvasPanel from '../components/Canvas/CanvasPanel.vue';
 import TimelinePanel from '../components/Chat/TimelinePanel.vue';
+import NotificationContainer from '../components/NotificationContainer.vue';
 
 const chatStore = useChatStore();
 const canvasStore = useCanvasStore();
 const { currentTheme, toggleTheme } = useTheme();
+const { showRich } = useNotification();
 
 const showBuilder = ref(false);
 const showTimeline = ref(false);
@@ -76,14 +79,14 @@ function refreshHistory() {
 
 async function selectConversation(sessionId) {
     try {
+        // 切换会话,但不关闭sidebar
         chatStore.setSessionId(sessionId);
         
-        // 加载该会话的历史消息 - 使用正确的API端点
+        // 加载该会话的历史消息
         const response = await fetch(`http://127.0.0.1:8000/conversation/${sessionId}/history`);
         const data = await response.json();
         
         // 清空当前消息并加载历史消息
-        // 后端返回的是消息数组，直接使用
         chatStore.messages = data.map(msg => ({
             id: msg.id,
             role: msg.role,
@@ -91,6 +94,9 @@ async function selectConversation(sessionId) {
             timestamp: msg.created_at,
             type: 'text'
         }));
+        
+        // 初始化会话状态
+        chatStore.ensureSession(sessionId);
         
         console.log('已加载会话:', sessionId, '消息数:', data.length);
     } catch (error) {
@@ -139,6 +145,22 @@ function startResizeTimeline(event) {
     document.addEventListener('mouseup', onMouseUp);
 }
 
+// 后台生成完成事件处理
+function handleBackgroundGenerationComplete(event) {
+    const { sessionId, question, answer } = event.detail;
+    
+    // 显示富文本通知
+    showRich(
+        question,
+        answer,
+        NOTIFICATION_TYPES.SUCCESS,
+        6000
+    );
+    
+    // 刷新历史列表
+    loadHistoryList();
+}
+
 onMounted(() => {
     console.log('AgentChat mounted');
     loadHistoryList();
@@ -147,11 +169,21 @@ onMounted(() => {
     setInterval(() => {
         loadHistoryList();
     }, 30000);
+    
+    // 监听后台生成完成事件
+    window.addEventListener('background-generation-complete', handleBackgroundGenerationComplete);
+});
+
+onUnmounted(() => {
+    // 清理事件监听
+    window.removeEventListener('background-generation-complete', handleBackgroundGenerationComplete);
 });
 </script>
 
 <template>
     <div class="agent-chat-container">
+        <!-- Notification Container -->
+        <NotificationContainer />
         <!-- Header -->
         <div class="header">
             <div class="header-left">
@@ -223,9 +255,19 @@ onMounted(() => {
                             v-for="item in historyList" 
                             :key="item.session_id"
                             class="history-item"
+                            :class="{ 'active': item.session_id === chatStore.currentSessionId }"
                             @click="selectConversation(item.session_id)"
                         >
-                            <div class="history-title">{{ item.title || '新对话' }}</div>
+                            <div class="history-title">
+                                {{ item.title || '新对话' }}
+                                <span 
+                                    v-if="chatStore.getSessionStatus(item.session_id) === chatStore.SESSION_STATUS.GENERATING"
+                                    class="generating-badge"
+                                    title="后台生成中"
+                                >
+                                    ⚡
+                                </span>
+                            </div>
                             <div class="history-meta">
                                 {{ item.created_at ? new Date(item.created_at).toLocaleString('zh-CN', { 
                                     month: '2-digit', 
@@ -327,6 +369,7 @@ onMounted(() => {
 .history-item.active {
     background: var(--primary-light);
     border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
 }
 
 .history-title {
@@ -337,6 +380,23 @@ onMounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.generating-badge {
+    font-size: 12px;
+    animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.3;
+    }
 }
 
 .history-meta {
