@@ -120,8 +120,7 @@ export const useChatStore = defineStore('chat', () => {
                     type: 'observations'
                 });
                 
-                // 保存会话到后端
-                saveConversation();
+                // 注意：会话由后端在对话过程中自动保存，无需前端手动调用
             } else {
                 console.error('响应数据格式错误:', response.data);
             }
@@ -181,39 +180,6 @@ export const useChatStore = defineStore('chat', () => {
         if (timelineSteps.value.length > 0) {
             const lastStep = timelineSteps.value[timelineSteps.value.length - 1];
             Object.assign(lastStep, updates);
-        }
-    }
-
-    async function saveConversation() {
-        try {
-            // 生成会话ID（如果没有）
-            if (!currentSessionId.value) {
-                currentSessionId.value = `session-${Date.now()}`;
-            }
-            
-            // 获取会话标题（使用第一条用户消息）
-            const firstUserMessage = messages.value.find(m => m.role === 'user');
-            const title = firstUserMessage ? 
-                (firstUserMessage.content.slice(0, 30) + '...') : 
-                '新对话';
-            
-            // 保存到后端
-            await axios.post(`${apiBase}/conversations`, {
-                session_id: currentSessionId.value,
-                title: title,
-                messages: messages.value.map(m => ({
-                    role: m.role,
-                    content: m.content,
-                    timestamp: m.timestamp
-                })),
-                metadata: {
-                    mode: isMultiAgentMode.value ? 'multi-agent' : 'single',
-                    use_knowledge_base: useKnowledgeBase.value
-                }
-            });
-        } catch (error) {
-            console.error('保存会话失败:', error);
-            // 不影响主流程，静默失败
         }
     }
 

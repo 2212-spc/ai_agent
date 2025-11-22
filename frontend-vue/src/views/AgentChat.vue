@@ -18,6 +18,7 @@ const historyList = ref([]);
 const isLoadingHistory = ref(false);
 const sidebarWidth = ref(280);
 const builderWidth = ref(500);
+const timelineWidth = ref(320);
 
 function toggleBuilder() {
     showBuilder.value = !showBuilder.value;
@@ -77,17 +78,24 @@ async function selectConversation(sessionId) {
     try {
         chatStore.setSessionId(sessionId);
         
-        // 加载该会话的历史消息
-        const response = await fetch(`http://127.0.0.1:8000/conversations/${sessionId}`);
+        // 加载该会话的历史消息 - 使用正确的API端点
+        const response = await fetch(`http://127.0.0.1:8000/conversation/${sessionId}/history`);
         const data = await response.json();
         
         // 清空当前消息并加载历史消息
-        chatStore.messages = data.messages || [];
+        // 后端返回的是消息数组，直接使用
+        chatStore.messages = data.map(msg => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.created_at,
+            type: 'text'
+        }));
         
-        console.log('已加载会话:', sessionId, '消息数:', data.messages?.length);
+        console.log('已加载会话:', sessionId, '消息数:', data.length);
     } catch (error) {
         console.error('加载会话失败:', error);
-        alert('加载历史会话失败');
+        alert('加载历史会话失败: ' + error.message);
     }
 }
 
@@ -100,6 +108,26 @@ function startResizeBuilder(event) {
         const deltaX = startX - e.clientX;
         const newWidth = Math.max(300, Math.min(800, startWidth + deltaX));
         builderWidth.value = newWidth;
+    }
+    
+    function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    }
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+function startResizeTimeline(event) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = timelineWidth.value;
+    
+    function onMouseMove(e) {
+        const deltaX = startX - e.clientX;
+        const newWidth = Math.max(250, Math.min(600, startWidth + deltaX));
+        timelineWidth.value = newWidth;
     }
     
     function onMouseUp() {
@@ -223,7 +251,8 @@ onMounted(() => {
             </aside>
 
             <!-- Timeline Panel -->
-            <aside class="timeline-panel-container" v-show="showTimeline">
+            <aside class="timeline-panel-container" v-show="showTimeline" :style="{ width: timelineWidth + 'px' }">
+                <div class="resize-handle resize-handle-left" @mousedown="startResizeTimeline"></div>
                 <TimelinePanel />
             </aside>
         </div>
@@ -354,10 +383,12 @@ onMounted(() => {
 }
 
 .timeline-panel-container {
-    width: 320px;
+    position: relative;
     background: var(--bg-primary);
     border-left: 1px solid var(--border-primary);
     overflow: hidden;
+    min-width: 250px;
+    max-width: 600px;
 }
 
 .section-title {
