@@ -4,6 +4,7 @@ import { useChatStore } from '../stores/chat';
 import { useCanvasStore } from '../stores/canvas';
 import ChatPanel from '../components/Chat/ChatPanel.vue';
 import CanvasPanel from '../components/Canvas/CanvasPanel.vue';
+import TimelinePanel from '../components/Chat/TimelinePanel.vue';
 
 const chatStore = useChatStore();
 const canvasStore = useCanvasStore();
@@ -11,6 +12,7 @@ const canvasStore = useCanvasStore();
 const showBuilder = ref(false);
 const showTimeline = ref(false);
 const isSidebarOpen = ref(true);
+const isMultiAgent = ref(false);
 
 function toggleBuilder() {
     showBuilder.value = !showBuilder.value;
@@ -26,6 +28,17 @@ function toggleSidebar() {
 
 function openSettings() {
     window.open('/settings', '_blank');
+}
+
+function clearChat() {
+    if (confirm('确定要清空当前对话吗？')) {
+        chatStore.clearMessages();
+    }
+}
+
+function startNewChat() {
+    chatStore.clearMessages();
+    chatStore.setSessionId(null);
 }
 
 onMounted(() => {
@@ -44,15 +57,33 @@ onMounted(() => {
                 <div class="logo">🤖</div>
                 <div class="header-title">
                     <h1>AI Agent Studio</h1>
-                    <div class="header-title-sub">智能体工作台</div>
+                    <div class="header-title-sub">多智能体对话与知识工作台</div>
+                </div>
+                <!-- 导航链接 -->
+                <div class="header-nav">
+                    <router-link to="/chat" class="nav-link active">💬 对话工作台</router-link>
+                    <router-link to="/prompts" class="nav-link">📝 Prompt模板</router-link>
+                    <router-link to="/knowledge" class="nav-link">📁 知识库</router-link>
+                    <router-link to="/history" class="nav-link">📚 会话历史</router-link>
                 </div>
             </div>
             
             <div class="header-right">
-                <button class="btn-icon" @click="openSettings" title="设置">⚙️</button>
-                <button class="btn btn-primary" @click="toggleBuilder">
-                    {{ showBuilder ? '关闭' : '打开' }}Agent构建器
+                <!-- 模式切换 -->
+                <div class="mode-switch-container">
+                    <span class="mode-switch-label">模式:</span>
+                    <label class="mode-switch">
+                        <input type="checkbox" v-model="isMultiAgent">
+                        <span class="mode-slider"></span>
+                    </label>
+                    <span class="mode-indicator">{{ isMultiAgent ? '多智能体' : '单智能体' }}</span>
+                </div>
+                <button class="btn-icon" @click="openSettings" title="会话设置">⚙️</button>
+                <button class="btn-icon" @click="toggleBuilder" title="Agent构建器">🛠️</button>
+                <button class="btn btn-secondary btn-small" @click="toggleTimeline">
+                    {{ showTimeline ? '← 收起过程' : '展开过程 →' }}
                 </button>
+                <button class="btn-icon" @click="clearChat" title="清空对话">🗑️</button>
             </div>
         </div>
 
@@ -60,8 +91,14 @@ onMounted(() => {
         <div class="main-content" :class="{ 'sidebar-closed': !isSidebarOpen }">
             <!-- Sidebar -->
             <aside class="sidebar" v-show="isSidebarOpen">
+                <button class="btn btn-primary btn-small new-chat-btn" @click="startNewChat">
+                    ➕ 新建对话
+                </button>
                 <div class="sidebar-section">
-                    <h3 class="section-title">会话历史</h3>
+                    <div class="sidebar-header">
+                        <h3 class="section-title">📚 历史记录</h3>
+                        <button class="btn-icon" title="刷新">🔄</button>
+                    </div>
                     <div class="empty-state">
                         <div class="empty-state-icon">💭</div>
                         <div class="empty-state-text">暂无历史会话</div>
@@ -77,6 +114,11 @@ onMounted(() => {
             <!-- Builder Panel -->
             <aside class="builder-panel" v-show="showBuilder">
                 <CanvasPanel />
+            </aside>
+
+            <!-- Timeline Panel -->
+            <aside class="timeline-panel-container" v-show="showTimeline">
+                <TimelinePanel />
             </aside>
         </div>
     </div>
@@ -104,6 +146,20 @@ onMounted(() => {
     padding: 16px;
     overflow-y: auto;
     transition: transform 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.new-chat-btn {
+    width: 100%;
+}
+
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
 }
 
 .main-content.sidebar-closed .sidebar {
@@ -119,6 +175,13 @@ onMounted(() => {
 
 .builder-panel {
     width: 400px;
+    background: var(--bg-primary);
+    border-left: 1px solid var(--border-primary);
+    overflow: hidden;
+}
+
+.timeline-panel-container {
+    width: 320px;
     background: var(--bg-primary);
     border-left: 1px solid var(--border-primary);
     overflow: hidden;
@@ -159,5 +222,101 @@ onMounted(() => {
 
 .menu-toggle-btn:hover {
     background: var(--bg-tertiary);
+}
+
+.header-nav {
+    display: flex;
+    gap: 8px;
+    margin-left: 24px;
+}
+
+.nav-link {
+    padding: 6px 12px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.nav-link:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.nav-link.active {
+    background: var(--primary-light);
+    color: var(--primary-color);
+    font-weight: 500;
+}
+
+.mode-switch-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 12px;
+}
+
+.mode-switch-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.mode-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+}
+
+.mode-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.mode-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 24px;
+}
+
+.mode-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+input:checked + .mode-slider {
+    background-color: var(--primary-color);
+}
+
+input:checked + .mode-slider:before {
+    transform: translateX(20px);
+}
+
+.mode-indicator {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    min-width: 60px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 </style>

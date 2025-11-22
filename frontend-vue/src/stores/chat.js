@@ -51,13 +51,15 @@ export const useChatStore = defineStore('chat', () => {
                 temperature: 0.7
             });
 
-            // 添加AI回复
-            if (response.data && response.data.message) {
+            // 添加AI回复 (后端返回 reply 字段)
+            if (response.data && response.data.reply) {
                 addMessage({
                     role: 'assistant',
-                    content: response.data.message,
+                    content: response.data.reply,
                     type: 'text'
                 });
+            } else {
+                console.error('响应数据格式错误:', response.data);
             }
 
             return response.data;
