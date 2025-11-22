@@ -113,11 +113,11 @@
     --info-dark: #93c5fd;
     
     /* 中性色 */
-    --text-primary: #e5e7eb;
-    --text-secondary: #9ca3af;
-    --text-tertiary: #6b7280;
-    --text-inverse: #1f2937;
-    --text-link: #8b9aef;
+    --text-primary: #f3f4f6;
+    --text-secondary: #d1d5db;
+    --text-tertiary: #9ca3af;
+    --text-inverse: #111827;
+    --text-link: #a5b4fc;
     
     /* 背景色 */
     --bg-primary: #1f2937;

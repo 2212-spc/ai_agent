@@ -248,8 +248,42 @@ watch(messages, () => {
 
 .message-text {
     color: var(--text-primary);
-    line-height: 1.6;
+    line-height: 1.8;
     word-wrap: break-word;
+}
+
+.message-text :deep(p) {
+    margin: 0.5em 0;
+}
+
+.message-text :deep(ul), .message-text :deep(ol) {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+
+.message-text :deep(li) {
+    margin: 0.3em 0;
+}
+
+.message-text :deep(code) {
+    background: var(--bg-tertiary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-family: var(--font-mono);
+}
+
+.message-text :deep(pre) {
+    background: var(--bg-tertiary);
+    padding: 12px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 0.8em 0;
+}
+
+.message-text :deep(pre code) {
+    background: none;
+    padding: 0;
 }
 
 .message-time {

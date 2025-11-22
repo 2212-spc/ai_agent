@@ -10,6 +10,8 @@ const draggedNode = ref(null);
 const dragOffset = ref({ x: 0, y: 0 });
 const isConnecting = ref(false);
 const connectingFrom = ref(null);
+const showNodeConfig = ref(false);
+const configNode = ref(null);
 
 const nodes = computed(() => canvasStore.nodes);
 const connections = computed(() => canvasStore.connections);
@@ -84,6 +86,27 @@ function selectNode(node, event) {
     }
     
     canvasStore.selectNode(node.id);
+}
+
+function openNodeConfig(node, event) {
+    event.stopPropagation();
+    configNode.value = { ...node };
+    showNodeConfig.value = true;
+}
+
+function saveNodeConfig() {
+    if (configNode.value) {
+        canvasStore.updateNode(configNode.value.id, {
+            label: configNode.value.label,
+            description: configNode.value.description
+        });
+    }
+    closeNodeConfig();
+}
+
+function closeNodeConfig() {
+    showNodeConfig.value = false;
+    configNode.value = null;
 }
 
 function startConnection(node, event) {
@@ -162,6 +185,9 @@ onMounted(() => {
             >
                 <div class="node-header">
                     <span class="node-type">{{ node.type }}</span>
+                    <button class="node-config-btn" @click="openNodeConfig(node, $event)" title="配置">
+                        ⚙️
+                    </button>
                 </div>
                 <div class="node-body">
                     <div class="node-label">{{ node.label }}</div>
@@ -176,6 +202,34 @@ onMounted(() => {
         <div v-if="nodes.length === 0" class="canvas-empty">
             <div class="empty-icon">🎨</div>
             <div class="empty-text">点击上方节点库添加节点开始构建</div>
+        </div>
+        
+        <!-- Node Config Modal -->
+        <div v-if="showNodeConfig" class="modal-overlay" @click="closeNodeConfig">
+            <div class="modal-content" @click.stop>
+                <div class="modal-header">
+                    <h3>节点配置</h3>
+                    <button class="modal-close" @click="closeNodeConfig">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>节点类型</label>
+                        <input type="text" v-model="configNode.type" disabled />
+                    </div>
+                    <div class="form-group">
+                        <label>节点标签</label>
+                        <input type="text" v-model="configNode.label" />
+                    </div>
+                    <div class="form-group">
+                        <label>描述</label>
+                        <textarea v-model="configNode.description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="closeNodeConfig">取消</button>
+                    <button class="btn btn-primary" @click="saveNodeConfig">保存</button>
+                </div>
+            </div>
         </div>
     </div>
 </template>
@@ -261,10 +315,27 @@ onMounted(() => {
 }
 
 .node-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 8px 12px;
-    background: var(--primary-light);
+    background: var(--bg-tertiary);
     border-bottom: 1px solid var(--border-primary);
     border-radius: 6px 6px 0 0;
+}
+
+.node-config-btn {
+    background: none;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 4px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.node-config-btn:hover {
+    opacity: 1;
 }
 
 .node-type {
@@ -307,5 +378,102 @@ onMounted(() => {
 
 .empty-text {
     font-size: 14px;
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 0;
+    width: 28px;
+    height: 28px;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-secondary);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.form-group input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-primary);
 }
 </style>
