@@ -6,9 +6,16 @@ import { marked } from 'marked';
 const chatStore = useChatStore();
 const messageInput = ref('');
 const chatContainer = ref(null);
+const fileInput = ref(null);
+const attachedFiles = ref([]);
+const showOptions = ref(false);
 
 const messages = computed(() => chatStore.messages);
 const isLoading = computed(() => chatStore.isLoading);
+const useKnowledgeBase = computed({
+    get: () => chatStore.useKnowledgeBase,
+    set: (val) => chatStore.setUseKnowledgeBase(val)
+});
 
 async function sendMessage() {
     const content = messageInput.value.trim();

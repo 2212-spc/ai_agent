@@ -2,16 +2,20 @@
 import { ref, onMounted } from 'vue';
 import { useChatStore } from '../stores/chat';
 import { useCanvasStore } from '../stores/canvas';
+import { useTheme } from '../composables/useTheme';
 import ChatPanel from '../components/Chat/ChatPanel.vue';
 import CanvasPanel from '../components/Canvas/CanvasPanel.vue';
 import TimelinePanel from '../components/Chat/TimelinePanel.vue';
 
 const chatStore = useChatStore();
 const canvasStore = useCanvasStore();
+const { currentTheme, toggleTheme } = useTheme();
 
 const showBuilder = ref(false);
 const showTimeline = ref(false);
 const isSidebarOpen = ref(true);
+const historyList = ref([]);
+const isLoadingHistory = ref(false);
 
 function toggleBuilder() {
     showBuilder.value = !showBuilder.value;
@@ -43,7 +47,6 @@ function startNewChat() {
 function onModeChange() {
     const mode = chatStore.isMultiAgentMode ? '多智能体' : '单智能体';
     console.log(`切换到 ${mode} 模式`);
-    // 可选：添加通知提示
     chatStore.addMessage({
         role: 'system',
         content: `已切换到${mode}模式`,
@@ -51,8 +54,32 @@ function onModeChange() {
     });
 }
 
+async function loadHistoryList() {
+    isLoadingHistory.value = true;
+    try {
+        const response = await fetch('http://127.0.0.1:8000/conversations');
+        const data = await response.json();
+        historyList.value = data.slice(0, 10); // 只显示最近10条
+    } catch (error) {
+        console.error('加载历史记录失败:', error);
+    } finally {
+        isLoadingHistory.value = false;
+    }
+}
+
+function refreshHistory() {
+    loadHistoryList();
+}
+
+function selectConversation(sessionId) {
+    chatStore.setSessionId(sessionId);
+    // 可以加载该会话的历史消息
+    console.log('切换到会话:', sessionId);
+}
+
 onMounted(() => {
     console.log('AgentChat mounted');
+    loadHistoryList();
 });
 </script>
 
@@ -88,6 +115,9 @@ onMounted(() => {
                     </label>
                     <span class="mode-indicator">{{ chatStore.isMultiAgentMode ? '多智能体' : '单智能体' }}</span>
                 </div>
+                <button class="btn-icon" @click="toggleTheme" title="切换主题">
+                    {{ currentTheme === 'dark' ? '🌙' : '☀️' }}
+                </button>
                 <button class="btn-icon" @click="openSettings" title="会话设置">⚙️</button>
                 <button class="btn-icon" @click="toggleBuilder" title="Agent构建器">🛠️</button>
                 <button class="btn btn-secondary btn-small" @click="toggleTimeline">
@@ -107,11 +137,32 @@ onMounted(() => {
                 <div class="sidebar-section">
                     <div class="sidebar-header">
                         <h3 class="section-title">📚 历史记录</h3>
-                        <button class="btn-icon" title="刷新">🔄</button>
+                        <button class="btn-icon" @click="refreshHistory" title="刷新">🔄</button>
                     </div>
-                    <div class="empty-state">
+                    
+                    <!-- 加载中 -->
+                    <div v-if="isLoadingHistory" class="history-loading">加载中...</div>
+                    
+                    <!-- 空状态 -->
+                    <div v-else-if="historyList.length === 0" class="empty-state">
                         <div class="empty-state-icon">💭</div>
                         <div class="empty-state-text">暂无历史会话</div>
+                    </div>
+                    
+                    <!-- 历史记录列表 -->
+                    <div v-else class="history-list">
+                        <div
+                            v-for="conv in historyList"
+                            :key="conv.session_id"
+                            class="history-item"
+                            :class="{ active: chatStore.currentSessionId === conv.session_id }"
+                            @click="selectConversation(conv.session_id)"
+                        >
+                            <div class="history-title">{{ conv.title || '未命名会话' }}</div>
+                            <div class="history-meta">
+                                {{ new Date(conv.created_at).toLocaleDateString() }}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </aside>
@@ -170,6 +221,53 @@ onMounted(() => {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
+}
+
+.history-loading {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-tertiary);
+    font-size: 13px;
+}
+
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.history-item {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.history-item:hover {
+    background: var(--bg-hover);
+    border-color: var(--primary-color);
+}
+
+.history-item.active {
+    background: var(--primary-light);
+    border-color: var(--primary-color);
+}
+
+.history-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-meta {
+    font-size: 11px;
+    color: var(--text-tertiary);
 }
 
 .main-content.sidebar-closed .sidebar {
