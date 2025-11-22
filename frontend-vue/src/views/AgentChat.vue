@@ -16,6 +16,8 @@ const showTimeline = ref(false);
 const isSidebarOpen = ref(true);
 const historyList = ref([]);
 const isLoadingHistory = ref(false);
+const sidebarWidth = ref(280);
+const builderWidth = ref(500);
 
 function toggleBuilder() {
     showBuilder.value = !showBuilder.value;
@@ -89,9 +91,34 @@ async function selectConversation(sessionId) {
     }
 }
 
+function startResizeBuilder(event) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = builderWidth.value;
+    
+    function onMouseMove(e) {
+        const deltaX = startX - e.clientX;
+        const newWidth = Math.max(300, Math.min(800, startWidth + deltaX));
+        builderWidth.value = newWidth;
+    }
+    
+    function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    }
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
 onMounted(() => {
     console.log('AgentChat mounted');
     loadHistoryList();
+    
+    // 每30秒自动刷新历史记录
+    setInterval(() => {
+        loadHistoryList();
+    }, 30000);
 });
 </script>
 
@@ -113,6 +140,7 @@ onMounted(() => {
                     <router-link to="/chat" class="nav-link active">💬 对话工作台</router-link>
                     <router-link to="/prompts" class="nav-link">📝 Prompt模板</router-link>
                     <router-link to="/knowledge" class="nav-link">📁 知识库</router-link>
+                    <router-link to="/memory" class="nav-link">🧠 记忆管理</router-link>
                     <router-link to="/history" class="nav-link">📚 会话历史</router-link>
                 </div>
             </div>
@@ -142,7 +170,7 @@ onMounted(() => {
         <!-- Main Content -->
         <div class="main-content" :class="{ 'sidebar-closed': !isSidebarOpen }">
             <!-- Sidebar -->
-            <aside class="sidebar" v-show="isSidebarOpen">
+            <aside class="sidebar" v-show="isSidebarOpen" :style="{ width: sidebarWidth + 'px' }">
                 <button class="btn btn-primary btn-small new-chat-btn" @click="startNewChat">
                     ➕ 新建对话
                 </button>
@@ -163,16 +191,20 @@ onMounted(() => {
                     
                     <!-- 历史记录列表 -->
                     <div v-else class="history-list">
-                        <div
-                            v-for="conv in historyList"
-                            :key="conv.session_id"
+                        <div 
+                            v-for="item in historyList" 
+                            :key="item.session_id"
                             class="history-item"
-                            :class="{ active: chatStore.currentSessionId === conv.session_id }"
-                            @click="selectConversation(conv.session_id)"
+                            @click="selectConversation(item.session_id)"
                         >
-                            <div class="history-title">{{ conv.title || '未命名会话' }}</div>
+                            <div class="history-title">{{ item.title || '新对话' }}</div>
                             <div class="history-meta">
-                                {{ new Date(conv.created_at).toLocaleDateString() }}
+                                {{ item.created_at ? new Date(item.created_at).toLocaleString('zh-CN', { 
+                                    month: '2-digit', 
+                                    day: '2-digit', 
+                                    hour: '2-digit', 
+                                    minute: '2-digit' 
+                                }) : '最近' }}
                             </div>
                         </div>
                     </div>
@@ -185,7 +217,8 @@ onMounted(() => {
             </div>
 
             <!-- Builder Panel -->
-            <aside class="builder-panel" v-show="showBuilder">
+            <aside class="builder-panel" v-show="showBuilder" :style="{ width: builderWidth + 'px' }">
+                <div class="resize-handle resize-handle-left" @mousedown="startResizeBuilder"></div>
                 <CanvasPanel />
             </aside>
 
@@ -294,10 +327,30 @@ onMounted(() => {
 }
 
 .builder-panel {
-    width: 400px;
+    position: relative;
     background: var(--bg-primary);
     border-left: 1px solid var(--border-primary);
     overflow: hidden;
+    min-width: 300px;
+    max-width: 800px;
+}
+
+.resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: transparent;
+    cursor: ew-resize;
+    z-index: 10;
+}
+
+.resize-handle:hover {
+    background: var(--primary-color);
+}
+
+.resize-handle-left {
+    left: 0;
 }
 
 .timeline-panel-container {

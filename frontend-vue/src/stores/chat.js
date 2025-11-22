@@ -121,7 +121,7 @@ export const useChatStore = defineStore('chat', () => {
                 });
                 
                 // 保存会话到后端
-                await saveConversation();
+                saveConversation();
             } else {
                 console.error('响应数据格式错误:', response.data);
             }
