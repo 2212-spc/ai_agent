@@ -13,19 +13,39 @@ const error = ref('');
 const success = ref('');
 
 async function handleRegister() {
-    // 验证
-    if (!username.value || !email.value || !password.value) {
-        error.value = '请填写所有字段';
+    // 清空之前的错误
+    error.value = '';
+    
+    // 详细验证
+    if (!username.value) {
+        error.value = '请输入用户名';
         return;
     }
     
-    if (password.value !== confirmPassword.value) {
-        error.value = '两次密码不一致';
+    if (!email.value) {
+        error.value = '请输入邮箱地址';
+        return;
+    }
+    
+    // 验证邮箱格式
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.value)) {
+        error.value = '邮箱格式不正确';
+        return;
+    }
+    
+    if (!password.value) {
+        error.value = '请输入密码';
         return;
     }
     
     if (password.value.length < 6) {
         error.value = '密码至少需要6个字符';
+        return;
+    }
+    
+    if (password.value !== confirmPassword.value) {
+        error.value = '两次密码不一致';
         return;
     }
     
@@ -74,25 +94,29 @@ function skipRegister() {
             
             <form @submit.prevent="handleRegister" class="register-form">
                 <div class="form-group">
-                    <label>用户名</label>
+                    <label>用户名 <span class="required">*</span></label>
                     <input 
                         type="text" 
                         v-model="username" 
-                        placeholder="请输入用户名"
+                        placeholder="例如: zhangsan"
                         :disabled="isLoading"
                         class="form-input"
+                        required
                     />
+                    <small class="form-hint">用于登录的用户名</small>
                 </div>
                 
                 <div class="form-group">
-                    <label>邮箱</label>
+                    <label>邮箱 <span class="required">*</span></label>
                     <input 
                         type="email" 
                         v-model="email" 
-                        placeholder="请输入邮箱"
+                        placeholder="例如: user@example.com"
                         :disabled="isLoading"
                         class="form-input"
+                        required
                     />
+                    <small class="form-hint">必须是有效的邮箱地址</small>
                 </div>
                 
                 <div class="form-group">
@@ -272,5 +296,18 @@ function skipRegister() {
     text-align: center;
     padding-top: 12px;
     border-top: 1px solid var(--border-primary);
+}
+
+.required {
+    color: #ef4444;
+    font-weight: bold;
+}
+
+.form-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-style: italic;
 }
 </style>
