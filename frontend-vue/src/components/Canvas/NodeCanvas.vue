@@ -12,6 +12,9 @@ const isConnecting = ref(false);
 const connectingFrom = ref(null);
 const showNodeConfig = ref(false);
 const configNode = ref(null);
+const isPanning = ref(false);
+const panStart = ref({ x: 0, y: 0 });
+const panOffset = ref({ x: 0, y: 0 });
 
 const nodes = computed(() => canvasStore.nodes);
 const connections = computed(() => canvasStore.connections);
@@ -130,16 +133,64 @@ function cancelConnection() {
     }
 }
 
+// 画布平移
+function startPan(event) {
+    // 只有中键或空白区域+左键才能平移
+    if (event.button === 1 || (event.button === 0 && event.target === canvasRef.value)) {
+        isPanning.value = true;
+        panStart.value = { x: event.clientX, y: event.clientY };
+        event.preventDefault();
+    }
+}
+
+function onPan(event) {
+    if (isPanning.value) {
+        const dx = event.clientX - panStart.value.x;
+        const dy = event.clientY - panStart.value.y;
+        panOffset.value = { x: dx, y: dy };
+    }
+}
+
+function endPan() {
+    if (isPanning.value) {
+        isPanning.value = false;
+    }
+}
+
+// 鼠标滚轮缩放
+function onWheel(event) {
+    event.preventDefault();
+    const delta = event.deltaY > 0 ? -0.1 : 0.1;
+    const newScale = Math.max(0.1, Math.min(2, scale.value + delta));
+    canvasStore.setScale(newScale);
+}
+
 onMounted(() => {
     document.addEventListener('mousemove', onDrag);
     document.addEventListener('mouseup', endDrag);
+    document.addEventListener('mousemove', onPan);
+    document.addEventListener('mouseup', endPan);
+    
+    if (canvasRef.value) {
+        canvasRef.value.addEventListener('wheel', onWheel, { passive: false });
+    }
 });
 </script>
 
 <template>
-    <div class="node-canvas" ref="canvasRef" @click="cancelConnection">
+    <div 
+        class="node-canvas" 
+        ref="canvasRef" 
+        @click="cancelConnection"
+        @mousedown="startPan"
+        :style="{ cursor: isPanning ? 'grabbing' : 'default' }"
+    >
         <!-- SVG Layer for Connections -->
-        <svg class="connections-layer" ref="svgRef">
+        <svg 
+            class="connections-layer" 
+            ref="svgRef"
+            :style="{ transform: `translate(${panOffset.x}px, ${panOffset.y}px)` }"
+        >
             <defs>
                 <marker
                     id="arrowhead"
@@ -165,7 +216,9 @@ onMounted(() => {
         <!-- Nodes Layer -->
         <div
             class="canvas-content"
-            :style="{ transform: `scale(${scale})` }"
+            :style="{ 
+                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${scale})` 
+            }"
         >
             <div
                 v-for="node in nodes"

@@ -10,6 +10,13 @@ const isLoading = ref(false);
 const selectedAgent = ref('');
 const showDetailModal = ref(false);
 const selectedPrompt = ref(null);
+const showCreateModal = ref(false);
+const newPrompt = ref({
+    name: '',
+    description: '',
+    content: '',
+    agent_id: ''
+});
 const apiBase = 'http://127.0.0.1:8000';
 
 async function loadPrompts() {
@@ -52,6 +59,32 @@ function closeModal() {
     selectedPrompt.value = null;
 }
 
+function openCreateModal() {
+    newPrompt.value = {
+        name: '',
+        description: '',
+        content: '',
+        agent_id: agents.value[0]?.id || ''
+    };
+    showCreateModal.value = true;
+}
+
+function closeCreateModal() {
+    showCreateModal.value = false;
+}
+
+async function createPrompt() {
+    try {
+        await axios.post(`${apiBase}/prompts`, newPrompt.value);
+        alert('Prompt创建成功！');
+        closeCreateModal();
+        loadPrompts();
+    } catch (error) {
+        console.error('创建Prompt失败:', error);
+        alert('创建失败: ' + (error.response?.data?.detail || error.message));
+    }
+}
+
 onMounted(() => {
     loadPrompts();
     loadAgents();
@@ -68,7 +101,10 @@ onMounted(() => {
                     <p class="subtitle">管理智能体的Prompt模板</p>
                 </div>
             </div>
-            <button class="btn btn-primary" @click="loadPrompts">🔄 刷新</button>
+            <div class="header-actions">
+                <button class="btn btn-secondary" @click="loadPrompts">🔄 刷新</button>
+                <button class="btn btn-primary" @click="openCreateModal">➕ 新建Prompt</button>
+            </div>
         </div>
 
         <div class="content">
@@ -150,6 +186,47 @@ onMounted(() => {
                         <label>状态:</label>
                         <p>{{ selectedPrompt?.is_active ? '激活' : '未激活' }}</p>
                     </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 创建Prompt Modal -->
+        <div v-if="showCreateModal" class="modal-overlay" @click="closeCreateModal">
+            <div class="modal-content" @click.stop>
+                <div class="modal-header">
+                    <h2>新建Prompt模板</h2>
+                    <button class="modal-close" @click="closeCreateModal">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="detail-section">
+                        <label>名称:</label>
+                        <input type="text" v-model="newPrompt.name" placeholder="输入Prompt名称" />
+                    </div>
+                    <div class="detail-section">
+                        <label>智能体:</label>
+                        <select v-model="newPrompt.agent_id" class="select">
+                            <option v-for="agent in agents" :key="agent.id" :value="agent.id">
+                                {{ agent.display_name }}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="detail-section">
+                        <label>描述:</label>
+                        <input type="text" v-model="newPrompt.description" placeholder="简要描述" />
+                    </div>
+                    <div class="detail-section">
+                        <label>内容:</label>
+                        <textarea 
+                            v-model="newPrompt.content" 
+                            placeholder="输入Prompt内容..."
+                            rows="10"
+                            class="prompt-content-editor"
+                        ></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="closeCreateModal">取消</button>
+                    <button class="btn btn-primary" @click="createPrompt">创建</button>
                 </div>
             </div>
         </div>
@@ -369,6 +446,37 @@ onMounted(() => {
     margin: 0;
     color: var(--text-primary);
     line-height: 1.6;
+}
+
+.detail-section input[type="text"],
+.detail-section textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-secondary);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.detail-section input:focus,
+.detail-section textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.prompt-content-editor {
+    font-family: var(--font-mono);
+    resize: vertical;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-primary);
 }
 
 .prompt-content {
