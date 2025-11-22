@@ -2,6 +2,7 @@
 import { ref, computed, nextTick, watch } from 'vue';
 import { useChatStore } from '../../stores/chat';
 import { marked } from 'marked';
+import axios from 'axios';
 
 const chatStore = useChatStore();
 const messageInput = ref('');
@@ -17,16 +18,34 @@ const useKnowledgeBase = computed({
     set: (val) => chatStore.setUseKnowledgeBase(val)
 });
 
-function handleFileSelect(event) {
+async function handleFileSelect(event) {
     const files = Array.from(event.target.files);
-    files.forEach(file => {
-        attachedFiles.value.push({
-            name: file.name,
-            size: file.size,
-            file: file
-        });
-    });
-    event.target.value = ''; // 清空input以允许重复选择
+    
+    // 上传每个文件到后端
+    for (const file of files) {
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const response = await axios.post('http://127.0.0.1:8000/documents/upload', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
+            
+            // 上传成功后添加到附件列表
+            attachedFiles.value.push({
+                name: file.name,
+                size: file.size,
+                id: response.data.id // 保存后端返回的文档ID
+            });
+        } catch (error) {
+            console.error('文件上传失败:', error);
+            alert(`文件 ${file.name} 上传失败: ${error.response?.data?.detail || error.message}`);
+        }
+    }
+    
+    event.target.value = ''; // 清空input以便重复选择同一文件
 }
 
 function removeFile(index) {

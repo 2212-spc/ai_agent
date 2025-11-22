@@ -12,19 +12,22 @@ const filters = ref({
     tools: true
 });
 
-// 从消息中提取时间线数据（如果有）
+// 从store中获取timeline数据
 const timelineData = computed(() => {
-    // 这里可以从消息的metadata中获取执行步骤
-    // 目前使用默认示例
-    if (steps.value.length === 0) {
+    if (chatStore.timelineSteps.length > 0) {
+        return chatStore.timelineSteps;
+    }
+    
+    // 如果没有真实数据，显示示例
+    if (chatStore.isLoading) {
         return [
             { icon: '🤔', title: '理解问题', content: '分析用户输入，确定意图...', status: 'completed', type: 'thoughts' },
-            { icon: '🔍', title: '检索知识', content: '从知识库中搜索相关信息...', status: 'completed', type: 'observations' },
-            { icon: '🤖', title: 'AI推理', content: '使用DeepSeek模型生成回复...', status: chatStore.isLoading ? 'running' : 'completed', type: 'tools' },
-            { icon: '✅', title: '返回结果', content: '准备响应内容...', status: chatStore.isLoading ? 'pending' : 'completed', type: 'observations' }
+            { icon: '🔍', title: '检索知识', content: '从知识库中搜索相关信息...', status: chatStore.isLoading ? 'running' : 'completed', type: 'observations' },
+            { icon: '🤖', title: 'AI推理', content: '使用DeepSeek模型生成回复...', status: 'pending', type: 'tools' }
         ];
     }
-    return steps.value;
+    
+    return [];
 });
 
 // 过滤后的步骤

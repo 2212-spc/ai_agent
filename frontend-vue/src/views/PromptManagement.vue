@@ -59,7 +59,12 @@ function closeModal() {
     selectedPrompt.value = null;
 }
 
-function openCreateModal() {
+async function openCreateModal() {
+    // 确保agents已加载
+    if (agents.value.length === 0) {
+        await loadAgents();
+    }
+    
     newPrompt.value = {
         name: '',
         description: '',

@@ -71,10 +71,22 @@ function refreshHistory() {
     loadHistoryList();
 }
 
-function selectConversation(sessionId) {
-    chatStore.setSessionId(sessionId);
-    // 可以加载该会话的历史消息
-    console.log('切换到会话:', sessionId);
+async function selectConversation(sessionId) {
+    try {
+        chatStore.setSessionId(sessionId);
+        
+        // 加载该会话的历史消息
+        const response = await fetch(`http://127.0.0.1:8000/conversations/${sessionId}`);
+        const data = await response.json();
+        
+        // 清空当前消息并加载历史消息
+        chatStore.messages = data.messages || [];
+        
+        console.log('已加载会话:', sessionId, '消息数:', data.messages?.length);
+    } catch (error) {
+        console.error('加载会话失败:', error);
+        alert('加载历史会话失败');
+    }
 }
 
 onMounted(() => {
