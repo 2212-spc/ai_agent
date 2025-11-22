@@ -6,6 +6,8 @@ import axios from 'axios';
 const router = useRouter();
 const documents = ref([]);
 const isLoading = ref(false);
+const isUploading = ref(false);
+const fileInput = ref(null);
 const apiBase = 'http://127.0.0.1:8000';
 
 async function loadDocuments() {
@@ -31,6 +33,38 @@ async function deleteDocument(docId) {
     }
 }
 
+async function handleFileUpload(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    isUploading.value = true;
+    try {
+        for (const file of files) {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            await axios.post(`${apiBase}/documents/upload`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
+        }
+        
+        alert(`成功上传 ${files.length} 个文件`);
+        loadDocuments();
+    } catch (error) {
+        console.error('上传失败:', error);
+        alert('文件上传失败: ' + (error.response?.data?.detail || error.message));
+    } finally {
+        isUploading.value = false;
+        event.target.value = ''; // 清空input
+    }
+}
+
+function triggerFileUpload() {
+    fileInput.value.click();
+}
+
 onMounted(() => {
     loadDocuments();
 });
@@ -48,7 +82,17 @@ onMounted(() => {
             </div>
             <div class="header-actions">
                 <button class="btn btn-secondary" @click="loadDocuments">🔄 刷新</button>
-                <button class="btn btn-primary">📤 上传文档</button>
+                <button class="btn btn-primary" @click="triggerFileUpload" :disabled="isUploading">
+                    {{ isUploading ? '上传中...' : '📤 上传文档' }}
+                </button>
+                <input
+                    ref="fileInput"
+                    type="file"
+                    multiple
+                    accept=".pdf,.doc,.docx,.txt,.md"
+                    @change="handleFileUpload"
+                    style="display: none;"
+                />
             </div>
         </div>
 

@@ -8,6 +8,8 @@ const prompts = ref([]);
 const agents = ref([]);
 const isLoading = ref(false);
 const selectedAgent = ref('');
+const showDetailModal = ref(false);
+const selectedPrompt = ref(null);
 const apiBase = 'http://127.0.0.1:8000';
 
 async function loadPrompts() {
@@ -38,6 +40,16 @@ async function activatePrompt(promptId) {
     } catch (error) {
         console.error('激活Prompt失败:', error);
     }
+}
+
+function viewPrompt(prompt) {
+    selectedPrompt.value = prompt;
+    showDetailModal.value = true;
+}
+
+function closeModal() {
+    showDetailModal.value = false;
+    selectedPrompt.value = null;
 }
 
 onMounted(() => {
@@ -104,7 +116,39 @@ onMounted(() => {
                         >
                             激活
                         </button>
-                        <button class="btn btn-secondary btn-small">查看</button>
+                        <button class="btn btn-secondary btn-small" @click="viewPrompt(prompt)">查看</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Prompt详情Modal -->
+        <div v-if="showDetailModal" class="modal-overlay" @click="closeModal">
+            <div class="modal-content" @click.stop>
+                <div class="modal-header">
+                    <h2>{{ selectedPrompt?.name }}</h2>
+                    <button class="modal-close" @click="closeModal">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="detail-section">
+                        <label>智能体:</label>
+                        <p>{{ selectedPrompt?.agent_name }}</p>
+                    </div>
+                    <div class="detail-section">
+                        <label>描述:</label>
+                        <p>{{ selectedPrompt?.description }}</p>
+                    </div>
+                    <div class="detail-section">
+                        <label>内容:</label>
+                        <pre class="prompt-content">{{ selectedPrompt?.content }}</pre>
+                    </div>
+                    <div class="detail-section">
+                        <label>创建时间:</label>
+                        <p>{{ new Date(selectedPrompt?.created_at).toLocaleString() }}</p>
+                    </div>
+                    <div class="detail-section">
+                        <label>状态:</label>
+                        <p>{{ selectedPrompt?.is_active ? '激活' : '未激活' }}</p>
                     </div>
                 </div>
             </div>
@@ -250,5 +294,94 @@ onMounted(() => {
 .empty-state-icon {
     font-size: 48px;
     margin-bottom: 16px;
+}
+
+/* Modal样式 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-primary);
+    border-radius: 12px;
+    max-width: 800px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.detail-section {
+    margin-bottom: 20px;
+}
+
+.detail-section label {
+    display: block;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.detail-section p {
+    margin: 0;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.prompt-content {
+    background: var(--bg-tertiary);
+    padding: 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    max-height: 400px;
+    overflow-y: auto;
 }
 </style>
