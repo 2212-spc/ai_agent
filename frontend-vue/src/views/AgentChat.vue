@@ -429,9 +429,13 @@ input:checked + .mode-slider:before {
 
 .mode-indicator {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-primary);
-    min-width: 60px;
+    min-width: 70px;
+    background: var(--bg-tertiary);
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border-secondary);
 }
 
 .header-right {

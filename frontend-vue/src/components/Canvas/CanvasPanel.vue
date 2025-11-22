@@ -35,8 +35,31 @@ function handleClear() {
     }
 }
 
-function handleSave() {
+async function handleSave() {
     const config = canvasStore.exportConfig();
+    
+    // 保存到后端
+    try {
+        const response = await fetch('http://127.0.0.1:8000/agents', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: `Agent-${Date.now()}`,
+                description: '通过构建器创建的Agent',
+                config: config
+            })
+        });
+        
+        if (response.ok) {
+            alert('Agent保存成功！');
+        }
+    } catch (error) {
+        console.error('保存Agent失败:', error);
+    }
+    
+    // 同时导出JSON文件
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -44,6 +67,53 @@ function handleSave() {
     a.download = `agent-config-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+}
+
+async function handleExecute() {
+    const config = canvasStore.exportConfig();
+    
+    if (config.nodes.length === 0) {
+        alert('请先添加节点！');
+        return;
+    }
+    
+    const userInput = prompt('请输入测试消息:');
+    if (!userInput) return;
+    
+    try {
+        // 先保存Agent配置
+        const saveResponse = await fetch('http://127.0.0.1:8000/agents', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: `TempAgent-${Date.now()}`,
+                description: '临时测试Agent',
+                config: config
+            })
+        });
+        
+        const agent = await saveResponse.json();
+        
+        // 执行Agent
+        const execResponse = await fetch(`http://127.0.0.1:8000/agents/${agent.id}/execute`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                messages: [{ role: 'user', content: userInput }],
+                use_knowledge_base: false
+            })
+        });
+        
+        const result = await execResponse.json();
+        alert(`Agent回复: ${result.reply || result.response || JSON.stringify(result)}`);
+    } catch (error) {
+        console.error('执行Agent失败:', error);
+        alert('执行失败: ' + error.message);
+    }
 }
 
 function handleZoomIn() {
@@ -77,6 +147,7 @@ function handleZoomOut() {
             <div class="toolbar-section">
                 <button class="btn btn-secondary btn-small" @click="handleClear">清空</button>
                 <button class="btn btn-primary btn-small" @click="handleSave">保存</button>
+                <button class="btn btn-success btn-small" @click="handleExecute">▶️ 执行</button>
             </div>
         </div>
 

@@ -57,17 +57,22 @@ function endDrag() {
     }
 }
 
-// 绘制连线
+// 绘制连线（考虑缩放和平移）
 function getConnectionPath(from, to) {
     const fromNode = nodes.value.find(n => n.id === from);
     const toNode = nodes.value.find(n => n.id === to);
     
     if (!fromNode || !toNode) return '';
     
-    const fromX = fromNode.position.x + 75; // 节点宽度一半
-    const fromY = fromNode.position.y + 40; // 节点高度一半
-    const toX = toNode.position.x + 75;
-    const toY = toNode.position.y + 40;
+    // 应用缩放和平移
+    const s = scale.value;
+    const px = panOffset.value.x;
+    const py = panOffset.value.y;
+    
+    const fromX = (fromNode.position.x + 75) * s + px;
+    const fromY = (fromNode.position.y + 40) * s + py;
+    const toX = (toNode.position.x + 75) * s + px;
+    const toY = (toNode.position.y + 40) * s + py;
     
     const midX = (fromX + toX) / 2;
     
@@ -189,7 +194,6 @@ onMounted(() => {
         <svg 
             class="connections-layer" 
             ref="svgRef"
-            :style="{ transform: `translate(${panOffset.x}px, ${panOffset.y}px)` }"
         >
             <defs>
                 <marker

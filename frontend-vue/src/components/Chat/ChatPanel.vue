@@ -307,8 +307,9 @@ watch(messages, () => {
 
 .message-time {
     font-size: 11px;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     margin-top: 6px;
+    opacity: 0.8;
 }
 
 .typing-indicator {

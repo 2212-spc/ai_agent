@@ -33,34 +33,41 @@ function handleLogin() {
                     type="password"
                     placeholder="密码"
                     class="input"
-                />
-                <button type="submit" class="btn btn-primary full-width">
-                    登录
                 </button>
+                
+                <div class="login-footer">
+                    <span>还没有账户？</span>
+                    <button type="button" class="btn-link" @click="goToRegister">立即注册</button>
+                </div>
+                
+                <div class="login-skip">
+                    <button type="button" class="btn-link" @click="router.push('/chat')">
+                        跳过登录 →
+                    </button>
+                </div>
             </form>
-            
-            <p class="register-link">
-                还没有账号？<router-link to="/register">注册</router-link>
-            </p>
         </div>
     </div>
 </template>
 
 <style scoped>
-.login-page {
+.login-container {
     display: flex;
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    background: var(--bg-secondary);
+    background: linear-gradient(135deg, var(--bg-gradient));
+    padding: 20px;
 }
 
-.login-card {
-    width: 400px;
-    padding: 40px;
+.login-box {
     background: var(--bg-primary);
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    padding: 40px;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    width: 100%;
+    max-width: 420px;
+    border: 1px solid var(--border-primary);
 }
 
 .login-card h1 {
