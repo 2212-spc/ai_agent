@@ -1,0 +1,142 @@
+/* ===== CSS变量定义 - 统一管理颜色和尺寸 ===== */
+
+:root {
+    /* 品牌色系统 */
+    --brand-primary: #667eea;
+    --brand-secondary: #764ba2;
+    --brand-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --brand-gradient-hover: linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%);
+    
+    /* 主题色 */
+    --primary-color: #667eea;
+    --primary-hover: #5568d3;
+    --primary-light: #f0f4ff;
+    --primary-dark: #4c51bf;
+    --secondary-color: #764ba2;
+    --secondary-hover: #6a3f8f;
+    
+    /* 功能色 */
+    --success-color: #10b981;
+    --success-light: #d1fae5;
+    --success-dark: #059669;
+    --warning-color: #f59e0b;
+    --warning-light: #fef3c7;
+    --warning-dark: #d97706;
+    --error-color: #ef4444;
+    --error-light: #fee2e2;
+    --error-dark: #dc2626;
+    --info-color: #3b82f6;
+    --info-light: #dbeafe;
+    --info-dark: #2563eb;
+    
+    /* 中性色 */
+    --text-primary: #202123;
+    --text-secondary: #6b7280;
+    --text-tertiary: #9ca3af;
+    --text-inverse: #ffffff;
+    --text-link: #667eea;
+    
+    /* 背景色 */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f7f7f8;
+    --bg-tertiary: #f3f4f6;
+    --bg-hover: #f9fafb;
+    --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    
+    /* 边框色 */
+    --border-primary: #e5e5e5;
+    --border-secondary: #d1d5db;
+    --border-focus: #667eea;
+    --border-error: #ef4444;
+    
+    /* 阴影 */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.08);
+    --shadow-xl: 0 10px 30px rgba(15, 23, 42, 0.18);
+    --shadow-brand: 0 4px 12px rgba(102, 126, 234, 0.3);
+    --shadow-brand-hover: 0 6px 20px rgba(102, 126, 234, 0.4);
+    
+    /* 尺寸 */
+    --header-height: 57px;
+    --sidebar-width: 260px;
+    --timeline-width: 400px;
+    --border-radius-sm: 4px;
+    --border-radius-md: 6px;
+    --border-radius-lg: 8px;
+    --border-radius-xl: 12px;
+    
+    /* 动画 */
+    --transition-fast: 0.15s;
+    --transition-normal: 0.2s;
+    --transition-slow: 0.3s;
+    
+    /* 字体 */
+    --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    --font-mono: 'SF Mono', 'Consolas', 'Monaco', monospace;
+    
+    /* Z-index层级 */
+    --z-dropdown: 1000;
+    --z-sticky: 1020;
+    --z-fixed: 1030;
+    --z-modal-backdrop: 1040;
+    --z-modal: 1050;
+    --z-popover: 1060;
+    --z-tooltip: 1070;
+}
+
+/* ========== 暗色主题 ========== */
+[data-theme="dark"] {
+    /* 品牌色保持不变 */
+    --brand-primary: #667eea;
+    --brand-secondary: #764ba2;
+    --brand-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    
+    /* 主题色 */
+    --primary-color: #7c8aed;
+    --primary-hover: #667eea;
+    --primary-light: #1e293b;
+    --primary-dark: #8b9aef;
+    
+    /* 功能色（暗色模式下稍微提亮） */
+    --success-color: #34d399;
+    --success-light: #064e3b;
+    --success-dark: #6ee7b7;
+    --warning-color: #fbbf24;
+    --warning-light: #78350f;
+    --warning-dark: #fcd34d;
+    --error-color: #f87171;
+    --error-light: #7f1d1d;
+    --error-dark: #fca5a5;
+    --info-color: #60a5fa;
+    --info-light: #1e3a8a;
+    --info-dark: #93c5fd;
+    
+    /* 中性色 */
+    --text-primary: #e5e7eb;
+    --text-secondary: #9ca3af;
+    --text-tertiary: #6b7280;
+    --text-inverse: #1f2937;
+    --text-link: #8b9aef;
+    
+    /* 背景色 */
+    --bg-primary: #1f2937;
+    --bg-secondary: #111827;
+    --bg-tertiary: #374151;
+    --bg-hover: #4b5563;
+    --bg-gradient: linear-gradient(135deg, #1e293b 0%, #1f2937 100%);
+    
+    /* 边框色 */
+    --border-primary: #374151;
+    --border-secondary: #4b5563;
+    --border-focus: #667eea;
+    --border-error: #f87171;
+    
+    /* 阴影（暗色模式下更明显） */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 10px 30px rgba(0, 0, 0, 0.6);
+    --shadow-brand: 0 4px 12px rgba(102, 126, 234, 0.4);
+    --shadow-brand-hover: 0 6px 20px rgba(102, 126, 234, 0.5);
+}
