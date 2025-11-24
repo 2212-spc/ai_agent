@@ -10,6 +10,8 @@ const chatContainer = ref(null);
 const fileInput = ref(null);
 const attachedFiles = ref([]);
 const showOptions = ref(false);
+const editingMessageId = ref(null);
+const copiedMessageId = ref(null);
 
 const messages = computed(() => chatStore.messages);
 const isLoading = computed(() => chatStore.isLoading);
@@ -24,6 +26,9 @@ const useKnowledgeBase = computed({
 const isGenerating = computed(() => {
     return sessionStatus.value === chatStore.SESSION_STATUS.GENERATING;
 });
+
+// 判断是否在编辑模式
+const isEditMode = computed(() => editingMessageId.value !== null);
 
 async function handleFileSelect(event) {
     const files = Array.from(event.target.files);
@@ -68,6 +73,12 @@ async function sendMessage() {
     if (!content || isGenerating.value) return;
 
     try {
+        // 如果是编辑模式，更新消息而不是发送新消息
+        if (editingMessageId.value !== null) {
+            await completeEdit(content);
+            return;
+        }
+
         messageInput.value = '';
         await chatStore.sendMessage(content, (streamContent, sessionId) => {
             // 流式更新回调
@@ -79,6 +90,79 @@ async function sendMessage() {
         scrollToBottom();
     } catch (error) {
         console.error('发送失败:', error);
+    }
+}
+
+// 复制消息内容
+async function copyMessage(messageId) {
+    const message = messages.value.find(m => m.id === messageId);
+    if (!message) return;
+
+    try {
+        await navigator.clipboard.writeText(message.content);
+        copiedMessageId.value = messageId;
+        setTimeout(() => {
+            copiedMessageId.value = null;
+        }, 2000);
+    } catch (error) {
+        console.error('复制失败:', error);
+        alert('复制失败，请重试');
+    }
+}
+
+// 编辑消息
+function editMessage(messageId) {
+    const message = messages.value.find(m => m.id === messageId);
+    if (!message || message.role !== 'user') return;
+
+    // 如果正在生成，先停止
+    if (isGenerating.value) {
+        stopGeneration();
+    }
+
+    // 进入编辑模式
+    editingMessageId.value = messageId;
+    messageInput.value = message.content;
+    
+    // 聚焦输入框
+    nextTick(() => {
+        const textarea = document.querySelector('.message-input');
+        if (textarea) {
+            textarea.focus();
+        }
+    });
+}
+
+// 取消编辑
+function cancelEdit() {
+    editingMessageId.value = null;
+    messageInput.value = '';
+}
+
+// 完成编辑
+async function completeEdit(newContent) {
+    if (!editingMessageId.value || !newContent.trim()) {
+        cancelEdit();
+        return;
+    }
+
+    try {
+        // 调用store的编辑方法
+        await chatStore.editAndResendMessage(editingMessageId.value, newContent, (streamContent, sessionId) => {
+            // 流式更新回调
+            if (sessionId === currentSessionId.value) {
+                nextTick(() => scrollToBottom());
+            }
+        });
+        
+        // 清空输入框和编辑状态
+        messageInput.value = '';
+        editingMessageId.value = null;
+        
+        await nextTick();
+        scrollToBottom();
+    } catch (error) {
+        console.error('编辑失败:', error);
     }
 }
 
@@ -130,14 +214,54 @@ watch(messages, () => {
                 v-for="msg in messages"
                 :key="msg.id"
                 class="message"
-                :class="[`message-${msg.role}`, msg.type === 'error' ? 'message-error' : '', msg.type === 'info' ? 'message-info' : '']"
+                :class="[
+                    `message-${msg.role}`, 
+                    msg.type === 'error' ? 'message-error' : '', 
+                    msg.type === 'info' ? 'message-info' : '',
+                    editingMessageId === msg.id ? 'editing-active' : ''
+                ]"
             >
                 <div class="message-avatar">
                     {{ msg.role === 'user' ? '👤' : msg.role === 'assistant' ? '🤖' : '⚠️' }}
                 </div>
-                <div class="message-content">
-                    <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
-                    <div class="message-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</div>
+                <div class="message-content-wrapper">
+                    <div class="message-content">
+                        <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
+                        <div class="message-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</div>
+                    </div>
+                    
+                    <!-- 操作按钮 -->
+                    <div class="message-actions" v-if="msg.role === 'user' || msg.role === 'assistant'">
+                        <!-- 编辑按钮 - 只对用户消息显示 -->
+                        <button 
+                            v-if="msg.role === 'user'" 
+                            class="action-btn edit-btn"
+                            @click="editMessage(msg.id)"
+                            title="编辑消息"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                            <span class="action-text">编辑</span>
+                        </button>
+                        
+                        <!-- 复制按钮 -->
+                        <button 
+                            class="action-btn copy-btn"
+                            @click="copyMessage(msg.id)"
+                            :title="copiedMessageId === msg.id ? '已复制' : '复制内容'"
+                        >
+                            <svg v-if="copiedMessageId !== msg.id" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                            <span class="action-text">{{ copiedMessageId === msg.id ? '已复制' : '复制' }}</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -155,7 +279,14 @@ watch(messages, () => {
         </div>
 
         <!-- Input Area -->
-        <div class="input-container">
+        <div class="input-container" :class="{ 'edit-mode': isEditMode }">
+            <!-- 编辑模式提示 -->
+            <div v-if="isEditMode" class="edit-hint">
+                <span class="edit-hint-icon">✏️</span>
+                <span class="edit-hint-text">编辑模式：修改问题后按Enter重新发送</span>
+                <button class="edit-hint-cancel" @click="cancelEdit">取消</button>
+            </div>
+            
             <!-- 附件显示 -->
             <div v-if="attachedFiles.length > 0" class="attached-files">
                 <div v-for="(file, index) in attachedFiles" :key="index" class="attached-file">
@@ -288,6 +419,38 @@ watch(messages, () => {
     gap: 12px;
     margin-bottom: 20px;
     animation: fadeIn 0.3s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.message.editing-active {
+    transform: scale(1.05);
+    box-shadow: 
+        0 0 0 3px rgba(255, 152, 0, 0.3),
+        0 8px 24px rgba(255, 152, 0, 0.2),
+        0 16px 48px rgba(255, 152, 0, 0.1);
+    animation: editPulse 2s ease-in-out infinite;
+}
+
+@keyframes editPulse {
+    0%, 100% {
+        box-shadow: 
+            0 0 0 3px rgba(255, 152, 0, 0.3),
+            0 8px 24px rgba(255, 152, 0, 0.2),
+            0 16px 48px rgba(255, 152, 0, 0.1);
+    }
+    50% {
+        box-shadow: 
+            0 0 0 5px rgba(255, 152, 0, 0.4),
+            0 12px 32px rgba(255, 152, 0, 0.3),
+            0 20px 56px rgba(255, 152, 0, 0.15);
+    }
+}
+
+/* 编辑模式时模糊其他消息 */
+.messages-container:has(.editing-active) .message:not(.editing-active) {
+    filter: blur(3px);
+    opacity: 0.4;
+    transition: all 0.3s ease;
 }
 
 @keyframes fadeIn {
@@ -313,8 +476,14 @@ watch(messages, () => {
     flex-shrink: 0;
 }
 
-.message-content {
+.message-content-wrapper {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.message-content {
     background: var(--bg-primary);
     padding: 12px 16px;
     border-radius: 12px;
@@ -581,5 +750,113 @@ watch(messages, () => {
 
 .stop-btn:hover:not(:disabled) {
     background: #d32f2f;
+}
+
+/* 消息操作按钮 */
+.message-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding-left: 48px; /* 与消息内容对齐 */
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.action-btn:hover {
+    background: rgba(255, 152, 0, 0.1);
+    color: #ff9800;
+}
+
+.action-btn svg {
+    flex-shrink: 0;
+}
+
+.action-text {
+    font-size: 13px;
+}
+
+.copy-btn.copied {
+    color: #4CAF50;
+}
+
+/* 编辑提示条 */
+.edit-hint {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: linear-gradient(90deg, #ff9800 0%, #ff6b6b 100%);
+    color: white;
+    border-radius: 8px 8px 0 0;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.edit-hint-icon {
+    font-size: 16px;
+}
+
+.edit-hint-text {
+    flex: 1;
+}
+
+.edit-hint-cancel {
+    padding: 4px 12px;
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.edit-hint-cancel:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* 编辑模式下的输入框 */
+.input-container.edit-mode .message-input {
+    border-color: #ff9800;
+    box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.1);
+}
+
+.input-container.edit-mode .send-btn {
+    background: #ff9800;
+}
+
+.input-container.edit-mode .send-btn:hover:not(:disabled) {
+    background: #f57c00;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .message-actions {
+        padding-left: 12px;
+    }
+    
+    .action-text {
+        display: none;
+    }
+    
+    .action-btn {
+        padding: 6px;
+        min-width: 32px;
+        justify-content: center;
+    }
 }
 </style>
