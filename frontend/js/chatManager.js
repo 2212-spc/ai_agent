@@ -21,6 +21,10 @@ class ChatManager {
         
         // 主消息容器
         this.mainContainer = null;
+        
+        // 编辑状态
+        this.editingMessageId = null;
+        this.editingMessageDiv = null;
     }
 
     /**
@@ -34,8 +38,33 @@ class ChatManager {
         }
         
         this.setupEventListeners();
+        this.setupScrollListener();
         this.loadSessionFromUrl();
         console.log('✅ 聊天管理器初始化成功');
+    }
+    
+    /**
+     * 设置滚动监听器 - 实时保存滚动位置
+     */
+    setupScrollListener() {
+        if (!this.mainContainer) return;
+        
+        // 使用防抖优化性能
+        let scrollTimer = null;
+        this.mainContainer.addEventListener('scroll', () => {
+            if (scrollTimer) {
+                clearTimeout(scrollTimer);
+            }
+            
+            scrollTimer = setTimeout(() => {
+                if (this.currentSessionId) {
+                    const session = this.sessions.get(this.currentSessionId);
+                    if (session) {
+                        session.scrollPosition = this.mainContainer.scrollTop;
+                    }
+                }
+            }, 150); // 150ms防抖
+        });
     }
 
     /**
@@ -140,7 +169,8 @@ class ChatManager {
                 messages: [],
                 lastQuestion: '',
                 lastAnswer: '',
-                containerDiv: containerDiv  // 保存容器引用
+                containerDiv: containerDiv,  // 保存容器引用
+                scrollPosition: 0  // 记录滚动位置
             });
             
             console.log('✅ 创建会话容器:', sessionId);
@@ -184,6 +214,12 @@ class ChatManager {
         const validation = InputValidator.validateMessage(message);
         if (!validation.valid) {
             notificationManager.show(validation.error, 'error');
+            return;
+        }
+        
+        // 如果在编辑模式，完成编辑
+        if (this.editingMessageId) {
+            await this.completeEdit(validation.value);
             return;
         }
         
@@ -282,70 +318,70 @@ class ChatManager {
         const isCurrentSession = () => this.currentSessionId === sessionId;
         
         try {
-            while (true) {
-                const { done, value } = await reader.read();
-                
-                if (done) {
+        while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) {
                     console.log('✅ 流式传输完成 - Session:', sessionId);
-                    break;
-                }
+                break;
+            }
+            
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || '';
+            
+            for (const eventText of events) {
+                if (!eventText.trim()) continue;
                 
-                buffer += decoder.decode(value, { stream: true });
-                const events = buffer.split('\n\n');
-                buffer = events.pop() || '';
+                const lines = eventText.split('\n');
+                let eventType = '';
+                let eventData = null;
                 
-                for (const eventText of events) {
-                    if (!eventText.trim()) continue;
-                    
-                    const lines = eventText.split('\n');
-                    let eventType = '';
-                    let eventData = null;
-                    
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) {
-                            eventType = line.slice(7).trim();
-                        } else if (line.startsWith('data: ')) {
-                            try {
-                                eventData = JSON.parse(line.slice(6));
-                            } catch (e) {
-                                console.error('JSON解析失败:', e, line);
-                            }
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        eventType = line.slice(7).trim();
+                    } else if (line.startsWith('data: ')) {
+                        try {
+                            eventData = JSON.parse(line.slice(6));
+                        } catch (e) {
+                            console.error('JSON解析失败:', e, line);
                         }
                     }
-                    
-                    if (eventType && eventData) {
+                }
+                
+                if (eventType && eventData) {
                         // 只在当前会话时打印详细日志
                         if (isCurrentSession()) {
-                            console.log('📨 收到事件:', eventType, eventData);
+                    console.log('📨 收到事件:', eventType, eventData);
                         }
-                        
-                        if (eventType === 'content' || eventType === 'message') {
-                            fullContent += eventData.content || eventData.message || '';
+                    
+                    if (eventType === 'content' || eventType === 'message') {
+                        fullContent += eventData.content || eventData.message || '';
                             // 更新消息内容（DOM始终存在，无论是否当前会话）
-                            this.updateMessageContent(contentDiv, fullContent);
+                        this.updateMessageContent(contentDiv, fullContent);
                             
                             // 只在当前会话时才滚动
                             if (isCurrentSession() && this.mainContainer) {
                                 this.mainContainer.scrollTop = this.mainContainer.scrollHeight;
                             }
-                        } else if (eventType === 'node' || eventType === 'status') {
+                    } else if (eventType === 'node' || eventType === 'status') {
                             // 只在当前会话时更新时间线
                             if (isCurrentSession()) {
-                                this.handleNodeUpdate(eventData);
-                            }
-                        }
+                        this.handleNodeUpdate(eventData);
                     }
                 }
+            }
+        }
             }
             
             // 保存完整回答
             session.lastAnswer = fullContent;
-            
-            // 最终渲染
-            this.finalizeMessage(contentDiv, fullContent);
-            
-            // 移除ID
-            agentMessageDiv.removeAttribute('id');
+        
+        // 最终渲染
+        this.finalizeMessage(contentDiv, fullContent);
+        
+        // 移除ID
+        agentMessageDiv.removeAttribute('id');
             
             // 设置状态为已完成
             this.setSessionStatus(sessionId, this.SESSION_STATUS.COMPLETED);
@@ -416,6 +452,9 @@ class ChatManager {
         
         console.log('🎨 最终渲染，内容长度:', content.length);
         
+        // 保存原始文本到data属性
+        contentDiv.dataset.originalText = content;
+        
         // 渲染Markdown
         if (typeof marked !== 'undefined') {
             const rendered = marked.parse(content);
@@ -471,7 +510,13 @@ class ChatManager {
             img.onclick = () => this.openImageModal(img.src);
         });
         
-        // 添加复制按钮
+        // 显示消息复制按钮（按钮在 message-content 内部）
+        const copyBtn = contentDiv.querySelector('.copy-btn');
+        if (copyBtn) {
+            copyBtn.style.display = '';
+        }
+        
+        // 添加代码块复制按钮
         this.addCopyButtons(contentDiv);
     }
 
@@ -565,10 +610,11 @@ class ChatManager {
     /**
      * 添加用户消息
      */
-    addUserMessage(content) {
-        const session = this.sessions.get(this.currentSessionId);
+    addUserMessage(content, sessionId = null) {
+        const sid = sessionId || this.currentSessionId;
+        const session = this.sessions.get(sid);
         if (!session || !session.containerDiv) {
-            console.error('❌ 找不到会话容器');
+            console.error('❌ 找不到会话容器:', sid);
             return;
         }
         
@@ -579,14 +625,38 @@ class ChatManager {
         
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message user-message';
+        
+        // 生成唯一ID
+        const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        
         messageDiv.innerHTML = `
             <div class="message-header">
                 <div class="avatar">👤</div>
                 <div class="message-role">你</div>
                 <div class="message-time">${time}</div>
             </div>
-            <div class="message-content">${this.escapeHtml(content)}</div>
+            <div class="message-content" data-message-id="${messageId}">
+                ${this.escapeHtml(content)}
+                <button class="edit-btn" onclick="chatManager.editMessage('${messageId}')" title="编辑">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    <span class="edit-text">编辑</span>
+                </button>
+                <button class="copy-btn" onclick="chatManager.copyMessageContent('${messageId}')" title="复制">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span class="copy-text">复制</span>
+                </button>
+            </div>
         `;
+        
+        // 保存原始文本到data属性
+        const contentDiv = messageDiv.querySelector('.message-content');
+        contentDiv.dataset.originalText = content;
         
         session.containerDiv.appendChild(messageDiv);
         
@@ -598,10 +668,11 @@ class ChatManager {
     /**
      * 创建AI消息占位符
      */
-    createAgentMessage() {
-        const session = this.sessions.get(this.currentSessionId);
+    createAgentMessage(sessionId = null) {
+        const sid = sessionId || this.currentSessionId;
+        const session = this.sessions.get(sid);
         if (!session || !session.containerDiv) {
-            console.error('❌ 找不到会话容器');
+            console.error('❌ 找不到会话容器:', sid);
             return null;
         }
         
@@ -613,17 +684,28 @@ class ChatManager {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message agent-message';
         messageDiv.id = 'currentAgentMessage';
+        
+        // 生成唯一ID
+        const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        
         messageDiv.innerHTML = `
             <div class="message-header">
                 <div class="avatar">🤖</div>
                 <div class="message-role">AI Agent</div>
                 <div class="message-time">${time}</div>
             </div>
-            <div class="message-content">
+            <div class="message-content" data-message-id="${messageId}">
                 <div class="loading-enhanced">
                     <div class="loading-spinner"></div>
                     <span>AI正在思考中...</span>
                 </div>
+                <button class="copy-btn" onclick="chatManager.copyMessageContent('${messageId}')" title="复制" style="display: none;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span class="copy-text">复制</span>
+                </button>
             </div>
         `;
         
@@ -660,9 +742,9 @@ class ChatManager {
             
             messages.forEach(msg => {
                 if (msg.role === 'user') {
-                    this.addUserMessage(msg.content);
+                    this.addUserMessage(msg.content, sessionId);
                 } else if (msg.role === 'assistant') {
-                    this.addAssistantMessage(msg.content);
+                    this.addAssistantMessage(msg.content, sessionId);
                 }
             });
             
@@ -680,10 +762,11 @@ class ChatManager {
     /**
      * 添加助手消息
      */
-    addAssistantMessage(content) {
-        const session = this.sessions.get(this.currentSessionId);
+    addAssistantMessage(content, sessionId = null) {
+        const sid = sessionId || this.currentSessionId;
+        const session = this.sessions.get(sid);
         if (!session || !session.containerDiv) {
-            console.error('❌ 找不到会话容器');
+            console.error('❌ 找不到会话容器:', sid);
             return;
         }
         
@@ -695,6 +778,9 @@ class ChatManager {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message agent-message';
         
+        // 生成唯一ID
+        const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        
         const renderedContent = marked.parse(content);
         const sanitizedContent = DOMPurify.sanitize(renderedContent);
         
@@ -704,8 +790,21 @@ class ChatManager {
                 <div class="message-role">AI Agent</div>
                 <div class="message-time">${time}</div>
             </div>
-            <div class="message-content">${sanitizedContent}</div>
+            <div class="message-content" data-message-id="${messageId}">
+                ${sanitizedContent}
+                <button class="copy-btn" onclick="chatManager.copyMessageContent('${messageId}')" title="复制">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span class="copy-text">复制</span>
+                </button>
+            </div>
         `;
+        
+        // 保存原始文本到data属性
+        const contentDiv = messageDiv.querySelector('.message-content');
+        contentDiv.dataset.originalText = content;
         
         session.containerDiv.appendChild(messageDiv);
         
@@ -780,6 +879,260 @@ class ChatManager {
     }
 
     /**
+     * 编辑消息
+     */
+    async editMessage(messageId) {
+        const contentDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+        if (!contentDiv) {
+            console.error('找不到消息元素:', messageId);
+            return;
+        }
+        
+        // 获取原始文本
+        const originalText = contentDiv.dataset.originalText || contentDiv.textContent.trim();
+        const messageDiv = contentDiv.closest('.message');
+        
+        // 停止当前正在生成的对话
+        if (this.getSessionStatus(this.currentSessionId) === this.SESSION_STATUS.GENERATING) {
+            this.stopCurrentRequest();
+            await new Promise(resolve => setTimeout(resolve, 300)); // 等待停止完成
+        }
+        
+        // 进入编辑模式
+        this.enterEditMode(messageDiv, originalText, messageId);
+    }
+    
+    /**
+     * 进入编辑模式
+     */
+    enterEditMode(messageDiv, originalText, messageId) {
+        // 保存编辑状态
+        this.editingMessageId = messageId;
+        this.editingMessageDiv = messageDiv;
+        
+        // 添加编辑状态类
+        document.body.classList.add('editing-mode');
+        messageDiv.classList.add('editing-active');
+        
+        // 填充输入框
+        const messageInput = document.getElementById('messageInput');
+        if (messageInput) {
+            messageInput.value = originalText;
+            messageInput.focus();
+            
+            // 自动调整高度
+            messageInput.style.height = 'auto';
+            messageInput.style.height = Math.min(messageInput.scrollHeight, 300) + 'px';
+        }
+        
+        // 显示编辑提示
+        this.showEditingHint();
+        
+        // 滚动到编辑的消息
+        messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    
+    /**
+     * 显示编辑提示
+     */
+    showEditingHint() {
+        // 创建提示元素
+        let hint = document.getElementById('editingHint');
+        if (!hint) {
+            hint = document.createElement('div');
+            hint.id = 'editingHint';
+            hint.className = 'editing-hint';
+            hint.innerHTML = `
+                <div class="hint-content">
+                    <span class="hint-icon">✏️</span>
+                    <span class="hint-text">编辑模式：修改问题后按Enter重新发送</span>
+                    <button class="hint-cancel" onclick="chatManager.cancelEdit()">取消</button>
+                </div>
+            `;
+            document.querySelector('.input-container').prepend(hint);
+        }
+    }
+    
+    /**
+     * 取消编辑
+     */
+    cancelEdit() {
+        // 移除编辑状态
+        document.body.classList.remove('editing-mode');
+        if (this.editingMessageDiv) {
+            this.editingMessageDiv.classList.remove('editing-active');
+        }
+        
+        // 清除输入框
+        const messageInput = document.getElementById('messageInput');
+        if (messageInput) {
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+        }
+        
+        // 移除提示
+        const hint = document.getElementById('editingHint');
+        if (hint) {
+            hint.remove();
+        }
+        
+        // 清除编辑状态
+        this.editingMessageId = null;
+        this.editingMessageDiv = null;
+    }
+    
+    /**
+     * 完成编辑并重新发送
+     */
+    async completeEdit(newContent) {
+        if (!this.editingMessageId || !this.editingMessageDiv) {
+            console.error('没有正在编辑的消息');
+            return;
+        }
+        
+        const contentDiv = this.editingMessageDiv.querySelector('.message-content');
+        const messageId = this.editingMessageId;
+        
+        // 删除旧的AI回复
+        let nextMessage = this.editingMessageDiv.nextElementSibling;
+        if (nextMessage && nextMessage.classList.contains('agent-message')) {
+            nextMessage.remove();
+        }
+        
+        // 更新问题内容（保留按钮）
+        const buttons = Array.from(contentDiv.querySelectorAll('button'));
+        const buttonsHTML = buttons.map(b => b.outerHTML).join('');
+        contentDiv.innerHTML = this.escapeHtml(newContent) + buttonsHTML;
+        contentDiv.dataset.originalText = newContent;
+        
+        // 取消编辑模式
+        this.cancelEdit();
+        
+        // 重新发送消息
+        await this.resendMessage(newContent);
+    }
+    
+    /**
+     * 重新发送消息（用于编辑后）
+     */
+    async resendMessage(content) {
+        const sessionId = this.currentSessionId;
+        
+        // 确保会话存在
+        this.ensureSession(sessionId);
+        
+        // 保存用户问题
+        const session = this.sessions.get(sessionId);
+        session.lastQuestion = content;
+        
+        // 隐藏空状态
+        this.hideEmptyState();
+        
+        // 创建AI消息占位符
+        const agentMessageDiv = this.createAgentMessage(sessionId);
+        
+        if (!agentMessageDiv) {
+            console.error('❌ 创建消息失败');
+            return;
+        }
+        
+        // 设置状态为生成中
+        this.setSessionStatus(sessionId, this.SESSION_STATUS.GENERATING);
+        
+        try {
+            // 获取配置
+            const useKB = document.getElementById('useKB')?.checked || false;
+            const useTools = document.getElementById('useTools')?.checked || false;
+            
+            // 选择API端点
+            const endpoint = this.isMultiAgentMode 
+                ? '/chat/multi-agent/stream'
+                : '/chat/agent/stream';
+            
+            // 发送请求
+            await this.streamChat(content, useKB, useTools, endpoint, agentMessageDiv, sessionId);
+            
+        } catch (error) {
+            console.error('重新发送消息失败:', error);
+            const contentDiv = agentMessageDiv.querySelector('.message-content');
+            contentDiv.innerHTML = `<p style="color: var(--error-color);">❌ 发送失败: ${error.message}</p>`;
+            notificationManager.show('发送消息失败', 'error');
+            this.setSessionStatus(sessionId, this.SESSION_STATUS.IDLE);
+        }
+    }
+    
+    /**
+     * 复制消息内容（保留原始格式）
+     */
+    async copyMessageContent(messageId) {
+        const contentDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+        if (!contentDiv) {
+            console.error('找不到消息元素:', messageId);
+            notificationManager.show('复制失败', 'error');
+            return;
+        }
+        
+        // 获取原始文本（保留格式）
+        const originalText = contentDiv.dataset.originalText || contentDiv.textContent;
+        
+        try {
+            await navigator.clipboard.writeText(originalText);
+            
+            // 找到对应的复制按钮并更新状态
+            const copyBtn = contentDiv.parentElement.querySelector('.copy-btn');
+            if (copyBtn) {
+                const originalHTML = copyBtn.innerHTML;
+                copyBtn.innerHTML = `
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span class="copy-text">已复制</span>
+                `;
+                copyBtn.classList.add('copied');
+                
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalHTML;
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            }
+            
+            notificationManager.show('✅ 已复制到剪贴板', 'success', 1500);
+        } catch (err) {
+            console.error('复制失败:', err);
+            // 降级方案
+            this.fallbackCopyToClipboard(originalText);
+        }
+    }
+    
+    /**
+     * 降级的复制方法（兼容老浏览器）
+     */
+    fallbackCopyToClipboard(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                notificationManager.show('✅ 已复制到剪贴板', 'success', 1500);
+            } else {
+                notificationManager.show('❌ 复制失败，请手动复制', 'error');
+            }
+        } catch (err) {
+            console.error('复制失败:', err);
+            notificationManager.show('❌ 复制失败，请手动复制', 'error');
+        }
+        
+        document.body.removeChild(textArea);
+    }
+    
+    /**
      * 转义HTML
      */
     escapeHtml(text) {
@@ -845,6 +1198,15 @@ class ChatManager {
             notificationManager.show('💼 当前对话已切换到后台继续生成', 'info', 3000);
         }
         
+        // 保存当前会话的滚动位置
+        if (this.currentSessionId && this.mainContainer) {
+            const currentSession = this.sessions.get(this.currentSessionId);
+            if (currentSession) {
+                currentSession.scrollPosition = this.mainContainer.scrollTop;
+                console.log('💾 保存会话滚动位置:', this.currentSessionId, '位置:', currentSession.scrollPosition);
+            }
+        }
+        
         // 隐藏当前会话的容器
         if (this.currentSessionId) {
             const currentSession = this.sessions.get(this.currentSessionId);
@@ -863,9 +1225,23 @@ class ChatManager {
             newSession.containerDiv.style.display = 'block';
             console.log('📂 已显示会话容器:', sessionId);
             
-            // 滚动到底部
+            // 如果容器是空的，加载历史消息
+            if (newSession.containerDiv.children.length === 0) {
+                console.log('📥 容器为空，加载历史消息...');
+                this.loadHistoryMessages(sessionId);
+            }
+            
+            // 恢复滚动位置（延迟到DOM渲染完成）
             if (this.mainContainer) {
-                this.mainContainer.scrollTop = this.mainContainer.scrollHeight;
+                requestAnimationFrame(() => {
+                    if (newSession.scrollPosition > 0) {
+                        this.mainContainer.scrollTop = newSession.scrollPosition;
+                        console.log('📍 恢复会话滚动位置:', sessionId, '位置:', newSession.scrollPosition);
+                    } else {
+                        // 如果没有保存的滚动位置，滚动到底部
+                        this.mainContainer.scrollTop = this.mainContainer.scrollHeight;
+                    }
+                });
             }
         } else {
             console.error('❌ 找不到会话容器:', sessionId);

@@ -11,7 +11,6 @@ const SESSION_STATUS = {
 
 export const useChatStore = defineStore('chat', () => {
     // State
-    const messages = ref([]);
     const currentSessionId = ref(null);
     const isLoading = ref(false);
     const apiBase = 'http://127.0.0.1:8000';
@@ -23,20 +22,36 @@ export const useChatStore = defineStore('chat', () => {
     const sessions = ref(new Map());
     const abortControllers = ref(new Map());
 
-    // Computed
+    // Computed - 当前会话的消息列表
+    const messages = computed(() => {
+        if (!currentSessionId.value) return [];
+        const session = sessions.value.get(currentSessionId.value);
+        return session ? session.messages : [];
+    });
+    
     const hasMessages = computed(() => messages.value.length > 0);
 
     // Actions
-    function addMessage(message) {
-        messages.value.push({
+    function addMessage(message, sessionId = null) {
+        const sid = sessionId || currentSessionId.value;
+        if (!sid) return;
+        
+        const session = ensureSession(sid);
+        session.messages.push({
             ...message,
-            id: Date.now(),
+            id: Date.now() + Math.random(), // 确保唯一性
             timestamp: new Date().toISOString()
         });
     }
 
-    function clearMessages() {
-        messages.value = [];
+    function clearMessages(sessionId = null) {
+        const sid = sessionId || currentSessionId.value;
+        if (!sid) return;
+        
+        const session = sessions.value.get(sid);
+        if (session) {
+            session.messages = [];
+        }
     }
     
     // 确保会话存在
@@ -95,15 +110,13 @@ export const useChatStore = defineStore('chat', () => {
         // 清空timeline
         clearTimelineSteps();
 
-        // 添加用户消息到本地
+        // 添加用户消息到对应会话
         const userMsg = {
             role: 'user',
             content,
-            type: 'text',
-            id: Date.now(),
-            timestamp: new Date().toISOString()
+            type: 'text'
         };
-        addMessage(userMsg);
+        addMessage(userMsg, sessionId);
         
         // 添加初始timeline步骤
         addTimelineStep({
@@ -114,8 +127,8 @@ export const useChatStore = defineStore('chat', () => {
             type: 'thoughts'
         });
 
-        // 构建符合后端格式的请求
-        const requestMessages = messages.value
+        // 构建符合后端格式的请求（使用当前会话的消息）
+        const requestMessages = session.messages
             .filter(m => m.role === 'user' || m.role === 'assistant')
             .map(m => ({
                 role: m.role,
@@ -174,12 +187,10 @@ export const useChatStore = defineStore('chat', () => {
             const aiMsg = {
                 role: 'assistant',
                 content: '',
-                type: 'text',
-                id: Date.now() + 1,
-                timestamp: new Date().toISOString()
+                type: 'text'
             };
-            addMessage(aiMsg);
-            const msgIndex = messages.value.length - 1;
+            addMessage(aiMsg, sessionId);
+            const msgIndex = session.messages.length - 1;
             
             // 读取流式响应
             const reader = response.body.getReader();
@@ -208,7 +219,8 @@ export const useChatStore = defineStore('chat', () => {
                         
                         // 处理不同类型的事件
                         if (parsed.type === 'content') {
-                            messages.value[msgIndex].content = parsed.content;
+                            // 直接更新会话的消息内容
+                            session.messages[msgIndex].content = parsed.content;
                             if (onStream) {
                                 onStream(parsed.content, sessionId);
                             }
@@ -254,12 +266,12 @@ export const useChatStore = defineStore('chat', () => {
                     detail: {
                         sessionId,
                         question: content,
-                        answer: messages.value[msgIndex].content
+                        answer: session.messages[msgIndex].content
                     }
                 }));
             }
             
-            return messages.value[msgIndex].content;
+            return session.messages[msgIndex].content;
         } catch (error) {
             if (error.name === 'AbortError') {
                 console.log('请求已取消');
@@ -280,10 +292,8 @@ export const useChatStore = defineStore('chat', () => {
             addMessage({
                 role: 'system',
                 content: errorMsg,
-                type: 'error',
-                id: Date.now() + 2,
-                timestamp: new Date().toISOString()
-            });
+                type: 'error'
+            }, sessionId);
             
             setSessionStatus(sessionId, SESSION_STATUS.IDLE);
             throw error;
