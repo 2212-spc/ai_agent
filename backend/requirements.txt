@@ -4,7 +4,7 @@ uvicorn[standard]==0.29.0
 httpx==0.27.0
 
 # 数据验证和配置
-pydantic==2.7.1
+pydantic>=2.7.4
 pydantic-settings>=2.3.0
 
 # LangChain 生态系统

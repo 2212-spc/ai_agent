@@ -248,6 +248,12 @@ function newChat() {
         timelineContent.innerHTML = '';
     }
     
+    // 移除历史记录项的高亮状态（新会话没有对应的历史记录）
+    const historyItems = document.querySelectorAll('.history-item');
+    historyItems.forEach(item => {
+        item.classList.remove('active');
+    });
+    
     if (window.notificationManager) {
         window.notificationManager.show('✅ 新会话已创建', 'success', 2000);
     }
@@ -266,6 +272,114 @@ function openSettings() {
     console.log('打开设置页面');
 }
 
+// ========== 输入选项面板 ==========
+function toggleInputOptions() {
+    const panel = document.getElementById('inputOptionsPanel');
+    if (panel) {
+        panel.classList.toggle('open');
+    }
+}
+
+// ========== 文件选择处理 ==========
+function handleFileSelect(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) {
+        return;
+    }
+    
+    const attachedFilesDiv = document.getElementById('attachedFiles');
+    if (!attachedFilesDiv) {
+        console.warn('附件容器未找到');
+        return;
+    }
+    
+    // 显示选中的文件
+    attachedFilesDiv.innerHTML = '';
+    
+    Array.from(files).forEach((file, index) => {
+        const fileTag = document.createElement('div');
+        fileTag.className = 'attached-file-tag';
+        fileTag.innerHTML = `
+            <span>📎 ${escapeHtml(file.name)}</span>
+            <button onclick="removeFile(${index})" title="移除">×</button>
+        `;
+        attachedFilesDiv.appendChild(fileTag);
+    });
+    
+    if (window.notificationManager) {
+        window.notificationManager.show(`已选择 ${files.length} 个文件`, 'success', 2000);
+    }
+}
+
+function removeFile(index) {
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+        // 清空文件输入
+        fileInput.value = '';
+    }
+    
+    const attachedFilesDiv = document.getElementById('attachedFiles');
+    if (attachedFilesDiv) {
+        attachedFilesDiv.innerHTML = '';
+    }
+}
+
+// ========== 退出登录 ==========
+function logout() {
+    if (!confirm('确定要退出登录吗？')) {
+        return;
+    }
+    
+    // 清除本地存储的用户信息
+    localStorage.removeItem('userInfo');
+    localStorage.removeItem('token');
+    
+    if (window.notificationManager) {
+        window.notificationManager.show('👋 已退出登录', 'success', 2000);
+    }
+    
+    // 跳转到登录页面
+    setTimeout(() => {
+        window.location.href = 'login.html';
+    }, 1000);
+}
+
+// ========== 画布视图控制 ==========
+function resetCanvasView() {
+    if (window.canvasManager && typeof window.canvasManager.resetView === 'function') {
+        window.canvasManager.resetView();
+        console.log('重置画布视图');
+    }
+}
+
+function centerCanvas() {
+    if (window.canvasManager && typeof window.canvasManager.centerView === 'function') {
+        window.canvasManager.centerView();
+        console.log('居中画布');
+    } else {
+        // 如果没有centerView方法，使用resetView
+        resetCanvasView();
+    }
+}
+
+// ========== 画布示例加载 ==========
+function loadExample(exampleType) {
+    if (window.notificationManager) {
+        window.notificationManager.show(`加载示例: ${exampleType}`, 'info', 2000);
+    }
+    
+    // TODO: 实现示例加载逻辑
+    console.log('加载示例:', exampleType);
+    
+    if (window.canvasManager && typeof window.canvasManager.loadExample === 'function') {
+        window.canvasManager.loadExample(exampleType);
+    } else {
+        if (window.notificationManager) {
+            window.notificationManager.show('示例功能开发中...', 'info', 2000);
+        }
+    }
+}
+
 // ========== 快捷示例 ==========
 function sendQuickExample(example) {
     const messageInput = document.getElementById('messageInput');
@@ -276,6 +390,25 @@ function sendQuickExample(example) {
         // 自动调整高度
         messageInput.style.height = 'auto';
         messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+    }
+}
+
+// useExample 别名（用于HTML中的快捷按钮）
+function useExample(example) {
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput) {
+        messageInput.value = example;
+        messageInput.focus();
+        
+        // 自动调整高度
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+        
+        // 隐藏空状态，显示消息容器
+        const emptyState = document.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.style.display = 'none';
+        }
     }
 }
 
@@ -513,14 +646,102 @@ function toggleTimelineFilter(filter, element) {
 }
 
 // ========== 历史记录管理 ==========
-function refreshHistoryList() {
-    if (window.notificationManager) {
-        window.notificationManager.show('🔄 刷新历史记录...', 'info', 1000);
+async function refreshHistoryList() {
+    const API_BASE = window.chatManager?.API_BASE || 'http://127.0.0.1:8000';
+    const sidebarContent = document.getElementById('sidebarHistoryList');
+    
+    if (!sidebarContent) {
+        console.warn('侧边栏内容容器未找到');
+        return;
     }
     
-    // TODO: 实现历史记录刷新逻辑
-    // 这里可以调用API获取历史记录列表
-    console.log('刷新历史记录列表');
+    // 显示加载状态
+    sidebarContent.innerHTML = '<div class="history-loading">🔄 加载中...</div>';
+    
+    try {
+        // 获取用户信息
+        const userInfo = localStorage.getItem('userInfo');
+        const userId = userInfo ? JSON.parse(userInfo).user_id : null;
+        
+        // 构建API URL
+        let url = `${API_BASE}/conversations?limit=50&offset=0`;
+        if (userId) {
+            url += `&user_id=${userId}`;
+        }
+        
+        console.log('加载历史记录:', url);
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const conversations = await response.json();
+        console.log('获取到历史记录:', conversations.length, '条');
+        
+        // 渲染历史记录
+        if (conversations.length === 0) {
+            sidebarContent.innerHTML = '<div class="history-empty">📭 暂无历史记录</div>';
+        } else {
+            sidebarContent.innerHTML = conversations.map(conv => {
+                const time = formatHistoryTime(conv.last_message_time);
+                const preview = escapeHtml(conv.preview || '').substring(0, 40);
+                
+                // 检查是否是当前会话
+                const isActive = window.chatManager?.currentSessionId === conv.session_id;
+                const activeClass = isActive ? ' active' : '';
+                
+                return `
+                    <div class="history-item${activeClass}" 
+                         data-session-id="${conv.session_id}"
+                         onclick="loadHistorySession('${conv.session_id}')">
+                        <div class="history-item-title">${escapeHtml(conv.title || '未命名对话')}</div>
+                        <div class="history-item-preview">${preview}...</div>
+                        <div class="history-item-time">💬 ${conv.message_count} · 🕐 ${time}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        if (window.notificationManager) {
+            window.notificationManager.show('✅ 历史记录已更新', 'success', 1000);
+        }
+        
+    } catch (error) {
+        console.error('加载历史记录失败:', error);
+        sidebarContent.innerHTML = '<div class="history-error">❌ 加载失败<br><button onclick="refreshHistoryList()">重试</button></div>';
+        
+        if (window.notificationManager) {
+            window.notificationManager.show('加载历史记录失败', 'error', 2000);
+        }
+    }
+}
+
+// 格式化历史记录时间
+function formatHistoryTime(timeStr) {
+    if (!timeStr) return '未知';
+    
+    const date = new Date(timeStr);
+    const now = new Date();
+    const diff = now - date;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (minutes < 1) return '刚刚';
+    if (minutes < 60) return `${minutes}分钟前`;
+    if (hours < 24) return `${hours}小时前`;
+    if (days < 7) return `${days}天前`;
+    
+    return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+}
+
+// HTML转义
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function loadHistorySession(sessionId) {
@@ -531,13 +752,35 @@ function loadHistorySession(sessionId) {
     
     console.log('加载历史会话:', sessionId);
     
-    if (window.chatManager && typeof window.chatManager.loadHistoryMessages === 'function') {
-        window.chatManager.currentSessionId = sessionId;
-        window.chatManager.loadHistoryMessages(sessionId);
+    if (window.chatManager) {
+        // 使用新的 switchToSession 方法（支持多会话并发）
+        if (typeof window.chatManager.switchToSession === 'function') {
+            window.chatManager.switchToSession(sessionId);
+        }
+        
+        // 加载历史消息
+        if (typeof window.chatManager.loadHistoryMessages === 'function') {
+            window.chatManager.loadHistoryMessages(sessionId);
+        }
     }
     
-    // 关闭侧边栏
-    closeSidebar();
+    // 保持侧边栏打开状态，方便切换对话
+    // closeSidebar(); // 已注释：用户希望保留历史记录面板
+    
+    // 高亮当前激活的历史记录项
+    const historyItems = document.querySelectorAll('.history-item');
+    historyItems.forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // 找到当前会话的项并高亮（使用 data-session-id 属性）
+    const activeItem = document.querySelector(`.history-item[data-session-id="${sessionId}"]`);
+    if (activeItem) {
+        activeItem.classList.add('active');
+        
+        // 可选：滚动到可见区域
+        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
 }
 
 function deleteHistorySession(sessionId) {
@@ -565,6 +808,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (builderOverlay) {
         builderOverlay.addEventListener('click', closeBuilder);
     }
+    
+    // 自动加载历史记录
+    setTimeout(() => {
+        if (typeof refreshHistoryList === 'function') {
+            refreshHistoryList();
+        }
+    }, 500);
 });
 
 // 暴露到全局作用域
@@ -582,11 +832,21 @@ window.newChat = newChat;
 window.startNewChat = startNewChat;
 window.openSettings = openSettings;
 window.sendQuickExample = sendQuickExample;
+window.useExample = useExample; // 添加这个！
 window.toggleBuilder = toggleBuilder;
 window.closeBuilder = closeBuilder;
 window.refreshHistoryList = refreshHistoryList;
 window.loadHistorySession = loadHistorySession;
 window.deleteHistorySession = deleteHistorySession;
+window.formatHistoryTime = formatHistoryTime;
+window.escapeHtml = escapeHtml;
+window.toggleInputOptions = toggleInputOptions;
+window.handleFileSelect = handleFileSelect;
+window.removeFile = removeFile;
+window.logout = logout;
+window.resetCanvasView = resetCanvasView;
+window.centerCanvas = centerCanvas;
+window.loadExample = loadExample;
 // 构建器管理
 window.clearBuilder = clearBuilder;
 window.saveAgentConfig = saveAgentConfig;

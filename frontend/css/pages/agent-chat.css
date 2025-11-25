@@ -306,6 +306,28 @@
             font-size: 13px;
         }
 
+        .history-error {
+            text-align: center;
+            padding: 20px;
+            color: var(--error-color);
+            font-size: 13px;
+        }
+
+        .history-error button {
+            margin-top: 10px;
+            padding: 6px 12px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .history-error button:hover {
+            opacity: 0.9;
+        }
+
         .new-chat-btn {
             margin: 8px;
         }
@@ -356,6 +378,15 @@
             width: 100%;
             border-radius: 16px;
             box-shadow: var(--shadow-lg);
+            position: relative;
+        }
+
+        /* 会话消息容器 - 用于多对话切换 */
+        .session-messages {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            width: 100%;
         }
 
         .message {
@@ -1108,7 +1139,74 @@
         }
 
         .timeline-node {
+            margin-bottom: 12px;
+            padding: 12px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            border: 1px solid var(--border-primary);
+            transition: all 0.2s;
+        }
+
+        .timeline-node:hover {
+            border-color: var(--primary-color);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .timeline-node-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             margin-bottom: 8px;
+        }
+
+        .timeline-node-icon {
+            font-size: 16px;
+        }
+
+        .timeline-node-title {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-primary);
+            flex: 1;
+        }
+
+        .timeline-node-time {
+            font-size: 11px;
+            color: var(--text-tertiary);
+        }
+
+        .timeline-content {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            word-wrap: break-word;
+        }
+
+        .timeline-node-thought {
+            background: #fef3c7;
+            border-color: #f59e0b;
+        }
+
+        .timeline-node-thought .timeline-content {
+            color: #78350f;
+        }
+
+        .timeline-node-tool {
+            background: #d1fae5;
+            border-color: #10a37f;
+        }
+
+        .timeline-node-tool .timeline-content {
+            color: #064e3b;
+        }
+
+        .timeline-node-observation {
+            background: #dbeafe;
+            border-color: #3b82f6;
+        }
+
+        .timeline-node-observation .timeline-content {
+            color: #1e3a8a;
         }
 
         .node-name {

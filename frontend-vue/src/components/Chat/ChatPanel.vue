@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, nextTick, watch } from 'vue';
+import { ref, computed, nextTick, watch, onMounted } from 'vue';
 import { useChatStore } from '../../stores/chat';
 import { marked } from 'marked';
 import axios from 'axios';
@@ -13,9 +13,16 @@ const showOptions = ref(false);
 
 const messages = computed(() => chatStore.messages);
 const isLoading = computed(() => chatStore.isLoading);
+const currentSessionId = computed(() => chatStore.currentSessionId);
+const sessionStatus = computed(() => chatStore.getSessionStatus(currentSessionId.value));
 const useKnowledgeBase = computed({
     get: () => chatStore.useKnowledgeBase,
     set: (val) => chatStore.setUseKnowledgeBase(val)
+});
+
+// 判断是否正在生成
+const isGenerating = computed(() => {
+    return sessionStatus.value === chatStore.SESSION_STATUS.GENERATING;
 });
 
 async function handleFileSelect(event) {
@@ -58,16 +65,25 @@ function toggleOptions() {
 
 async function sendMessage() {
     const content = messageInput.value.trim();
-    if (!content || isLoading.value) return;
+    if (!content || isGenerating.value) return;
 
     try {
-        await chatStore.sendMessage(content);
         messageInput.value = '';
+        await chatStore.sendMessage(content, (streamContent, sessionId) => {
+            // 流式更新回调
+            if (sessionId === currentSessionId.value) {
+                nextTick(() => scrollToBottom());
+            }
+        });
         await nextTick();
         scrollToBottom();
     } catch (error) {
         console.error('发送失败:', error);
     }
+}
+
+function stopGeneration() {
+    chatStore.stopGeneration(currentSessionId.value);
 }
 
 function scrollToBottom() {
@@ -94,6 +110,14 @@ watch(messages, () => {
 
 <template>
     <div class="chat-panel">
+        <!-- Background Generation Notice -->
+        <div v-if="isGenerating" class="generation-notice">
+            <div class="notice-content">
+                <span class="notice-icon">⚡</span>
+                <span class="notice-text">AI 正在生成回复...</span>
+            </div>
+        </div>
+        
         <!-- Messages Area -->
         <div class="messages-container" ref="chatContainer">
             <div v-if="messages.length === 0" class="empty-state">
@@ -117,7 +141,7 @@ watch(messages, () => {
                 </div>
             </div>
 
-            <div v-if="isLoading" class="message message-assistant">
+            <div v-if="isGenerating" class="message message-assistant">
                 <div class="message-avatar">🤖</div>
                 <div class="message-content">
                     <div class="typing-indicator">
@@ -125,6 +149,7 @@ watch(messages, () => {
                         <span></span>
                         <span></span>
                     </div>
+                    <div class="message-time">AI 正在思考中...</div>
                 </div>
             </div>
         </div>
@@ -167,11 +192,21 @@ watch(messages, () => {
                             ＋
                         </button>
                         <button
+                            v-if="!isGenerating"
                             @click="sendMessage"
                             class="send-btn"
-                            :disabled="!messageInput.trim() || isLoading"
+                            :disabled="!messageInput.trim()"
+                            title="发送消息"
                         >
                             ↑
+                        </button>
+                        <button
+                            v-else
+                            @click="stopGeneration"
+                            class="send-btn stop-btn"
+                            title="停止生成"
+                        >
+                            ■
                         </button>
                     </div>
                 </div>
@@ -196,6 +231,50 @@ watch(messages, () => {
     flex-direction: column;
     height: 100%;
     background: var(--bg-secondary);
+}
+
+.generation-notice {
+    background: linear-gradient(90deg, #4CAF50 0%, #2196F3 100%);
+    color: white;
+    padding: 8px 16px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
+
+.notice-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.notice-icon {
+    font-size: 16px;
+    animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.notice-text {
+    font-size: 13px;
 }
 
 .messages-container {
@@ -494,5 +573,13 @@ watch(messages, () => {
 .send-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.stop-btn {
+    background: #f44336;
+}
+
+.stop-btn:hover:not(:disabled) {
+    background: #d32f2f;
 }
 </style>
