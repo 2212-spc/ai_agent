@@ -79,26 +79,30 @@ function refreshHistory() {
 
 async function selectConversation(sessionId) {
     try {
+        // 初始化会话状态
+        const session = chatStore.ensureSession(sessionId);
+        
         // 切换会话,但不关闭sidebar
         chatStore.setSessionId(sessionId);
         
-        // 加载该会话的历史消息
-        const response = await fetch(`http://127.0.0.1:8000/conversation/${sessionId}/history`);
-        const data = await response.json();
-        
-        // 清空当前消息并加载历史消息
-        chatStore.messages = data.map(msg => ({
-            id: msg.id,
-            role: msg.role,
-            content: msg.content,
-            timestamp: msg.created_at,
-            type: 'text'
-        }));
-        
-        // 初始化会话状态
-        chatStore.ensureSession(sessionId);
-        
-        console.log('已加载会话:', sessionId, '消息数:', data.length);
+        // 如果会话消息为空，从后端加载历史消息
+        if (session.messages.length === 0) {
+            const response = await fetch(`http://127.0.0.1:8000/conversation/${sessionId}/history`);
+            const data = await response.json();
+            
+            // 加载历史消息到会话中
+            session.messages = data.map(msg => ({
+                id: msg.id,
+                role: msg.role,
+                content: msg.content,
+                timestamp: msg.created_at,
+                type: 'text'
+            }));
+            
+            console.log('已加载会话:', sessionId, '消息数:', data.length);
+        } else {
+            console.log('切换到会话:', sessionId, '已有消息数:', session.messages.length);
+        }
     } catch (error) {
         console.error('加载会话失败:', error);
         alert('加载历史会话失败: ' + error.message);

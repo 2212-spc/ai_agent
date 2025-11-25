@@ -448,6 +448,8 @@
             color: var(--text-primary);
             font-size: 15px;
             max-width: 780px;
+            position: relative;
+            margin-bottom: 32px; /* 为复制按钮留空间 */
         }
         
         .user-message .message-content {
@@ -728,8 +730,8 @@
             font-size: 0.9em;
         }
         
-        /* 复制按钮 */
-        .copy-btn {
+        /* 代码块复制按钮 */
+        pre .copy-btn {
             position: absolute;
             top: 8px;
             right: 8px;
@@ -745,20 +747,20 @@
             font-weight: 500;
         }
         
-        [data-theme="dark"] .copy-btn {
+        [data-theme="dark"] pre .copy-btn {
             background: var(--bg-tertiary) !important;
             border: 1px solid var(--border-primary);
             color: var(--text-secondary) !important;
         }
         
-        .copy-btn:hover {
+        pre .copy-btn:hover {
             background: #4e5564 !important;
             border-color: #6c737f;
             color: #ffffff !important;
             transform: translateY(-1px);
         }
         
-        [data-theme="dark"] .copy-btn:hover {
+        [data-theme="dark"] pre .copy-btn:hover {
             background: var(--bg-hover) !important;
             border-color: var(--border-secondary);
             color: var(--text-primary) !important;
@@ -3138,4 +3140,258 @@
             display: flex;
             gap: 8px;
             justify-content: flex-end;
+        }
+        
+        /* ===== 消息复制按钮样式 ===== */
+        .message {
+            position: relative;
+        }
+        
+        /* 复制按钮 - 位于消息内容框右下角外面 */
+        .message-content > .copy-btn {
+            position: absolute !important;
+            bottom: -26px !important; /* 位于消息内容框下方，框外面 */
+            right: 0 !important; /* 靠消息框右侧对齐 */
+            top: auto !important; /* 覆盖可能的top值 */
+            display: inline-flex !important;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px !important;
+            background: transparent !important;
+            border: none !important;
+            border-radius: 4px;
+            color: var(--text-tertiary) !important;
+            font-size: 12px !important;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.2s ease;
+            z-index: 1;
+            white-space: nowrap;
+        }
+        
+        .message:hover .message-content > .copy-btn {
+            opacity: 1;
+        }
+        
+        .message-content > .copy-btn:hover {
+            background: rgba(99, 102, 241, 0.1) !important;
+            color: var(--primary-color) !important;
+            transform: none !important; /* 不要移动 */
+        }
+        
+        .message-content > .copy-btn:active {
+            background: rgba(99, 102, 241, 0.15) !important;
+        }
+        
+        .message-content > .copy-btn.copied {
+            color: var(--success-color) !important;
+            background: rgba(16, 185, 129, 0.1) !important;
+        }
+        
+        .message-content > .copy-btn svg {
+            flex-shrink: 0;
+            width: 14px;
+            height: 14px;
+        }
+        
+        .message-content > .copy-btn .copy-text {
+            font-weight: 500;
+        }
+        
+        /* 移动端优化 - 始终显示复制按钮 */
+        @media (max-width: 768px) {
+            .message-content > .copy-btn {
+                opacity: 0.6;
+            }
+            
+            .message:hover .message-content > .copy-btn {
+                opacity: 1;
+            }
+        }
+        
+        /* ===== 编辑按钮样式 ===== */
+        .message-content > .edit-btn {
+            position: absolute !important;
+            bottom: -26px !important;
+            right: 70px !important; /* 在复制按钮右侧 */
+            top: auto !important;
+            display: inline-flex !important;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px !important;
+            background: transparent !important;
+            border: none !important;
+            border-radius: 4px;
+            color: var(--text-tertiary) !important;
+            font-size: 12px !important;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.2s ease;
+            z-index: 1;
+            white-space: nowrap;
+        }
+        
+        .message:hover .message-content > .edit-btn {
+            opacity: 1;
+        }
+        
+        .message-content > .edit-btn:hover {
+            background: rgba(255, 152, 0, 0.1) !important;
+            color: var(--warning-color) !important;
+            transform: none !important;
+        }
+        
+        .message-content > .edit-btn:active {
+            background: rgba(255, 152, 0, 0.15) !important;
+        }
+        
+        .message-content > .edit-btn svg {
+            flex-shrink: 0;
+            width: 14px;
+            height: 14px;
+        }
+        
+        .message-content > .edit-btn .edit-text {
+            font-weight: 500;
+        }
+        
+        /* ===== 编辑模式样式 ===== */
+        /* 编辑模式：模糊其他内容 */
+        body.editing-mode .session-messages .message:not(.editing-active) {
+            filter: blur(4px);
+            opacity: 0.3;
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+        
+        /* 编辑模式：模糊其他会话容器 */
+        body.editing-mode .messages-container > *:not(:has(.editing-active)) {
+            filter: blur(4px);
+            opacity: 0.3;
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+        
+        /* 编辑模式：高亮正在编辑的消息 */
+        .message.editing-active {
+            transform: scale(1.08);
+            z-index: 100;
+            position: relative;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            filter: none !important;
+            opacity: 1 !important;
+        }
+        
+        .message.editing-active .message-content {
+            box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.5), 
+                        0 12px 32px rgba(255, 152, 0, 0.25),
+                        0 0 60px rgba(255, 152, 0, 0.15);
+            background: var(--bg-primary);
+            border-radius: 12px;
+            padding: 20px !important;
+            font-size: 15.5px;
+            line-height: 1.6;
+        }
+        
+        /* 编辑模式：确保消息头部也清晰 */
+        .message.editing-active .message-header {
+            opacity: 1 !important;
+            filter: none !important;
+            transform: scale(1.05);
+        }
+        
+        /* 编辑模式：增强对比度 */
+        .message.editing-active .message-content::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            background: linear-gradient(135deg, rgba(255, 152, 0, 0.1), rgba(255, 107, 107, 0.1));
+            border-radius: 14px;
+            z-index: -1;
+            animation: editGlow 2s ease-in-out infinite;
+        }
+        
+        @keyframes editGlow {
+            0%, 100% {
+                opacity: 0.5;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.8;
+                transform: scale(1.02);
+            }
+        }
+        
+        /* 编辑提示条 */
+        .editing-hint {
+            background: linear-gradient(90deg, #ff9800 0%, #ff6b6b 100%);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px 8px 0 0;
+            margin-bottom: -1px;
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .hint-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        
+        .hint-icon {
+            font-size: 18px;
+        }
+        
+        .hint-text {
+            flex: 1;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .hint-cancel {
+            padding: 6px 16px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            color: white;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .hint-cancel:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        /* 编辑模式：输入框样式 */
+        body.editing-mode .input-wrapper {
+            box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.3);
+            border-radius: 8px;
+        }
+        
+        body.editing-mode .message-input {
+            border-color: var(--warning-color);
+        }
+        
+        /* 移动端优化 - 编辑按钮 */
+        @media (max-width: 768px) {
+            .message-content > .edit-btn {
+                opacity: 0.6;
+            }
+            
+            .message:hover .message-content > .edit-btn {
+                opacity: 1;
+            }
         }

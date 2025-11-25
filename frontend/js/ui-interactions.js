@@ -754,13 +754,9 @@ function loadHistorySession(sessionId) {
     
     if (window.chatManager) {
         // 使用新的 switchToSession 方法（支持多会话并发）
+        // switchToSession 会自动加载历史消息（如果需要）
         if (typeof window.chatManager.switchToSession === 'function') {
             window.chatManager.switchToSession(sessionId);
-        }
-        
-        // 加载历史消息
-        if (typeof window.chatManager.loadHistoryMessages === 'function') {
-            window.chatManager.loadHistoryMessages(sessionId);
         }
     }
     
