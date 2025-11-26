@@ -13,7 +13,8 @@ function getIcon(type) {
     return icons[type] || icons.info;
 }
 
-function truncateText(text, maxLength = 100) {
+// 不需要truncateText，因为已经在AgentChat.vue中截取了
+function truncateText(text, maxLength = 200) {
     if (!text) return '';
     return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
 }
@@ -33,7 +34,7 @@ function truncateText(text, maxLength = 100) {
                 <div class="notification-content">
                     <div v-if="notification.isRich">
                         <div class="notification-title">{{ notification.title }}</div>
-                        <div class="notification-message">{{ truncateText(notification.content) }}</div>
+                        <div class="notification-body">{{ notification.content }}</div>
                     </div>
                     <div v-else class="notification-message">{{ notification.message }}</div>
                 </div>
@@ -108,13 +109,22 @@ function truncateText(text, maxLength = 100) {
 }
 
 .notification-title {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
-    color: var(--text-primary, #333);
-    margin-bottom: 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: var(--text-primary, #1a1a1a);
+    margin-bottom: 6px;
+    line-height: 1.4;
+    word-break: break-word;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+
+.notification-body {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-secondary, #666);
+    line-height: 1.6;
+    word-break: break-word;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
 }
 
 .notification-message {

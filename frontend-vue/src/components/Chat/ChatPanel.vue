@@ -225,9 +225,9 @@ watch(messages, () => {
                     {{ msg.role === 'user' ? '👤' : msg.role === 'assistant' ? '🤖' : '⚠️' }}
                 </div>
                 <div class="message-content-wrapper">
-                    <div class="message-content">
-                        <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
-                        <div class="message-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</div>
+                <div class="message-content">
+                    <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
+                    <div class="message-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</div>
                     </div>
                     
                     <!-- 操作按钮 -->
