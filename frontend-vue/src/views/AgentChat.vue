@@ -153,10 +153,20 @@ function startResizeTimeline(event) {
 function handleBackgroundGenerationComplete(event) {
     const { sessionId, question, answer } = event.detail;
     
+    // 截取问题（限制40字符）
+    const truncatedQuestion = question.length > 40 
+        ? question.substring(0, 40) + '...' 
+        : question;
+    
+    // 截取答案（限制120字符）
+    const truncatedAnswer = answer.length > 120 
+        ? answer.substring(0, 120) + '...' 
+        : answer;
+    
     // 显示富文本通知
     showRich(
-        question,
-        answer,
+        truncatedQuestion,
+        truncatedAnswer,
         NOTIFICATION_TYPES.SUCCESS,
         6000
     );

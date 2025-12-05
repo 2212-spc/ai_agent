@@ -132,8 +132,12 @@ class ChatManager {
             session.containerDiv.style.display = 'block';
             console.log('✅ 显示会话容器:', this.currentSessionId);
             
-            // 隐藏空状态
-            this.hideEmptyState();
+            // 根据会话是否有消息决定是否显示空状态
+            if (session.containerDiv.children.length > 0) {
+                this.hideEmptyState();
+            } else {
+                this.showEmptyState();
+            }
         }
     }
     
@@ -144,6 +148,16 @@ class ChatManager {
         const emptyState = document.querySelector('.empty-state');
         if (emptyState) {
             emptyState.style.display = 'none';
+        }
+    }
+    
+    /**
+     * 显示空状态
+     */
+    showEmptyState() {
+        const emptyState = document.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.style.display = 'flex';
         }
     }
     
@@ -355,15 +369,25 @@ class ChatManager {
                     console.log('📨 收到事件:', eventType, eventData);
                         }
                     
-                    if (eventType === 'content' || eventType === 'message') {
-                        fullContent += eventData.content || eventData.message || '';
+                    if (eventType === 'content' || eventType === 'message' || eventType === 'assistant_final' || eventType === 'assistant_draft') {
+                        const newContent = eventData.content || eventData.message || '';
+                        if (newContent) {
+                            // assistant_final和assistant_draft事件通常包含完整内容，直接替换
+                            if (eventType === 'assistant_final' || eventType === 'assistant_draft') {
+                                fullContent = newContent;
+                                console.log('✅ 收到完整答案，类型:', eventType, '长度:', fullContent.length, 'SessionId:', sessionId);
+                            } else {
+                                fullContent += newContent;
+                                console.log('📝 累积内容长度:', fullContent.length, 'SessionId:', sessionId);
+                            }
                             // 更新消息内容（DOM始终存在，无论是否当前会话）
-                        this.updateMessageContent(contentDiv, fullContent);
+                            this.updateMessageContent(contentDiv, fullContent);
                             
                             // 只在当前会话时才滚动
                             if (isCurrentSession() && this.mainContainer) {
                                 this.mainContainer.scrollTop = this.mainContainer.scrollHeight;
                             }
+                        }
                     } else if (eventType === 'node' || eventType === 'status') {
                             // 只在当前会话时更新时间线
                             if (isCurrentSession()) {
@@ -377,6 +401,8 @@ class ChatManager {
             // 保存完整回答
             session.lastAnswer = fullContent;
         
+        console.log('🎯 流式传输完成，准备最终渲染 - Session:', sessionId, '内容长度:', fullContent.length);
+        
         // 最终渲染
         this.finalizeMessage(contentDiv, fullContent);
         
@@ -385,6 +411,7 @@ class ChatManager {
             
             // 设置状态为已完成
             this.setSessionStatus(sessionId, this.SESSION_STATUS.COMPLETED);
+            console.log('✅ 会话状态已设置为COMPLETED - Session:', sessionId);
             
             // 如果不是当前会话，发送通知
             if (!isCurrentSession()) {
@@ -413,7 +440,20 @@ class ChatManager {
      * 更新消息内容
      */
     updateMessageContent(contentDiv, content) {
-        if (!content) return;
+        // 如果内容为空，不做任何处理（保持loading状态）
+        if (!content || content.trim() === '') {
+            console.log('⚠️ updateMessageContent: 内容为空，保持loading状态');
+            return;
+        }
+        
+        console.log('🔄 updateMessageContent: 更新内容，长度:', content.length);
+        
+        // 有内容时才移除loading状态
+        const loadingDiv = contentDiv.querySelector('.loading-enhanced');
+        if (loadingDiv) {
+            console.log('🗑️ 移除loading状态');
+            loadingDiv.remove();
+        }
         
         if (typeof marked !== 'undefined') {
             const rendered = marked.parse(content);
@@ -445,12 +485,25 @@ class ChatManager {
      * 最终渲染消息
      */
     async finalizeMessage(contentDiv, content) {
-        if (!content) {
-            console.warn('⚠️ 内容为空，无法渲染');
-            return;
+        console.log('🎨 最终渲染，内容长度:', content ? content.length : 0);
+        
+        // 移除loading状态（无论内容是否为空）
+        const loadingDiv = contentDiv.querySelector('.loading-enhanced');
+        if (loadingDiv) {
+            loadingDiv.remove();
         }
         
-        console.log('🎨 最终渲染，内容长度:', content.length);
+        // 如果没有内容，显示提示信息
+        if (!content || content.trim() === '') {
+            console.warn('⚠️ 内容为空');
+            contentDiv.innerHTML = '<p style="color: var(--text-secondary); font-style: italic;">⚠️ 生成内容为空</p>';
+            // 显示复制按钮（即使内容为空）
+            const copyBtn = contentDiv.querySelector('.copy-btn');
+            if (copyBtn) {
+                copyBtn.style.display = '';
+            }
+            return;
+        }
         
         // 保存原始文本到data属性
         contentDiv.dataset.originalText = content;
@@ -748,9 +801,14 @@ class ChatManager {
                 }
             });
             
-            // 如果有消息，隐藏空状态
+            // 根据消息数量决定是否显示空状态
             if (messages.length > 0) {
                 this.hideEmptyState();
+            } else {
+                // 如果是当前会话且没有消息，显示空状态
+                if (sessionId === this.currentSessionId) {
+                    this.showEmptyState();
+                }
             }
             
         } catch (error) {
@@ -1159,6 +1217,18 @@ class ChatManager {
         if (session && session.abortController) {
             session.abortController.abort();
             session.abortController = null;
+            
+            // 移除loading状态
+            const currentAgentMessage = document.getElementById('currentAgentMessage');
+            if (currentAgentMessage) {
+                const contentDiv = currentAgentMessage.querySelector('.message-content');
+                const loadingDiv = contentDiv?.querySelector('.loading-enhanced');
+                if (loadingDiv) {
+                    console.log('🗑️ 停止生成：移除loading状态');
+                    loadingDiv.remove();
+                }
+            }
+            
             this.setSessionStatus(sessionId, this.SESSION_STATUS.IDLE);
             notificationManager.show('⏹️ 已停止生成', 'info');
         }
@@ -1229,6 +1299,9 @@ class ChatManager {
             if (newSession.containerDiv.children.length === 0) {
                 console.log('📥 容器为空，加载历史消息...');
                 this.loadHistoryMessages(sessionId);
+            } else {
+                // 如果有消息，隐藏空状态
+                this.hideEmptyState();
             }
             
             // 恢复滚动位置（延迟到DOM渲染完成）
@@ -1263,22 +1336,36 @@ class ChatManager {
     showCompletionNotification(sessionId, question, answer) {
         console.log('📢 后台生成完成通知 - Session:', sessionId);
         
-        // 截取问题和答案
-        const truncatedQuestion = question.length > 30 
-            ? question.substring(0, 30) + '...' 
+        // 截取问题（限制40字符）
+        const truncatedQuestion = question.length > 40 
+            ? question.substring(0, 40) + '...' 
             : question;
         
-        const truncatedAnswer = answer.length > 100 
-            ? answer.substring(0, 100) + '...' 
+        // 截取答案（限制120字符）
+        const truncatedAnswer = answer.length > 120 
+            ? answer.substring(0, 120) + '...' 
             : answer;
         
         // 创建富文本通知
         const notificationHtml = `
-            <div style="max-width: 350px;">
-                <div style="font-weight: 600; margin-bottom: 6px; color: var(--text-primary);">
+            <div style="max-width: 380px; padding: 4px 0;">
+                <div style="
+                    font-weight: 700;
+                    font-size: 15px;
+                    margin-bottom: 8px;
+                    color: var(--text-primary);
+                    line-height: 1.4;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+                ">
                     ${this.escapeHtml(truncatedQuestion)}
                 </div>
-                <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
+                <div style="
+                    font-size: 13px;
+                    font-weight: 400;
+                    color: var(--text-secondary);
+                    line-height: 1.6;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+                ">
                     ${this.escapeHtml(truncatedAnswer)}
                 </div>
             </div>
@@ -1286,7 +1373,7 @@ class ChatManager {
         
         // 显示通知（使用增强的通知系统）
         if (window.notificationManager && window.notificationManager.showRich) {
-            window.notificationManager.showRich(notificationHtml, 'success', 5000);
+            window.notificationManager.showRich(notificationHtml, 'success', 6000);
         } else {
             notificationManager.show(`✅ 对话生成完成：${truncatedQuestion}`, 'success', 3000);
         }

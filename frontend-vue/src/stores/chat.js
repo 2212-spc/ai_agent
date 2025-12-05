@@ -85,12 +85,34 @@ export const useChatStore = defineStore('chat', () => {
     // 停止当前会话生成
     function stopGeneration(sessionId) {
         const sid = sessionId || currentSessionId.value;
+        
+        console.log('🛑 开始停止生成 - Session:', sid);
+        console.log('🛑 当前abortControllers:', Array.from(abortControllers.value.keys()));
+        
+        // 停止请求
         if (abortControllers.value.has(sid)) {
-            abortControllers.value.get(sid).abort();
+            console.log('🛑 找到AbortController，执行abort');
+            const controller = abortControllers.value.get(sid);
+            controller.abort();
             abortControllers.value.delete(sid);
-            setSessionStatus(sid, SESSION_STATUS.IDLE);
-            isLoading.value = false;
+        } else {
+            console.log('⚠️ 未找到AbortController');
         }
+        
+        // 无论是否有abortController，都设置状态为IDLE
+        // 这样可以确保loading状态被清除
+        const session = sessions.value.get(sid);
+        if (session) {
+            console.log('🛑 设置会话状态为IDLE，当前状态:', session.status);
+        }
+        
+        setSessionStatus(sid, SESSION_STATUS.IDLE);
+        isLoading.value = false;
+        
+        // 强制触发响应式更新
+        sessions.value = new Map(sessions.value);
+        
+        console.log('✅ 已停止生成 - Session:', sid, '新状态:', SESSION_STATUS.IDLE);
     }
 
     async function sendMessage(content, onStream) {
@@ -161,7 +183,7 @@ export const useChatStore = defineStore('chat', () => {
             abortControllers.value.set(sessionId, controller);
             
             // 根据模式选择不同的API端点
-            const endpoint = isMultiAgentMode.value ? '/chat/agent/stream' : '/chat/stream';
+            const endpoint = isMultiAgentMode.value ? '/chat/multi-agent/stream' : '/chat/agent/stream';
             
             const response = await fetch(`${apiBase}${endpoint}`, {
                 method: 'POST',
@@ -199,7 +221,10 @@ export const useChatStore = defineStore('chat', () => {
             
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (done) {
+                    console.log('✅ 流式传输完成 - Session:', sessionId);
+                    break;
+                }
                 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
@@ -210,7 +235,7 @@ export const useChatStore = defineStore('chat', () => {
                     
                     const data = line.slice(6);
                     if (data === '[DONE]') {
-                        setSessionStatus(sessionId, SESSION_STATUS.COMPLETED);
+                        console.log('📨 收到[DONE]标记 - Session:', sessionId);
                         break;
                     }
                     
@@ -218,11 +243,21 @@ export const useChatStore = defineStore('chat', () => {
                         const parsed = JSON.parse(data);
                         
                         // 处理不同类型的事件
-                        if (parsed.type === 'content') {
-                            // 直接更新会话的消息内容
-                            session.messages[msgIndex].content = parsed.content;
-                            if (onStream) {
-                                onStream(parsed.content, sessionId);
+                        if (parsed.type === 'content' || parsed.type === 'message' || parsed.type === 'assistant_final' || parsed.type === 'assistant_draft') {
+                            // 获取内容
+                            const content = parsed.content || parsed.message || '';
+                            if (content) {
+                                // 使用响应式更新：创建新对象替换旧消息
+                                const updatedMessage = { ...session.messages[msgIndex], content };
+                                session.messages.splice(msgIndex, 1, updatedMessage);
+                                
+                                // 强制触发响应式更新
+                                sessions.value = new Map(sessions.value);
+                                
+                                console.log('📝 收到内容，类型:', parsed.type, '长度:', content.length, 'SessionId:', sessionId);
+                                if (onStream) {
+                                    onStream(content, sessionId);
+                                }
                             }
                         } else if (parsed.type === 'node') {
                             addTimelineStep({
@@ -238,6 +273,10 @@ export const useChatStore = defineStore('chat', () => {
                     }
                 }
             }
+            
+            // 流式传输完成，设置状态为已完成
+            console.log('🎨 设置会话状态为已完成 - Session:', sessionId);
+            setSessionStatus(sessionId, SESSION_STATUS.COMPLETED);
             
             // 更新timeline步骤为完成状态
             if (useKnowledgeBase.value && timelineSteps.value.length > 1) {
@@ -274,8 +313,26 @@ export const useChatStore = defineStore('chat', () => {
             return session.messages[msgIndex].content;
         } catch (error) {
             if (error.name === 'AbortError') {
-                console.log('请求已取消');
+                console.log('⏹️ 请求已取消 - Session:', sessionId);
+                
+                // 在当前消息中添加停止标记
+                if (session.messages[msgIndex]) {
+                    const currentContent = session.messages[msgIndex].content;
+                    if (!currentContent || currentContent.trim() === '') {
+                        // 如果没有内容，显示停止提示
+                        const stoppedMessage = { ...session.messages[msgIndex], content: '⏹️ 已停止生成' };
+                        session.messages.splice(msgIndex, 1, stoppedMessage);
+                        sessions.value = new Map(sessions.value);
+                    } else {
+                        // 如果已有部分内容，在末尾添加停止标记
+                        const stoppedMessage = { ...session.messages[msgIndex], content: currentContent + '\n\n⏹️ *已停止生成*' };
+                        session.messages.splice(msgIndex, 1, stoppedMessage);
+                        sessions.value = new Map(sessions.value);
+                    }
+                }
+                
                 setSessionStatus(sessionId, SESSION_STATUS.IDLE);
+                isLoading.value = false;
                 return;
             }
             
@@ -417,7 +474,7 @@ export const useChatStore = defineStore('chat', () => {
             abortControllers.value.set(sessionId, controller);
             
             // 选择API端点
-            const endpoint = isMultiAgentMode.value ? '/chat/agent/stream' : '/chat/stream';
+            const endpoint = isMultiAgentMode.value ? '/chat/multi-agent/stream' : '/chat/agent/stream';
             
             const response = await fetch(`${apiBase}${endpoint}`, {
                 method: 'POST',
@@ -455,7 +512,10 @@ export const useChatStore = defineStore('chat', () => {
             
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (done) {
+                    console.log('✅ 流式传输完成（编辑模式） - Session:', sessionId);
+                    break;
+                }
                 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
@@ -466,17 +526,28 @@ export const useChatStore = defineStore('chat', () => {
                     
                     const data = line.slice(6);
                     if (data === '[DONE]') {
-                        setSessionStatus(sessionId, SESSION_STATUS.COMPLETED);
+                        console.log('📨 收到[DONE]标记（编辑模式） - Session:', sessionId);
                         break;
                     }
                     
                     try {
                         const parsed = JSON.parse(data);
                         
-                        if (parsed.type === 'content') {
-                            session.messages[msgIndex].content = parsed.content;
-                            if (onStream) {
-                                onStream(parsed.content, sessionId);
+                        if (parsed.type === 'content' || parsed.type === 'message' || parsed.type === 'assistant_final' || parsed.type === 'assistant_draft') {
+                            // 获取内容
+                            const content = parsed.content || parsed.message || '';
+                            if (content) {
+                                // 使用响应式更新：创建新对象替换旧消息
+                                const updatedMessage = { ...session.messages[msgIndex], content };
+                                session.messages.splice(msgIndex, 1, updatedMessage);
+                                
+                                // 强制触发响应式更新
+                                sessions.value = new Map(sessions.value);
+                                
+                                console.log('📝 收到内容（编辑模式），类型:', parsed.type, '长度:', content.length, 'SessionId:', sessionId);
+                                if (onStream) {
+                                    onStream(content, sessionId);
+                                }
                             }
                         } else if (parsed.type === 'node') {
                             addTimelineStep({
@@ -492,6 +563,10 @@ export const useChatStore = defineStore('chat', () => {
                     }
                 }
             }
+            
+            // 流式传输完成，设置状态为已完成
+            console.log('🎨 设置会话状态为已完成（编辑模式） - Session:', sessionId);
+            setSessionStatus(sessionId, SESSION_STATUS.COMPLETED);
             
             // 更新timeline步骤为完成状态
             if (useKnowledgeBase.value && timelineSteps.value.length > 1) {
@@ -516,8 +591,26 @@ export const useChatStore = defineStore('chat', () => {
             return session.messages[msgIndex].content;
         } catch (error) {
             if (error.name === 'AbortError') {
-                console.log('请求已取消');
+                console.log('⏹️ 请求已取消（编辑模式） - Session:', sessionId);
+                
+                // 在当前消息中添加停止标记
+                if (session.messages[msgIndex]) {
+                    const currentContent = session.messages[msgIndex].content;
+                    if (!currentContent || currentContent.trim() === '') {
+                        // 如果没有内容，显示停止提示
+                        const stoppedMessage = { ...session.messages[msgIndex], content: '⏹️ 已停止生成' };
+                        session.messages.splice(msgIndex, 1, stoppedMessage);
+                        sessions.value = new Map(sessions.value);
+                    } else {
+                        // 如果已有部分内容，在末尾添加停止标记
+                        const stoppedMessage = { ...session.messages[msgIndex], content: currentContent + '\n\n⏹️ *已停止生成*' };
+                        session.messages.splice(msgIndex, 1, stoppedMessage);
+                        sessions.value = new Map(sessions.value);
+                    }
+                }
+                
                 setSessionStatus(sessionId, SESSION_STATUS.IDLE);
+                isLoading.value = false;
                 return;
             }
             
