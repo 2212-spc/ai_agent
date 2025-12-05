@@ -91,9 +91,6 @@
                         <button class="btn-icon" onclick="openConversation('${conv.session_id}')" title="继续对话">
                             ▶️
                         </button>
-                        <button class="btn-icon" onclick="openSettings('${conv.session_id}')" title="设置">
-                            ⚙️
-                        </button>
                         <button class="btn-icon" onclick="deleteConversation('${conv.session_id}')" title="删除">
                             🗑️
                         </button>
@@ -108,9 +105,7 @@
         }
 
         // 打开设置
-        function openSettings(sessionId) {
-            window.location.href = `conversation_settings.html?session_id=${sessionId}`;
-        }
+        // 设置功能已移除，记忆管理请访问导航栏的"记忆管理"
 
         // 删除对话
         async function deleteConversation(sessionId) {

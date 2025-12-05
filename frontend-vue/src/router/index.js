@@ -31,6 +31,11 @@ const routes = [
         component: () => import('../views/PromptManagement.vue')
     },
     {
+        path: '/memory',
+        name: 'Memory',
+        component: () => import('../views/Memory.vue')
+    },
+    {
         path: '/login',
         name: 'Login',
         component: () => import('../views/Login.vue')
@@ -39,11 +44,6 @@ const routes = [
         path: '/register',
         name: 'Register',
         component: () => import('../views/Register.vue')
-    },
-    {
-        path: '/memory',
-        name: 'Memory',
-        component: () => import('../views/Memory.vue')
     }
 ];
 
