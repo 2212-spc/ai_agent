@@ -31,6 +31,7 @@
         let allConversations = [];
         let currentPage = 0;
         const pageSize = 20;
+        let selectedSessions = new Set();
 
         // 获取用户信息
         function getUserInfo() {
@@ -61,6 +62,8 @@
 
                 const conversations = await response.json();
                 allConversations = conversations;
+                selectedSessions.clear();
+                updateBulkActions();
                 renderConversations(conversations);
             } catch (error) {
                 console.error('加载会话失败:', error);
@@ -77,8 +80,14 @@
                 return;
             }
 
-            listEl.innerHTML = conversations.map(conv => `
-                <div class="conversation-item card card-hoverable" onclick="openConversation('${conv.session_id}')">
+            listEl.innerHTML = conversations.map(conv => {
+                const checked = selectedSessions.has(conv.session_id) ? 'checked' : '';
+                const selectedClass = selectedSessions.has(conv.session_id) ? 'selected' : '';
+                return `
+                <div class="conversation-item card card-hoverable ${selectedClass}" onclick="openConversation('${conv.session_id}')">
+                    <div class="conversation-select" onclick="event.stopPropagation();">
+                        <input type="checkbox" ${checked} onchange="toggleSelection('${conv.session_id}', this.checked)">
+                    </div>
                     <div class="conversation-info">
                         <div class="conversation-title">${escapeHtml(conv.title)}</div>
                         <div class="conversation-preview">${escapeHtml(conv.preview)}</div>
@@ -96,7 +105,8 @@
                         </button>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         // 打开对话（继续对话）
@@ -107,7 +117,7 @@
         // 打开设置
         // 设置功能已移除，记忆管理请访问导航栏的"记忆管理"
 
-        // 删除对话
+        // 删除对话（单个）
         async function deleteConversation(sessionId) {
             if (!confirm('确定要删除这个对话吗？删除后将无法恢复。')) {
                 return;
@@ -131,6 +141,79 @@
             } catch (error) {
                 console.error('删除失败:', error);
                 alert('删除失败，请重试');
+            }
+        }
+
+        // 批量删除
+        async function deleteSelected() {
+            if (selectedSessions.size === 0) {
+                alert('请先选择要删除的会话');
+                return;
+            }
+            if (!confirm(`确定要删除选中的 ${selectedSessions.size} 条会话吗？此操作不可恢复。`)) {
+                return;
+            }
+
+            const userInfo = getUserInfo();
+            const userId = userInfo?.user_id || null;
+            let success = 0;
+            let failed = 0;
+
+            for (const sessionId of Array.from(selectedSessions)) {
+                try {
+                    let url = `${API_BASE}/conversation/${sessionId}`;
+                    if (userId) url += `?user_id=${userId}`;
+                    const res = await fetch(url, { method: 'DELETE' });
+                    if (!res.ok) throw new Error();
+                    success += 1;
+                } catch (e) {
+                    failed += 1;
+                }
+            }
+
+            alert(`删除完成：成功 ${success} 条${failed ? `，失败 ${failed} 条` : ''}`);
+            loadConversations();
+        }
+
+        // 选择逻辑
+        function toggleSelection(sessionId, checked) {
+            if (checked) {
+                selectedSessions.add(sessionId);
+            } else {
+                selectedSessions.delete(sessionId);
+            }
+            updateBulkActions();
+            // 重新渲染以更新选中样式
+            renderConversations(allConversations);
+        }
+
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAllCheckbox');
+            if (selectAll.checked) {
+                allConversations.forEach(c => selectedSessions.add(c.session_id));
+            } else {
+                selectedSessions.clear();
+            }
+            updateBulkActions();
+            renderConversations(allConversations);
+        }
+
+        function updateBulkActions() {
+            const bar = document.getElementById('bulkActions');
+            const countText = document.getElementById('selectedCountText');
+            const selectAll = document.getElementById('selectAllCheckbox');
+            const total = allConversations.length;
+            const selectedCount = selectedSessions.size;
+
+            if (bar) {
+                bar.style.display = selectedCount > 0 ? 'flex' : 'none';
+            }
+            if (countText) {
+                countText.textContent = `已选 ${selectedCount} 条`;
+            }
+            if (selectAll) {
+                selectAll.checked = total > 0 && selectedCount === total;
+                selectAll.indeterminate = selectedCount > 0 && selectedCount < total;
             }
         }
 

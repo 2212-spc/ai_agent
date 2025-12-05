@@ -187,12 +187,5 @@
             }
         });
 
-        // 检查是否已登录
-        window.onload = function() {
-            const accessToken = localStorage.getItem('access_token');
-            if (accessToken) {
-                // 如果已登录，直接跳转到聊天页面
-                window.location.href = 'agent_chat.html';
-            }
-        };
+        // 保留注册入口：不再自动跳转到聊天页，避免已登录状态下无法注册新账号
     

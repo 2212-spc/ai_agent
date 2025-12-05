@@ -227,27 +227,32 @@ def find_similar_memory(
     """
     查找与新记忆相似的已有记忆
     
+    注意：去重检查时全局搜索（忽略 session_id），避免在不同会话中创建重复记忆
+    
     Args:
         session: 数据库会话
         new_content: 新记忆的内容
         memory_type: 记忆类型
         user_id: 用户ID（可选）
-        session_id: 会话ID（可选，用于会话隔离）
+        session_id: 会话ID（可选，但在去重时会被忽略）
         threshold: 相似度阈值（0-1），超过此值认为相似
     
     Returns:
         (相似记忆, 相似度) 或 None
     """
-    # 获取同类型的记忆
+    # 获取同类型的记忆（去重时全局搜索，不限制 session_id）
     similar_memories = search_memories(
         session=session,
         memory_type=memory_type,
         user_id=user_id,
-        session_id=session_id,
-        limit=20,
+        session_id=None,  # 🔧 去重时忽略 session_id，全局搜索避免重复
+        limit=50,  # 增加搜索范围以提高去重准确率
     )
     
+    logger.info(f"🔍 去重检查：新记忆='{new_content[:50]}...'，找到 {len(similar_memories)} 条同类型记忆")
+    
     if not similar_memories:
+        logger.info(f"✨ 没有找到相似记忆，将创建新记忆")
         return None
     
     best_match = None
@@ -263,14 +268,19 @@ def find_similar_memory(
         # 综合相似度（文本相似度权重0.6，Jaccard相似度权重0.4）
         combined_sim = text_sim * 0.6 + jaccard_sim * 0.4
         
+        logger.debug(f"相似度对比: 新记忆='{new_content[:50]}...' vs 已有='{memory.content[:50]}...' => text_sim={text_sim:.3f}, jaccard_sim={jaccard_sim:.3f}, combined={combined_sim:.3f}")
+        
         if combined_sim > best_similarity:
             best_similarity = combined_sim
             best_match = memory
     
     # 如果相似度超过阈值，返回最佳匹配
     if best_match and best_similarity >= threshold:
-        logger.info(f"发现相似记忆: {best_match.id}, 相似度: {best_similarity:.2f}")
+        logger.info(f"🎯 发现相似记忆: {best_match.id}, 相似度: {best_similarity:.3f} (阈值={threshold}), 将合并")
         return (best_match, best_similarity)
+    
+    if best_match:
+        logger.info(f"⚠️ 最相似记忆相似度 {best_similarity:.3f} 未达到阈值 {threshold}，将创建新记忆")
     
     return None
 
@@ -834,7 +844,7 @@ async def save_conversation_and_extract_memories(
     saved_memories = []
     for mem in extracted_memories:
         try:
-            # 使用去重保存
+            # 使用去重保存（降低阈值，提高去重灵敏度）
             memory_record = save_memory_with_dedup(
                 session=session,
                 content=mem["content"],
@@ -843,7 +853,7 @@ async def save_conversation_and_extract_memories(
                 user_id=user_id,
                 session_id=session_id,
                 metadata={"extracted_at": "auto", **(metadata or {})},
-                threshold=0.75,
+                threshold=0.65,  # 🔧 从 0.75 降低到 0.65，提高去重灵敏度
             )
             
             # 向量化

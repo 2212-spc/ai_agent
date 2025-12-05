@@ -2890,6 +2890,106 @@ async def reindex_memories_api(
         raise HTTPException(status_code=500, detail=f"重新索引失败: {str(e)}")
 
 
+@app.post("/api/memories/deduplicate")
+async def deduplicate_memories_api(
+    threshold: float = 0.7,
+    dry_run: bool = False,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_db_session),
+) -> Dict[str, Any]:
+    """
+    清理重复的记忆
+    
+    Args:
+        threshold: 相似度阈值（0-1），默认 0.7
+        dry_run: 仅检测不删除，默认 False
+    """
+    from .memory_service import (
+        calculate_text_similarity,
+        calculate_jaccard_similarity,
+        delete_memory_complete,
+    )
+    
+    try:
+        # 获取所有记忆
+        all_memories = search_memories(session=session, limit=10000)
+        
+        duplicates = []
+        processed = set()
+        
+        # 按类型分组
+        by_type = {}
+        for mem in all_memories:
+            if mem.memory_type not in by_type:
+                by_type[mem.memory_type] = []
+            by_type[mem.memory_type].append(mem)
+        
+        # 检测每个类型中的重复
+        for memory_type, memories in by_type.items():
+            for i, mem1 in enumerate(memories):
+                if mem1.id in processed:
+                    continue
+                
+                for mem2 in memories[i+1:]:
+                    if mem2.id in processed:
+                        continue
+                    
+                    # 计算相似度
+                    text_sim = calculate_text_similarity(mem1.content, mem2.content)
+                    jaccard_sim = calculate_jaccard_similarity(mem1.content, mem2.content)
+                    combined_sim = text_sim * 0.6 + jaccard_sim * 0.4
+                    
+                    if combined_sim >= threshold:
+                        # 保留较早创建的或访问次数更多的
+                        if mem1.access_count >= mem2.access_count:
+                            keep, remove = mem1, mem2
+                        else:
+                            keep, remove = mem2, mem1
+                        
+                        duplicates.append({
+                            "keep_id": keep.id,
+                            "keep_content": keep.content[:100],
+                            "keep_access_count": keep.access_count,
+                            "remove_id": remove.id,
+                            "remove_content": remove.content[:100],
+                            "similarity": round(combined_sim, 3)
+                        })
+                        
+                        processed.add(remove.id)
+        
+        # 删除重复记忆
+        deleted_count = 0
+        if not dry_run:
+            for dup in duplicates:
+                try:
+                    delete_memory_complete(session, dup["remove_id"], settings)
+                    deleted_count += 1
+                except Exception as e:
+                    logger.error(f"删除重复记忆 {dup['remove_id']} 失败: {e}")
+        
+        result = {
+            "success": True,
+            "total_memories": len(all_memories),
+            "duplicates_found": len(duplicates),
+            "deleted_count": deleted_count if not dry_run else 0,
+            "dry_run": dry_run,
+            "duplicates": duplicates[:20],  # 只返回前20个
+        }
+        
+        if dry_run:
+            result["message"] = f"检测到 {len(duplicates)} 对重复记忆，使用 dry_run=false 来删除"
+        else:
+            result["message"] = f"成功删除 {deleted_count} 条重复记忆"
+        
+        logger.info(f"✅ 记忆去重完成：找到 {len(duplicates)} 对，删除 {deleted_count} 条")
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"记忆去重失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"去重失败: {str(e)}")
+
+
 # ==================== 用户偏好设置 API ====================
 
 @app.get("/api/preferences", response_model=UserPreferencesModel)
