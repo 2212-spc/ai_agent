@@ -103,18 +103,19 @@ class ConversationHistory(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
-class LongTermMemory(Base):
-    """长期记忆 - 存储提取的重要信息、用户偏好、关键事实等"""
+class Memory(Base):
+    """记忆系统 - 存储从对话中提取的重要信息"""
 
-    __tablename__ = "long_term_memory"
+    __tablename__ = "memories"
 
     id = Column(String, primary_key=True)
-    user_id = Column(String, nullable=True)  # 可选的用户ID
-    memory_type = Column(String, nullable=False)  # "fact", "preference", "event", "relationship" 等
+    user_id = Column(String, nullable=True, index=True)  # 用户ID（支持多用户）
+    session_id = Column(String, nullable=True, index=True)  # 会话ID（用于会话隔离）
+    memory_type = Column(String, nullable=False, index=True)  # fact/preference/event/relationship
     content = Column(Text, nullable=False)  # 记忆内容
     importance_score = Column(Integer, nullable=False, default=50)  # 重要性评分 0-100
-    source_conversation_id = Column(String, nullable=True)  # 来源对话ID
-    extra_metadata = Column(Text, nullable=True)  # JSON string，存储额外信息
+    tags = Column(Text, nullable=True)  # JSON 格式的标签列表
+    extra_metadata = Column(Text, nullable=True)  # JSON 格式的额外元数据
     access_count = Column(Integer, nullable=False, default=0)  # 访问次数
     last_accessed_at = Column(DateTime, nullable=True)  # 最后访问时间
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -124,13 +125,28 @@ class LongTermMemory(Base):
 
 
 class SessionConfig(Base):
-    """会话配置 - 控制记忆共享等设置"""
+    """会话配置 - 控制记忆系统的行为"""
 
-    __tablename__ = "session_config"
+    __tablename__ = "session_configs"
 
     session_id = Column(String, primary_key=True)  # 会话ID
     user_id = Column(String, nullable=True)  # 用户ID
-    share_memory_across_sessions = Column(Boolean, nullable=False, default=True)  # 是否跨会话共享记忆
+    share_memory = Column(Boolean, nullable=False, default=True)  # 是否跨会话共享记忆
+    auto_extract = Column(Boolean, nullable=False, default=True)  # 是否自动提取记忆
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class UserPreferences(Base):
+    """用户全局偏好设置 - 存储用户的默认配置"""
+    
+    __tablename__ = "user_preferences"
+    
+    user_id = Column(String, primary_key=True)  # 用户ID（使用 "default" 作为默认用户）
+    default_share_memory = Column(Boolean, nullable=False, default=True)  # 新会话默认是否共享记忆
+    default_auto_extract = Column(Boolean, nullable=False, default=True)  # 新会话默认是否自动提取记忆
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -193,6 +209,29 @@ def init_engine(sqlite_path: Path) -> sessionmaker[Session]:
             autoflush=False,
             expire_on_commit=False,
         )
+        
+        # 初始化默认用户偏好
+        try:
+            session = _SessionLocal()
+            
+            # 检查是否存在默认用户偏好
+            default_prefs = session.get(UserPreferences, "default")
+            if not default_prefs:
+                # 创建默认用户偏好
+                default_prefs = UserPreferences(
+                    user_id="default",
+                    default_share_memory=True,  # 默认开启记忆共享
+                    default_auto_extract=True,  # 默认开启自动提取
+                )
+                session.add(default_prefs)
+                session.commit()
+                import logging
+                logging.getLogger(__name__).info("✅ 已创建默认用户偏好：share_memory=True, auto_extract=True")
+            
+            session.close()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"初始化默认用户偏好失败: {e}")
 
     if _SessionLocal is None:
         raise RuntimeError("Session factory initialisation failed.")
@@ -318,264 +357,6 @@ def get_conversation_history(
             statement = statement.offset(offset)
     
     return list(session.execute(statement).scalars())
-
-
-def save_long_term_memory(
-    session: Session,
-    memory_type: str,
-    content: str,
-    importance_score: int = 50,
-    user_id: Optional[str] = None,
-    source_conversation_id: Optional[str] = None,
-    metadata: Optional[dict] = None,
-) -> LongTermMemory:
-    """保存长期记忆"""
-    memory_id = str(uuid.uuid4())
-    record = LongTermMemory(
-        id=memory_id,
-        user_id=user_id,
-        memory_type=memory_type,
-        content=content,
-        importance_score=max(0, min(100, importance_score)),
-        source_conversation_id=source_conversation_id,
-        extra_metadata=json.dumps(metadata, ensure_ascii=False) if metadata else None,
-    )
-    session.add(record)
-    session.commit()
-    session.refresh(record)
-    return record
-
-
-def search_long_term_memory(
-    session: Session,
-    query: str,
-    user_id: Optional[str] = None,
-    memory_types: Optional[list[str]] = None,
-    limit: int = 10,
-    min_importance: int = 0,
-) -> list[LongTermMemory]:
-    """搜索长期记忆（基于关键词匹配）"""
-    statement = select(LongTermMemory).where(
-        LongTermMemory.content.like(f"%{query}%")
-    )
-    
-    if user_id:
-        statement = statement.where(LongTermMemory.user_id == user_id)
-    
-    if memory_types:
-        statement = statement.where(LongTermMemory.memory_type.in_(memory_types))
-    
-    statement = statement.where(
-        LongTermMemory.importance_score >= min_importance
-    ).order_by(
-        LongTermMemory.importance_score.desc(),
-        LongTermMemory.last_accessed_at.desc().nullslast(),
-        LongTermMemory.created_at.desc()
-    ).limit(limit)
-    
-    return list(session.execute(statement).scalars())
-
-
-def get_recent_memories(
-    session: Session,
-    user_id: Optional[str] = None,
-    limit: int = 20,
-) -> list[LongTermMemory]:
-    """获取最近的记忆（按访问时间和重要性）"""
-    statement = select(LongTermMemory).order_by(
-        LongTermMemory.last_accessed_at.desc().nullslast(),
-        LongTermMemory.importance_score.desc(),
-        LongTermMemory.created_at.desc()
-    ).limit(limit)
-    
-    if user_id:
-        statement = statement.where(LongTermMemory.user_id == user_id)
-    
-    return list(session.execute(statement).scalars())
-
-
-def update_memory_access(
-    session: Session,
-    memory_id: str,
-) -> Optional[LongTermMemory]:
-    """更新记忆的访问信息"""
-    memory = session.get(LongTermMemory, memory_id)
-    if memory:
-        memory.access_count += 1
-        memory.last_accessed_at = datetime.utcnow()
-        session.commit()
-        session.refresh(memory)
-    return memory
-
-
-def get_similar_memories(
-    session: Session,
-    memory_type: str,
-    content: str,
-    user_id: Optional[str] = None,
-    limit: int = 10,
-) -> list[LongTermMemory]:
-    """
-    获取相似类型的记忆，用于去重检查
-    返回同一类型、同一用户的记忆列表
-    """
-    statement = select(LongTermMemory).where(
-        LongTermMemory.memory_type == memory_type
-    )
-    
-    if user_id:
-        statement = statement.where(LongTermMemory.user_id == user_id)
-    
-    statement = statement.order_by(
-        LongTermMemory.importance_score.desc(),
-        LongTermMemory.created_at.desc()
-    ).limit(limit)
-    
-    return list(session.execute(statement).scalars())
-
-
-def update_memory_content(
-    session: Session,
-    memory_id: str,
-    new_content: str,
-    new_importance_score: Optional[int] = None,
-    new_metadata: Optional[dict] = None,
-) -> Optional[LongTermMemory]:
-    """
-    更新记忆的内容、重要性评分和元数据
-    用于合并相似记忆
-    """
-    memory = session.get(LongTermMemory, memory_id)
-    if not memory:
-        return None
-    
-    memory.content = new_content
-    if new_importance_score is not None:
-        memory.importance_score = max(0, min(100, new_importance_score))
-    
-    # 合并元数据
-    if new_metadata:
-        existing_metadata = {}
-        if memory.extra_metadata:
-            try:
-                existing_metadata = json.loads(memory.extra_metadata)
-            except:
-                pass
-        
-        # 合并元数据
-        existing_metadata.update(new_metadata)
-        # 添加合并记录
-        if "merged_from" not in existing_metadata:
-            existing_metadata["merged_from"] = []
-        if isinstance(new_metadata.get("source_ids"), list):
-            existing_metadata["merged_from"].extend(new_metadata["source_ids"])
-        
-        memory.extra_metadata = json.dumps(existing_metadata, ensure_ascii=False)
-    
-    memory.updated_at = datetime.utcnow()
-    session.commit()
-    session.refresh(memory)
-    return memory
-
-
-def merge_memories(
-    session: Session,
-    target_memory_id: str,
-    source_memory_id: str,
-) -> Optional[LongTermMemory]:
-    """
-    合并两个记忆
-    将 source_memory 的信息合并到 target_memory，然后删除 source_memory
-    
-    Returns:
-        合并后的目标记忆
-    """
-    target = session.get(LongTermMemory, target_memory_id)
-    source = session.get(LongTermMemory, source_memory_id)
-    
-    if not target or not source:
-        return None
-    
-    # 合并访问统计
-    target.access_count += source.access_count
-    
-    # 更新最后访问时间为最近的
-    if source.last_accessed_at:
-        if not target.last_accessed_at or source.last_accessed_at > target.last_accessed_at:
-            target.last_accessed_at = source.last_accessed_at
-    
-    # 更新重要性评分为更高的
-    if source.importance_score > target.importance_score:
-        target.importance_score = source.importance_score
-    
-    # 合并元数据
-    target_metadata = {}
-    if target.extra_metadata:
-        try:
-            target_metadata = json.loads(target.extra_metadata)
-        except:
-            pass
-    
-    source_metadata = {}
-    if source.extra_metadata:
-        try:
-            source_metadata = json.loads(source.extra_metadata)
-        except:
-            pass
-    
-    # 记录合并历史
-    if "merged_from" not in target_metadata:
-        target_metadata["merged_from"] = []
-    target_metadata["merged_from"].append(source.id)
-    target_metadata["merged_at"] = datetime.utcnow().isoformat()
-    
-    # 保留两个记忆的元数据信息
-    if source_metadata:
-        target_metadata["source_metadata"] = source_metadata
-    
-    target.extra_metadata = json.dumps(target_metadata, ensure_ascii=False)
-    target.updated_at = datetime.utcnow()
-    
-    # 删除源记忆
-    session.delete(source)
-    session.commit()
-    session.refresh(target)
-    
-    return target
-
-
-def get_session_config(
-    session: Session,
-    session_id: str,
-) -> Optional[SessionConfig]:
-    """获取会话配置"""
-    return session.get(SessionConfig, session_id)
-
-
-def create_or_update_session_config(
-    session: Session,
-    session_id: str,
-    share_memory_across_sessions: bool = True,
-    user_id: Optional[str] = None,
-) -> SessionConfig:
-    """创建或更新会话配置"""
-    config = session.get(SessionConfig, session_id)
-    if not config:
-        config = SessionConfig(
-            session_id=session_id,
-            user_id=user_id,
-            share_memory_across_sessions=share_memory_across_sessions,
-        )
-        session.add(config)
-    else:
-        config.share_memory_across_sessions = share_memory_across_sessions
-        if user_id:
-            config.user_id = user_id
-        config.updated_at = datetime.utcnow()
-    
-    session.commit()
-    session.refresh(config)
-    return config
 
 
 def list_conversation_sessions(
@@ -758,11 +539,6 @@ def delete_conversation_session(
     for msg in messages:
         session.delete(msg)
     
-    # 同时删除会话配置
-    config = session.get(SessionConfig, session_id)
-    if config:
-        session.delete(config)
-    
     session.commit()
     return count
 
@@ -917,3 +693,255 @@ def delete_prompt_template(session: Session, template_id: str) -> bool:
     session.delete(template)
     session.commit()
     return True
+
+
+# ==================== 记忆系统相关函数 ====================
+
+def create_memory(
+    session: Session,
+    content: str,
+    memory_type: str,
+    importance_score: int = 50,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    metadata: Optional[dict] = None,
+) -> Memory:
+    """创建新记忆"""
+    memory_id = str(uuid.uuid4())
+    memory = Memory(
+        id=memory_id,
+        user_id=user_id,
+        session_id=session_id,
+        memory_type=memory_type,
+        content=content,
+        importance_score=max(0, min(100, importance_score)),
+        tags=json.dumps(tags, ensure_ascii=False) if tags else None,
+        extra_metadata=json.dumps(metadata, ensure_ascii=False) if metadata else None,
+    )
+    session.add(memory)
+    session.commit()
+    session.refresh(memory)
+    return memory
+
+
+def get_memory_by_id(session: Session, memory_id: str) -> Memory | None:
+    """根据ID获取记忆"""
+    return session.get(Memory, memory_id)
+
+
+def search_memories(
+    session: Session,
+    query: Optional[str] = None,
+    memory_type: Optional[str] = None,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    min_importance: int = 0,
+    limit: int = 20,
+) -> list[Memory]:
+    """搜索记忆"""
+    statement = select(Memory)
+    
+    if query:
+        statement = statement.where(Memory.content.like(f"%{query}%"))
+    
+    if memory_type:
+        statement = statement.where(Memory.memory_type == memory_type)
+    
+    if user_id:
+        statement = statement.where(Memory.user_id == user_id)
+    
+    if session_id:
+        statement = statement.where(Memory.session_id == session_id)
+    
+    if min_importance > 0:
+        statement = statement.where(Memory.importance_score >= min_importance)
+    
+    # 标签过滤（如果提供）
+    if tags:
+        for tag in tags:
+            statement = statement.where(Memory.tags.like(f'%"{tag}"%'))
+    
+    statement = statement.order_by(
+        Memory.importance_score.desc(),
+        Memory.last_accessed_at.desc().nullslast(),
+        Memory.created_at.desc()
+    ).limit(limit)
+    
+    return list(session.execute(statement).scalars())
+
+
+def update_memory(
+    session: Session,
+    memory_id: str,
+    content: Optional[str] = None,
+    importance_score: Optional[int] = None,
+    tags: Optional[list[str]] = None,
+    metadata: Optional[dict] = None,
+) -> Memory | None:
+    """更新记忆"""
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        return None
+    
+    if content is not None:
+        memory.content = content
+    
+    if importance_score is not None:
+        memory.importance_score = max(0, min(100, importance_score))
+    
+    if tags is not None:
+        memory.tags = json.dumps(tags, ensure_ascii=False)
+    
+    if metadata is not None:
+        # 合并元数据
+        existing_metadata = {}
+        if memory.extra_metadata:
+            try:
+                existing_metadata = json.loads(memory.extra_metadata)
+            except:
+                pass
+        existing_metadata.update(metadata)
+        memory.extra_metadata = json.dumps(existing_metadata, ensure_ascii=False)
+    
+    memory.updated_at = datetime.utcnow()
+    session.commit()
+    session.refresh(memory)
+    return memory
+
+
+def update_memory_access(session: Session, memory_id: str) -> Memory | None:
+    """更新记忆的访问统计"""
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        return None
+    
+    memory.access_count += 1
+    memory.last_accessed_at = datetime.utcnow()
+    session.commit()
+    session.refresh(memory)
+    return memory
+
+
+def delete_memory(session: Session, memory_id: str) -> bool:
+    """删除记忆"""
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        return False
+    
+    session.delete(memory)
+    session.commit()
+    return True
+
+
+def delete_memories_batch(
+    session: Session,
+    memory_ids: list[str],
+) -> int:
+    """批量删除记忆"""
+    count = 0
+    for memory_id in memory_ids:
+        memory = session.get(Memory, memory_id)
+        if memory:
+            session.delete(memory)
+            count += 1
+    session.commit()
+    return count
+
+
+def get_session_config(
+    session: Session,
+    session_id: str,
+) -> SessionConfig | None:
+    """获取会话配置"""
+    return session.get(SessionConfig, session_id)
+
+
+def update_session_config(
+    session: Session,
+    session_id: str,
+    share_memory: Optional[bool] = None,
+    auto_extract: Optional[bool] = None,
+    user_id: Optional[str] = None,
+) -> SessionConfig:
+    """更新或创建会话配置（新会话自动继承用户偏好）"""
+    config = session.get(SessionConfig, session_id)
+    
+    if not config:
+        # 新会话：从用户偏好中读取默认值
+        prefs = get_user_preferences(session, user_id or "default")
+        
+        default_share = share_memory
+        default_extract = auto_extract
+        
+        # 如果没有显式指定，则使用用户偏好
+        if default_share is None and prefs:
+            default_share = prefs.default_share_memory
+        if default_extract is None and prefs:
+            default_extract = prefs.default_auto_extract
+        
+        # 如果还是没有，则使用系统默认值
+        if default_share is None:
+            default_share = True
+        if default_extract is None:
+            default_extract = True
+        
+        config = SessionConfig(
+            session_id=session_id,
+            user_id=user_id,
+            share_memory=default_share,
+            auto_extract=default_extract,
+        )
+        session.add(config)
+    else:
+        # 更新现有会话配置
+        if share_memory is not None:
+            config.share_memory = share_memory
+        if auto_extract is not None:
+            config.auto_extract = auto_extract
+        if user_id is not None:
+            config.user_id = user_id
+        config.updated_at = datetime.utcnow()
+    
+    session.commit()
+    session.refresh(config)
+    return config
+
+
+# ==================== 用户偏好管理 ====================
+
+def get_user_preferences(
+    session: Session,
+    user_id: str = "default",
+) -> Optional[UserPreferences]:
+    """获取用户偏好设置"""
+    return session.get(UserPreferences, user_id)
+
+
+def update_user_preferences(
+    session: Session,
+    user_id: str = "default",
+    default_share_memory: Optional[bool] = None,
+    default_auto_extract: Optional[bool] = None,
+) -> UserPreferences:
+    """更新或创建用户偏好设置"""
+    prefs = session.get(UserPreferences, user_id)
+    
+    if not prefs:
+        prefs = UserPreferences(
+            user_id=user_id,
+            default_share_memory=default_share_memory if default_share_memory is not None else True,
+            default_auto_extract=default_auto_extract if default_auto_extract is not None else True,
+        )
+        session.add(prefs)
+    else:
+        if default_share_memory is not None:
+            prefs.default_share_memory = default_share_memory
+        if default_auto_extract is not None:
+            prefs.default_auto_extract = default_auto_extract
+        prefs.updated_at = datetime.utcnow()
+    
+    session.commit()
+    session.refresh(prefs)
+    return prefs

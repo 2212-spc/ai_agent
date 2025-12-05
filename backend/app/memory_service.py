@@ -1,6 +1,5 @@
 """
-长期记忆系统 - 智能记忆提取、存储和检索
-支持记忆去重和合并
+记忆服务 - 负责记忆的提取、检索、存储和管理
 """
 from __future__ import annotations
 
@@ -15,341 +14,26 @@ from sqlalchemy.orm import Session
 
 from .config import Settings
 from .database import (
-    ConversationHistory,
-    LongTermMemory,
-    get_conversation_history,
-    save_conversation_message,
-    save_long_term_memory,
-    search_long_term_memory,
-    get_recent_memories,
+    Memory,
+    SessionConfig,
+    create_memory,
+    get_memory_by_id,
+    search_memories,
+    update_memory,
     update_memory_access,
-    get_similar_memories,
-    update_memory_content,
-    merge_memories,
+    get_session_config,
 )
-from .rag_service import retrieve_context, get_embeddings
+from .rag_service import get_embeddings
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
 
 logger = logging.getLogger(__name__)
 
-# 记忆向量数据库缓存（独立的 collection）
+# 记忆向量数据库缓存
 _MEMORY_VECTORSTORE_CACHE: Dict[str, Chroma] = {}
 
 
-# ==================== 记忆相似度检测 ====================
-
-def calculate_text_similarity(text1: str, text2: str) -> float:
-    """
-    计算两个文本的相似度（0-1）
-    使用 SequenceMatcher 计算序列相似度
-    """
-    if not text1 or not text2:
-        return 0.0
-    
-    # 转换为小写并去除多余空格
-    text1 = re.sub(r'\s+', ' ', text1.lower().strip())
-    text2 = re.sub(r'\s+', ' ', text2.lower().strip())
-    
-    # 如果完全相同，返回1.0
-    if text1 == text2:
-        return 1.0
-    
-    # 使用 SequenceMatcher 计算相似度
-    similarity = SequenceMatcher(None, text1, text2).ratio()
-    return similarity
-
-
-def calculate_jaccard_similarity(text1: str, text2: str) -> float:
-    """
-    计算两个文本的 Jaccard 相似度（0-1）
-    基于词汇集合的交集和并集
-    """
-    if not text1 or not text2:
-        return 0.0
-    
-    # 分词（简单分词，按空格和标点）
-    words1 = set(re.findall(r'\w+', text1.lower()))
-    words2 = set(re.findall(r'\w+', text2.lower()))
-    
-    if not words1 or not words2:
-        return 0.0
-    
-    # 计算交集和并集
-    intersection = len(words1 & words2)
-    union = len(words1 | words2)
-    
-    if union == 0:
-        return 0.0
-    
-    return intersection / union
-
-
-def calculate_semantic_similarity(
-    text1: str,
-    text2: str,
-    embeddings_model=None,
-) -> float:
-    """
-    计算两个文本的语义相似度（0-1）
-    使用 embedding 向量计算余弦相似度
-    
-    注意：这个方法可能较慢，用于高精度相似度检测
-    """
-    try:
-        if embeddings_model is None:
-            embeddings_model = get_embeddings()
-        
-        # 生成 embedding
-        emb1 = embeddings_model.embed_query(text1)
-        emb2 = embeddings_model.embed_query(text2)
-        
-        # 计算余弦相似度
-        import numpy as np
-        
-        dot_product = np.dot(emb1, emb2)
-        norm1 = np.linalg.norm(emb1)
-        norm2 = np.linalg.norm(emb2)
-        
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-        
-        similarity = dot_product / (norm1 * norm2)
-        # 归一化到 0-1（余弦相似度范围是 -1 到 1）
-        return (similarity + 1) / 2
-        
-    except Exception as e:
-        logger.warning(f"语义相似度计算失败: {e}，使用文本相似度")
-        return calculate_text_similarity(text1, text2)
-
-
-def find_similar_memory(
-    session: Session,
-    new_content: str,
-    memory_type: str,
-    user_id: Optional[str] = None,
-    similarity_threshold: float = 0.75,
-    use_semantic: bool = False,
-) -> Optional[Tuple[LongTermMemory, float]]:
-    """
-    查找与新记忆相似的已有记忆
-    
-    Args:
-        session: 数据库会话
-        new_content: 新记忆的内容
-        memory_type: 记忆类型
-        user_id: 用户ID
-        similarity_threshold: 相似度阈值（0-1），超过此值认为相似
-        use_semantic: 是否使用语义相似度（更准确但较慢）
-    
-    Returns:
-        (相似记忆, 相似度) 或 None
-    """
-    # 获取同类型、同用户的记忆
-    similar_memories = get_similar_memories(
-        session=session,
-        memory_type=memory_type,
-        content=new_content,
-        user_id=user_id,
-        limit=20,  # 检查最多20条记忆
-    )
-    
-    if not similar_memories:
-        return None
-    
-    best_match = None
-    best_similarity = 0.0
-    embeddings_model = None
-    
-    if use_semantic:
-        embeddings_model = get_embeddings()
-    
-    # 计算与每条记忆的相似度
-    for memory in similar_memories:
-        # 优先使用文本相似度（快速）
-        text_sim = calculate_text_similarity(new_content, memory.content)
-        jaccard_sim = calculate_jaccard_similarity(new_content, memory.content)
-        
-        # 综合相似度（文本相似度权重0.6，Jaccard相似度权重0.4）
-        combined_sim = text_sim * 0.6 + jaccard_sim * 0.4
-        
-        # 如果需要高精度，使用语义相似度
-        if use_semantic and combined_sim > 0.5:
-            semantic_sim = calculate_semantic_similarity(
-                new_content,
-                memory.content,
-                embeddings_model,
-            )
-            # 语义相似度权重更高
-            combined_sim = combined_sim * 0.4 + semantic_sim * 0.6
-        
-        if combined_sim > best_similarity:
-            best_similarity = combined_sim
-            best_match = memory
-    
-    # 如果相似度超过阈值，返回最佳匹配
-    if best_match and best_similarity >= similarity_threshold:
-        return (best_match, best_similarity)
-    
-    return None
-
-
-def merge_memory_with_existing(
-    session: Session,
-    existing_memory: LongTermMemory,
-    new_content: str,
-    new_importance: int,
-    new_source_id: Optional[str] = None,
-    new_metadata: Optional[Dict[str, Any]] = None,
-    settings: Optional[Settings] = None,
-) -> LongTermMemory:
-    """
-    将新记忆合并到已有记忆中
-    
-    策略：
-    1. 如果新内容更完整或更详细，更新内容
-    2. 取更高的重要性评分
-    3. 合并元数据
-    4. 更新访问统计
-    """
-    # 判断哪个内容更好（更长或包含更多信息）
-    existing_content = existing_memory.content
-    should_update_content = False
-    
-    # 如果新内容更长或包含更多关键词，认为是更好的版本
-    if len(new_content) > len(existing_content) * 1.2:
-        should_update_content = True
-    elif len(new_content) > len(existing_content):
-        # 新内容稍长，检查是否包含更多信息
-        new_words = set(re.findall(r'\w+', new_content.lower()))
-        existing_words = set(re.findall(r'\w+', existing_content.lower()))
-        if len(new_words - existing_words) > len(existing_words - new_words):
-            should_update_content = True
-    
-    # 更新内容（如果需要）
-    final_content = new_content if should_update_content else existing_content
-    
-    # 取更高的重要性评分
-    final_importance = max(existing_memory.importance_score, new_importance)
-    
-    # 准备元数据
-    merged_metadata = new_metadata or {}
-    merged_metadata["merged_count"] = merged_metadata.get("merged_count", 0) + 1
-    if new_source_id:
-        merged_metadata["latest_source_id"] = new_source_id
-    
-    # 更新记忆
-    updated_memory = update_memory_content(
-        session=session,
-        memory_id=existing_memory.id,
-        new_content=final_content,
-        new_importance_score=final_importance,
-        new_metadata=merged_metadata,
-    )
-    
-    logger.info(
-        f"合并记忆: {existing_memory.id} <- 新记忆 "
-        f"(相似度: 高, 内容{'已更新' if should_update_content else '保留原版'}, "
-        f"重要性: {final_importance})"
-    )
-    
-    return updated_memory
-
-
-def save_memory_with_dedup(
-    session: Session,
-    memory_type: str,
-    content: str,
-    importance_score: int = 50,
-    user_id: Optional[str] = None,
-    source_conversation_id: Optional[str] = None,
-    metadata: Optional[dict] = None,
-    similarity_threshold: float = 0.75,
-    use_semantic_similarity: bool = False,
-    settings: Optional[Settings] = None,
-) -> LongTermMemory:
-    """
-    保存记忆，并在保存前检查重复并合并
-    
-    Args:
-        session: 数据库会话
-        memory_type: 记忆类型
-        content: 记忆内容
-        importance_score: 重要性评分
-        user_id: 用户ID
-        source_conversation_id: 来源对话ID
-        metadata: 元数据
-        similarity_threshold: 相似度阈值（0-1）
-        use_semantic_similarity: 是否使用语义相似度检测
-        settings: 配置对象（用于向量化）
-    
-    Returns:
-        保存或合并后的记忆对象
-    """
-    if settings is None:
-        from .config import get_settings
-        settings = get_settings()
-    
-    # 查找相似记忆
-    similar_result = find_similar_memory(
-        session=session,
-        new_content=content,
-        memory_type=memory_type,
-        user_id=user_id,
-        similarity_threshold=similarity_threshold,
-        use_semantic=use_semantic_similarity,
-    )
-    
-    if similar_result:
-        existing_memory, similarity = similar_result
-        # 合并到已有记忆
-        merged_metadata = metadata or {}
-        merged_metadata["similarity_score"] = similarity
-        
-        merged_memory = merge_memory_with_existing(
-            session=session,
-            existing_memory=existing_memory,
-            new_content=content,
-            new_importance=importance_score,
-            new_source_id=source_conversation_id,
-            new_metadata=merged_metadata,
-            settings=settings,
-        )
-        
-        # 如果内容已更新，同步更新向量数据库
-        if merged_memory.content != existing_memory.content:
-            update_memory_in_vectorstore(
-                memory_id=merged_memory.id,
-                content=merged_memory.content,
-                memory_type=merged_memory.memory_type,
-                user_id=merged_memory.user_id,
-                settings=settings,
-            )
-        
-        return merged_memory
-    else:
-        # 没有找到相似记忆，保存新记忆
-        new_memory = save_long_term_memory(
-            session=session,
-            memory_type=memory_type,
-            content=content,
-            importance_score=importance_score,
-            user_id=user_id,
-            source_conversation_id=source_conversation_id,
-            metadata=metadata,
-        )
-        
-        # 向量化并存储到向量数据库
-        add_memory_to_vectorstore(
-            memory_id=new_memory.id,
-            content=new_memory.content,
-            memory_type=new_memory.memory_type,
-            user_id=new_memory.user_id,
-            settings=settings,
-        )
-        
-        return new_memory
-
+# ==================== 记忆提取模块 ====================
 
 async def extract_memories_from_conversation(
     conversation_text: str,
@@ -358,32 +42,38 @@ async def extract_memories_from_conversation(
     user_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    使用 LLM 从对话中提取重要信息作为长期记忆
+    使用 LLM 从对话中提取重要信息作为记忆
+    
+    Args:
+        conversation_text: 对话文本
+        settings: 配置对象
+        session_id: 会话ID
+        user_id: 用户ID（可选）
     
     Returns:
-        提取的记忆列表，每个记忆包含 type, content, importance_score
+        提取的记忆列表，每个记忆包含 type, content, importance
     """
     try:
-        extraction_prompt = f"""请分析以下对话，提取出应该被长期记住的重要信息。
+        extraction_prompt = f"""分析以下对话，提取应该被长期记住的重要信息。
 
 对话内容：
 {conversation_text}
 
 请提取以下类型的信息：
-1. **fact** - 明确的事实信息（如：用户的名字、职业、工作地点、居住地等）
+1. **fact** - 明确的事实信息（如：用户的名字、职业、工作地点、居住地、年龄、技能等）
    - **特别注意**：如果对话中提到用户的名字，必须提取为 fact 类型，重要性设为 90-100
    - 例如："我叫张三" → {{"type": "fact", "content": "用户的名字是张三", "importance": 95}}
-2. **preference** - 用户的偏好和习惯（如：喜欢的食物、编程语言、工作习惯等）
-3. **event** - 重要的事件或经历（如：生日、旅行计划、会议安排等）
-4. **relationship** - 人物关系或社交信息
+2. **preference** - 用户的偏好和习惯（如：喜欢的食物、编程语言、工作习惯、兴趣爱好等）
+3. **event** - 重要的事件或计划（如：生日、会议安排、旅行计划、重要日期等）
+4. **relationship** - 人物关系或社交信息（如：家人、朋友、同事关系等）
 
 请以 JSON 格式输出提取的记忆：
 {{
   "memories": [
     {{
       "type": "fact|preference|event|relationship",
-      "content": "记忆内容的简洁描述",
-      "importance": 50-100  // 重要性评分，50为一般重要，100为非常重要。姓名等重要信息应设为90-100
+      "content": "记忆内容的简洁描述（使用第三人称，如'用户的名字是XXX'）",
+      "importance": 50-100
     }}
   ]
 }}
@@ -409,7 +99,7 @@ async def extract_memories_from_conversation(
         payload = {
             "model": "deepseek-chat",
             "messages": [{"role": "user", "content": extraction_prompt}],
-            "temperature": 0.3,  # 低温度保证提取稳定
+            "temperature": 0.3,
             "max_tokens": 1000,
             "stream": False,
         }
@@ -463,7 +153,7 @@ def _parse_memory_extraction(text: str) -> List[Dict[str, Any]]:
                 continue
             
             importance = int(mem.get("importance", 50))
-            importance = max(50, min(100, importance))  # 限制在 50-100
+            importance = max(50, min(100, importance))
 
             validated.append({
                 "type": mem_type,
@@ -481,228 +171,242 @@ def _parse_memory_extraction(text: str) -> List[Dict[str, Any]]:
         return []
 
 
-async def save_conversation_and_extract_memories(
-    session: Session,
-    session_id: str,
-    user_query: str,
-    assistant_reply: str,
-    settings: Settings,
-    user_id: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None,
-) -> List[LongTermMemory]:
+# ==================== 相似度检测模块 ====================
+
+def calculate_text_similarity(text1: str, text2: str) -> float:
     """
-    保存对话并自动提取记忆
-    返回新保存的记忆列表
+    计算两个文本的相似度（0-1）
+    使用 SequenceMatcher 计算序列相似度
     """
-    # 保存用户消息
-    save_conversation_message(
-        session=session,
-        session_id=session_id,
-        role="user",
-        content=user_query,
-        user_id=user_id,
-        metadata=metadata,
-    )
-
-    # 保存助手回复
-    save_conversation_message(
-        session=session,
-        session_id=session_id,
-        role="assistant",
-        content=assistant_reply,
-        user_id=user_id,
-        metadata=metadata,
-    )
-
-    # 构建对话文本用于提取记忆
-    conversation_text = f"用户: {user_query}\n助手: {assistant_reply}"
-
-    # 提取记忆
-    extracted_memories = await extract_memories_from_conversation(
-        conversation_text=conversation_text,
-        settings=settings,
-        session_id=session_id,
-        user_id=user_id,
-    )
-
-    # 保存提取的记忆（使用去重和合并逻辑，并自动向量化）
-    saved_memories = []
-    for mem in extracted_memories:
-        try:
-            # 使用带去重的保存函数（会自动向量化）
-            memory_record = save_memory_with_dedup(
-                session=session,
-                memory_type=mem["type"],
-                content=mem["content"],
-                importance_score=mem["importance"],
-                user_id=user_id,
-                source_conversation_id=session_id,
-                metadata={"extracted_at": "auto"},
-                similarity_threshold=0.75,  # 相似度阈值，可配置
-                use_semantic_similarity=False,  # 默认使用快速文本相似度，需要高精度时可设为True
-                settings=settings,  # 传入 settings 用于向量化
-            )
-            saved_memories.append(memory_record)
-        except Exception as e:
-            logger.error(f"保存记忆失败: {e}", exc_info=True)
-
-    return saved_memories
-
-
-async def retrieve_relevant_memories(
-    session: Session,
-    query: str,
-    settings: Settings,
-    user_id: Optional[str] = None,
-    max_memories: int = 5,
-    session_id: Optional[str] = None,
-    share_memory: Optional[bool] = None,
-) -> List[LongTermMemory]:
-    """
-    检索与查询相关的长期记忆
+    if not text1 or not text2:
+        return 0.0
     
-    使用向量检索和关键词检索结合的方式
-    同时确保返回重要的用户信息（如姓名等）
+    # 转换为小写并去除多余空格
+    text1 = re.sub(r'\s+', ' ', text1.lower().strip())
+    text2 = re.sub(r'\s+', ' ', text2.lower().strip())
+    
+    if text1 == text2:
+        return 1.0
+    
+    similarity = SequenceMatcher(None, text1, text2).ratio()
+    return similarity
+
+
+def calculate_jaccard_similarity(text1: str, text2: str) -> float:
+    """
+    计算两个文本的 Jaccard 相似度（0-1）
+    基于词汇集合的交集和并集
+    """
+    if not text1 or not text2:
+        return 0.0
+    
+    # 分词（简单分词，按空格和标点）
+    words1 = set(re.findall(r'\w+', text1.lower()))
+    words2 = set(re.findall(r'\w+', text2.lower()))
+    
+    if not words1 or not words2:
+        return 0.0
+    
+    intersection = len(words1 & words2)
+    union = len(words1 | words2)
+    
+    if union == 0:
+        return 0.0
+    
+    return intersection / union
+
+
+def find_similar_memory(
+    session: Session,
+    new_content: str,
+    memory_type: str,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    threshold: float = 0.75,
+) -> Optional[Tuple[Memory, float]]:
+    """
+    查找与新记忆相似的已有记忆
     
     Args:
         session: 数据库会话
-        query: 查询文本
-        settings: 配置对象
-        user_id: 用户ID
-        max_memories: 最大返回记忆数
-        session_id: 当前会话ID（用于记忆隔离）
-        share_memory: 是否共享记忆（None 表示使用会话配置）
+        new_content: 新记忆的内容
+        memory_type: 记忆类型
+        user_id: 用户ID（可选）
+        session_id: 会话ID（可选，用于会话隔离）
+        threshold: 相似度阈值（0-1），超过此值认为相似
     
     Returns:
-        相关记忆列表
+        (相似记忆, 相似度) 或 None
     """
-    # 检查会话配置，决定是否共享记忆
-    should_share = True  # 默认共享
+    # 获取同类型的记忆
+    similar_memories = search_memories(
+        session=session,
+        memory_type=memory_type,
+        user_id=user_id,
+        session_id=session_id,
+        limit=20,
+    )
     
-    if session_id:
-        from .database import get_session_config
-        config = get_session_config(session, session_id)
-        if config:
-            should_share = config.share_memory_across_sessions
-        elif share_memory is not None:
-            should_share = share_memory
-    elif share_memory is not None:
-        should_share = share_memory
+    if not similar_memories:
+        return None
     
-    # 如果不应共享记忆，只检索当前会话的记忆
-    if not should_share and session_id:
-        # 只检索来自当前会话的记忆
-        keyword_memories = search_long_term_memory(
+    best_match = None
+    best_similarity = 0.0
+    
+    # 计算与每条记忆的相似度
+    for memory in similar_memories:
+        # 文本相似度
+        text_sim = calculate_text_similarity(new_content, memory.content)
+        # Jaccard 相似度
+        jaccard_sim = calculate_jaccard_similarity(new_content, memory.content)
+        
+        # 综合相似度（文本相似度权重0.6，Jaccard相似度权重0.4）
+        combined_sim = text_sim * 0.6 + jaccard_sim * 0.4
+        
+        if combined_sim > best_similarity:
+            best_similarity = combined_sim
+            best_match = memory
+    
+    # 如果相似度超过阈值，返回最佳匹配
+    if best_match and best_similarity >= threshold:
+        logger.info(f"发现相似记忆: {best_match.id}, 相似度: {best_similarity:.2f}")
+        return (best_match, best_similarity)
+    
+    return None
+
+
+# ==================== 记忆合并模块 ====================
+
+def merge_similar_memories(
+    session: Session,
+    existing_memory: Memory,
+    new_content: str,
+    new_importance: int,
+    new_metadata: Optional[Dict[str, Any]] = None,
+) -> Memory:
+    """
+    将新记忆合并到已有记忆中
+    
+    策略：
+    1. 如果新内容更完整或更详细，更新内容
+    2. 取更高的重要性评分
+    3. 合并元数据
+    4. 更新访问统计
+    """
+    # 判断哪个内容更好（更长或包含更多信息）
+    existing_content = existing_memory.content
+    should_update_content = False
+    
+    # 如果新内容更长或包含更多关键词，认为是更好的版本
+    if len(new_content) > len(existing_content) * 1.2:
+        should_update_content = True
+    elif len(new_content) > len(existing_content):
+        # 新内容稍长，检查是否包含更多信息
+        new_words = set(re.findall(r'\w+', new_content.lower()))
+        existing_words = set(re.findall(r'\w+', existing_content.lower()))
+        if len(new_words - existing_words) > len(existing_words - new_words):
+            should_update_content = True
+    
+    # 更新内容（如果需要）
+    final_content = new_content if should_update_content else existing_content
+    
+    # 取更高的重要性评分
+    final_importance = max(existing_memory.importance_score, new_importance)
+    
+    # 准备元数据
+    merged_metadata = new_metadata or {}
+    merged_metadata["merged_count"] = merged_metadata.get("merged_count", 0) + 1
+    merged_metadata["similarity_merge"] = True
+    
+    # 更新记忆
+    updated_memory = update_memory(
+        session=session,
+        memory_id=existing_memory.id,
+        content=final_content if should_update_content else None,
+        importance_score=final_importance,
+        metadata=merged_metadata,
+    )
+    
+    logger.info(
+        f"合并记忆: {existing_memory.id}, "
+        f"内容{'已更新' if should_update_content else '保留'}, "
+        f"重要性: {final_importance}"
+    )
+    
+    return updated_memory
+
+
+def save_memory_with_dedup(
+    session: Session,
+    content: str,
+    memory_type: str,
+    importance_score: int = 50,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    tags: Optional[list[str]] = None,
+    metadata: Optional[dict] = None,
+    threshold: float = 0.75,
+) -> Memory:
+    """
+    保存记忆，并在保存前检查重复并合并
+    
+    Args:
+        session: 数据库会话
+        content: 记忆内容
+        memory_type: 记忆类型
+        importance_score: 重要性评分
+        user_id: 用户ID
+        session_id: 会话ID
+        tags: 标签列表
+        metadata: 元数据
+        threshold: 相似度阈值
+    
+    Returns:
+        保存或合并后的记忆对象
+    """
+    # 查找相似记忆
+    similar_result = find_similar_memory(
+        session=session,
+        new_content=content,
+        memory_type=memory_type,
+        user_id=user_id,
+        session_id=session_id,
+        threshold=threshold,
+    )
+    
+    if similar_result:
+        existing_memory, similarity = similar_result
+        # 合并到已有记忆
+        merged_metadata = metadata or {}
+        merged_metadata["similarity_score"] = similarity
+        
+        merged_memory = merge_similar_memories(
             session=session,
-            query=query,
-            user_id=user_id,
-            limit=max_memories * 2,
-            min_importance=40,
+            existing_memory=existing_memory,
+            new_content=content,
+            new_importance=importance_score,
+            new_metadata=merged_metadata,
         )
         
-        # 过滤出当前会话的记忆
-        session_memories = [
-            m for m in keyword_memories
-            if m.source_conversation_id == session_id
-        ]
+        return merged_memory
+    else:
+        # 没有找到相似记忆，保存新记忆
+        new_memory = create_memory(
+            session=session,
+            content=content,
+            memory_type=memory_type,
+            importance_score=importance_score,
+            user_id=user_id,
+            session_id=session_id,
+            tags=tags,
+            metadata=metadata,
+        )
         
-        # 更新访问信息
-        for mem in session_memories:
-            update_memory_access(session, mem.id)
-        
-        # 按重要性排序
-        sorted_memories = sorted(
-            session_memories,
-            key=lambda m: (
-                m.memory_type == "fact",  # fact 类型优先
-                m.importance_score,
-                m.access_count
-            ),
-            reverse=True,
-        )[:max_memories]
-        
-        logger.debug(f"会话隔离模式：只检索当前会话 {session_id} 的记忆，找到 {len(sorted_memories)} 条")
-        return sorted_memories
-    
-    # 原有逻辑（共享记忆模式）
-    all_memories = {}
-    
-    # 1. 先尝试向量检索（如果向量数据库中有记忆）
-    vector_memories = _retrieve_memories_by_embedding(
-        query=query,
-        session=session,
-        settings=settings,
-        user_id=user_id,
-        limit=max_memories,
-    )
-    for mem in vector_memories:
-        all_memories[mem.id] = mem
+        logger.info(f"创建新记忆: {new_memory.id}, 类型: {memory_type}")
+        return new_memory
 
-    # 2. 关键词检索作为补充
-    keyword_memories = search_long_term_memory(
-        session=session,
-        query=query,
-        user_id=user_id,
-        limit=max_memories,
-        min_importance=50,  # 只检索重要记忆
-    )
-    for mem in keyword_memories:
-        all_memories[mem.id] = mem
-    
-    # 3. 如果查询匹配的记忆较少，补充一些重要的用户记忆（特别是 fact 类型，如姓名）
-    # 这样可以确保用户信息（如姓名）总是可用的
-    if len(all_memories) < max_memories:
-        try:
-            # 获取最近的重要记忆，特别是 fact 类型（包含姓名等信息）
-            recent_facts = get_recent_memories(
-                session=session,
-                user_id=user_id,
-                limit=max_memories * 2,  # 获取更多候选
-            )
-            
-            # 优先选择 fact 类型的高重要性记忆
-            fact_memories = [m for m in recent_facts if m.memory_type == "fact" and m.importance_score >= 60]
-            preference_memories = [m for m in recent_facts if m.memory_type == "preference" and m.importance_score >= 60]
-            
-            # 补充 fact 类型记忆（通常是姓名等关键信息）
-            for mem in fact_memories:
-                if mem.id not in all_memories and len(all_memories) < max_memories:
-                    all_memories[mem.id] = mem
-            
-            # 如果还有空间，补充 preference 类型记忆
-            if len(all_memories) < max_memories:
-                for mem in preference_memories:
-                    if mem.id not in all_memories and len(all_memories) < max_memories:
-                        all_memories[mem.id] = mem
-            
-            # 最后补充其他重要记忆
-            if len(all_memories) < max_memories:
-                for mem in recent_facts:
-                    if mem.id not in all_memories and mem.importance_score >= 60:
-                        if len(all_memories) < max_memories:
-                            all_memories[mem.id] = mem
-                        else:
-                            break
-        except Exception as e:
-            logger.warning(f"获取补充记忆失败: {e}")
 
-    # 更新访问信息
-    for mem_id in all_memories:
-        update_memory_access(session, mem_id)
-
-    # 按重要性排序
-    sorted_memories = sorted(
-        all_memories.values(),
-        key=lambda m: (
-            m.memory_type == "fact",  # fact 类型优先
-            m.importance_score,
-            m.access_count
-        ),
-        reverse=True,
-    )[:max_memories]
-
-    return sorted_memories
-
+# ==================== 向量存储模块 ====================
 
 def get_memory_vectorstore(settings: Settings) -> Chroma:
     """
@@ -714,7 +418,7 @@ def get_memory_vectorstore(settings: Settings) -> Chroma:
     if store is None:
         settings.chroma_dir.mkdir(parents=True, exist_ok=True)
         store = Chroma(
-            collection_name="memories",  # 独立的 collection 名称
+            collection_name="memories",
             embedding_function=get_embeddings(),
             persist_directory=str(settings.chroma_dir),
         )
@@ -728,7 +432,8 @@ def add_memory_to_vectorstore(
     content: str,
     memory_type: str,
     user_id: Optional[str] = None,
-    settings: Settings = None,
+    session_id: Optional[str] = None,
+    settings: Optional[Settings] = None,
 ) -> None:
     """
     将记忆添加到向量数据库
@@ -738,6 +443,7 @@ def add_memory_to_vectorstore(
         content: 记忆内容
         memory_type: 记忆类型
         user_id: 用户ID
+        session_id: 会话ID（用于记忆隔离）
         settings: 配置对象
     """
     try:
@@ -747,24 +453,25 @@ def add_memory_to_vectorstore(
         
         vectorstore = get_memory_vectorstore(settings)
         
-        # 创建 Document 对象，metadata 包含记忆的所有信息
+        # 创建 Document 对象
         metadata = {
             "memory_id": memory_id,
             "memory_type": memory_type,
+            # 显式设置 user_id 和 session_id，即使为 None
+            # 这样可以确保向量库的 filter 能正确工作
+            "user_id": user_id if user_id else "",
+            "session_id": session_id if session_id else "",
         }
-        if user_id:
-            metadata["user_id"] = user_id
         
         doc = Document(page_content=content, metadata=metadata)
         
-        # 添加到向量数据库，使用 memory_id 作为唯一ID
+        # 添加到向量数据库
         vectorstore.add_documents([doc], ids=[memory_id])
         
-        logger.debug(f"记忆已向量化并存储: {memory_id}")
+        logger.debug(f"记忆已向量化: {memory_id}")
         
     except Exception as e:
         logger.error(f"向量化记忆失败 {memory_id}: {e}", exc_info=True)
-        # 不抛出异常，允许记忆保存继续，只是没有向量化
 
 
 def update_memory_in_vectorstore(
@@ -772,11 +479,11 @@ def update_memory_in_vectorstore(
     content: str,
     memory_type: str,
     user_id: Optional[str] = None,
-    settings: Settings = None,
+    session_id: Optional[str] = None,
+    settings: Optional[Settings] = None,
 ) -> None:
     """
     更新向量数据库中的记忆
-    
     先删除旧向量，再添加新向量
     """
     try:
@@ -790,7 +497,7 @@ def update_memory_in_vectorstore(
         try:
             vectorstore.delete(ids=[memory_id])
         except Exception as e:
-            logger.warning(f"删除旧向量失败（可能不存在）: {e}")
+            logger.warning(f"删除旧向量失败: {e}")
         
         # 添加新向量
         add_memory_to_vectorstore(
@@ -798,6 +505,7 @@ def update_memory_in_vectorstore(
             content=content,
             memory_type=memory_type,
             user_id=user_id,
+            session_id=session_id,
             settings=settings,
         )
         
@@ -809,143 +517,79 @@ def update_memory_in_vectorstore(
 
 def delete_memory_from_vectorstore(
     memory_id: str,
-    settings: Settings = None,
+    settings: Optional[Settings] = None,
 ) -> None:
-    """
-    从向量数据库中删除记忆
-    """
+    """从向量数据库中删除记忆"""
     try:
         if settings is None:
             from .config import get_settings
             settings = get_settings()
         
         vectorstore = get_memory_vectorstore(settings)
-        
-        # 删除向量
         vectorstore.delete(ids=[memory_id])
         
         logger.debug(f"记忆向量已删除: {memory_id}")
         
     except Exception as e:
-        logger.warning(f"删除记忆向量失败（可能不存在）: {e}")
+        logger.warning(f"删除记忆向量失败: {e}")
 
 
-def vectorize_existing_memories(
+def delete_memory_complete(
     session: Session,
-    settings: Settings,
-    user_id: Optional[str] = None,
-    batch_size: int = 100,
-) -> int:
+    memory_id: str,
+    settings: Optional[Settings] = None,
+) -> bool:
     """
-    批量向量化已有记忆（用于迁移或初始化）
-    
-    Args:
-        session: 数据库会话
-        settings: 配置对象
-        user_id: 用户ID（可选，如果指定则只向量化该用户的记忆）
-        batch_size: 批量处理大小
+    完整删除单条记忆（数据库 + 向量库）
     
     Returns:
-        成功向量化的记忆数量
+        是否删除成功
     """
-    try:
-        vectorstore = get_memory_vectorstore(settings)
-        
-        # 获取已有向量ID列表（避免重复向量化）
-        existing_ids = set()
-        try:
-            existing_vectors = vectorstore.get()
-            if existing_vectors and existing_vectors.get("ids"):
-                existing_ids = set(existing_vectors["ids"])
-        except Exception as e:
-            logger.warning(f"获取已有向量列表失败: {e}")
-        
-        # 查询需要向量化的记忆
-        if user_id:
-            # 查询特定用户的记忆
-            from .database import LongTermMemory
-            from sqlalchemy import select
-            statement = select(LongTermMemory).where(LongTermMemory.user_id == user_id)
-            memories = list(session.execute(statement).scalars())
-        else:
-            # 查询所有记忆
-            from .database import LongTermMemory
-            from sqlalchemy import select
-            statement = select(LongTermMemory)
-            memories = list(session.execute(statement).scalars())
-        
-        # 过滤掉已向量化的记忆
-        memories_to_vectorize = [
-            mem for mem in memories
-            if mem.id not in existing_ids
-        ]
-        
-        if not memories_to_vectorize:
-            logger.info("没有需要向量化的记忆")
-            return 0
-        
-        logger.info(f"开始向量化 {len(memories_to_vectorize)} 条记忆...")
-        
-        # 批量处理
-        success_count = 0
-        for i in range(0, len(memories_to_vectorize), batch_size):
-            batch = memories_to_vectorize[i:i + batch_size]
-            
-            documents = []
-            ids = []
-            for mem in batch:
-                metadata = {
-                    "memory_id": mem.id,
-                    "memory_type": mem.memory_type,
-                }
-                if mem.user_id:
-                    metadata["user_id"] = mem.user_id
-                
-                doc = Document(page_content=mem.content, metadata=metadata)
-                documents.append(doc)
-                ids.append(mem.id)
-            
-            try:
-                vectorstore.add_documents(documents, ids=ids)
-                success_count += len(batch)
-                logger.info(f"已向量化 {success_count}/{len(memories_to_vectorize)} 条记忆")
-            except Exception as e:
-                logger.error(f"批量向量化失败: {e}", exc_info=True)
-        
-        logger.info(f"向量化完成，成功 {success_count}/{len(memories_to_vectorize)} 条")
-        return success_count
-        
-    except Exception as e:
-        logger.error(f"批量向量化记忆失败: {e}", exc_info=True)
-        return 0
+    from .database import delete_memory
+    
+    # 先删除向量
+    delete_memory_from_vectorstore(memory_id, settings)
+    
+    # 再删除数据库记录
+    success = delete_memory(session, memory_id)
+    
+    if success:
+        logger.info(f"记忆已完整删除: {memory_id}")
+    
+    return success
 
 
-def _retrieve_memories_by_embedding(
+# ==================== 混合检索模块 ====================
+
+def _retrieve_memories_by_vector(
     query: str,
     session: Session,
     settings: Settings,
     user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
     limit: int = 5,
-) -> List[LongTermMemory]:
-    """
-    使用向量检索记忆（真正的向量相似度搜索）
-    
-    使用 Chroma 向量数据库进行语义相似度搜索
-    """
+) -> List[Memory]:
+    """使用向量检索记忆（语义相似度搜索）"""
     try:
         vectorstore = get_memory_vectorstore(settings)
         
-        # 执行向量相似度搜索
-        # 搜索更多候选（limit * 3），然后根据用户过滤
-        search_k = min(limit * 5, 100)  # 搜索更多候选以应对过滤后的损失
+        # 搜索候选
+        search_k = min(limit * 5, 100)
         
         try:
-            # 尝试使用 filter 参数（新版本 Chroma 支持）
+            # 构建过滤条件（使用空字符串表示 None，确保能够过滤）
+            filter_dict = {}
             if user_id:
+                filter_dict["user_id"] = user_id
+            if session_id:
+                filter_dict["session_id"] = session_id
+            
+            # 执行向量搜索
+            if filter_dict:
                 results = vectorstore.similarity_search_with_score(
                     query,
                     k=search_k,
-                    filter={"user_id": user_id},
+                    filter=filter_dict,
                 )
             else:
                 results = vectorstore.similarity_search_with_score(
@@ -953,132 +597,295 @@ def _retrieve_memories_by_embedding(
                     k=search_k,
                 )
         except TypeError:
-            # 如果不支持 filter 参数，使用旧方法：先搜索再过滤
+            # 如果不支持 filter，使用旧方法
             results = vectorstore.similarity_search_with_score(query, k=search_k)
         
         if not results:
-            logger.debug("向量搜索未找到相关记忆")
             return []
         
-        # 从向量数据库中获取的 (Document, score) 列表
-        # score 是距离（越小越相似），需要转换为相似度
-        memory_ids = []
-        scored_memories = {}
-        
+        # 从向量结果中提取记忆ID和分数
+        memory_scores = {}
+        filtered_count = 0
         for doc, distance in results:
             memory_id = doc.metadata.get("memory_id")
             if not memory_id:
                 continue
             
-            # 跳过不同用户（如果指定了 user_id）
-            if user_id and doc.metadata.get("user_id") != user_id:
+            # 过滤不匹配的用户/会话（使用空字符串表示 None）
+            doc_user_id = doc.metadata.get("user_id", "")
+            doc_session_id = doc.metadata.get("session_id", "")
+            
+            # 如果指定了 user_id，必须完全匹配（空字符串表示旧记忆没有 user_id）
+            if user_id and doc_user_id != user_id:
+                filtered_count += 1
+                logger.debug(f"🚫 过滤记忆 {memory_id}：user_id 不匹配（要求={user_id}, 实际={doc_user_id}）")
                 continue
             
-            # 将距离转换为相似度分数（Chroma 使用余弦距离，范围 0-2）
-            # 相似度 = 1 - (distance / 2)
-            similarity_score = max(0.0, 1.0 - (distance / 2.0))
+            # 如果指定了 session_id，必须完全匹配（这样可以过滤掉其他会话和旧记忆）
+            if session_id and doc_session_id != session_id:
+                filtered_count += 1
+                logger.debug(f"🚫 过滤记忆 {memory_id}：session_id 不匹配（要求={session_id}, 实际={doc_session_id}）")
+                continue
             
-            memory_ids.append(memory_id)
-            scored_memories[memory_id] = similarity_score
+            # 转换距离为相似度分数（0-1）
+            similarity_score = max(0.0, 1.0 - (distance / 2.0))
+            memory_scores[memory_id] = similarity_score
         
-        if not memory_ids:
+        if filtered_count > 0:
+            logger.info(f"✂️ 向量检索过滤了 {filtered_count} 条不匹配的记忆")
+        
+        if not memory_scores:
+            logger.info(f"❌ 向量检索没有找到匹配的记忆（session_id={session_id}）")
             return []
         
         # 从数据库加载记忆对象
         memories = []
-        for memory_id in memory_ids[:limit * 2]:  # 加载更多用于后续筛选
-            try:
-                # 从 session 中获取记忆（需要从 LongTermMemory 表中查询）
-                memory = session.get(LongTermMemory, memory_id)
-                if memory:
-                    # 将相似度分数存储在临时属性中
-                    memory._vector_similarity = scored_memories.get(memory_id, 0.0)
-                    memories.append(memory)
-            except Exception as e:
-                logger.warning(f"加载记忆失败 {memory_id}: {e}")
-                continue
+        for memory_id, score in list(memory_scores.items())[:limit * 2]:
+            memory = get_memory_by_id(session, memory_id)
+            if memory:
+                # 存储向量相似度分数
+                memory._vector_score = score
+                memories.append(memory)
+                logger.debug(f"✅ 向量检索找到记忆: {memory_id}, session_id={memory.session_id}, 分数={score:.3f}")
         
-        # 按相似度分数和重要性综合排序
-        memories.sort(
-            key=lambda m: (
-                getattr(m, '_vector_similarity', 0.0),  # 向量相似度
-                m.importance_score / 100.0,  # 重要性评分归一化
-            ),
-            reverse=True,
-        )
+        return memories[:limit]
         
-        # 只返回前 limit 条
-        result = memories[:limit]
-        
-        logger.debug(f"向量检索找到 {len(result)} 条记忆（从 {len(memories)} 条中筛选）")
-        return result
-
     except Exception as e:
-        logger.error(f"向量检索记忆失败: {e}", exc_info=True)
-        # 失败时回退到关键词检索
-        logger.info("向量检索失败，回退到关键词检索")
-        return search_long_term_memory(
+        logger.error(f"向量检索失败: {e}", exc_info=True)
+        return []
+
+
+async def retrieve_relevant_memories(
+    session: Session,
+    query: str,
+    settings: Settings,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    max_memories: int = 5,
+) -> List[Memory]:
+    """
+    检索与查询相关的记忆（混合检索）
+    
+    实现三层检索策略：
+    1. 向量检索：使用 Chroma 进行语义搜索
+    2. 关键词检索：SQL LIKE 查询作为补充
+    3. 重要记忆补充：确保高重要性记忆（如姓名）始终可用
+    
+    Args:
+        session: 数据库会话
+        query: 查询文本
+        settings: 配置对象
+        user_id: 用户ID
+        session_id: 会话ID（用于会话隔离）
+        max_memories: 最大返回记忆数
+    
+    Returns:
+        相关记忆列表
+    """
+    # 检查会话配置，决定是否共享记忆
+    should_share = True
+    if session_id:
+        config = get_session_config(session, session_id)
+        if config:
+            should_share = config.share_memory
+            logger.info(f"🔒 会话 {session_id} 的记忆共享设置: share_memory={should_share}")
+        else:
+            # 会话没有配置，从用户偏好中读取默认值
+            from .database import get_user_preferences
+            prefs = get_user_preferences(session, user_id or "default")
+            if prefs:
+                should_share = prefs.default_share_memory
+                logger.info(f"🌐 会话 {session_id} 没有配置，使用用户偏好: share_memory={should_share}")
+            else:
+                logger.warning(f"⚠️ 会话 {session_id} 没有配置，且没有用户偏好，使用系统默认: share_memory={should_share}")
+    
+    # 如果不共享记忆，使用会话隔离
+    effective_session_id = None if should_share else session_id
+    
+    if not should_share:
+        logger.info(f"🔐 会话隔离模式：只检索 session_id={effective_session_id} 的记忆")
+    
+    all_memories = {}
+    
+    # 1. 向量检索
+    vector_memories = _retrieve_memories_by_vector(
+        query=query,
+        session=session,
+        settings=settings,
+        user_id=user_id,
+        session_id=effective_session_id,
+        limit=max_memories,
+    )
+    for mem in vector_memories:
+        all_memories[mem.id] = mem
+    
+    # 2. 关键词检索作为补充
+    keyword_memories = search_memories(
+        session=session,
+        query=query,
+        user_id=user_id,
+        session_id=effective_session_id,
+        min_importance=50,
+        limit=max_memories,
+    )
+    for mem in keyword_memories:
+        if mem.id not in all_memories:
+            mem._vector_score = 0.0  # 没有向量分数
+            all_memories[mem.id] = mem
+    
+    # 3. 补充重要的 fact 类型记忆（如姓名）
+    if len(all_memories) < max_memories:
+        important_memories = search_memories(
             session=session,
-            query=query,
+            memory_type="fact",
             user_id=user_id,
-            limit=limit,
-            min_importance=40,
+            session_id=effective_session_id,
+            min_importance=80,
+            limit=max_memories * 2,
         )
+        for mem in important_memories:
+            if mem.id not in all_memories and len(all_memories) < max_memories:
+                mem._vector_score = 0.0
+                all_memories[mem.id] = mem
+    
+    # 更新访问统计
+    for mem_id in all_memories:
+        update_memory_access(session, mem_id)
+    
+    # 综合评分排序
+    sorted_memories = sorted(
+        all_memories.values(),
+        key=lambda m: (
+            getattr(m, '_vector_score', 0.0) * 0.4 +  # 向量相似度权重
+            m.importance_score / 100 * 0.3 +  # 重要性权重
+            min(m.access_count / 10, 1.0) * 0.1 +  # 访问频率权重
+            (1.0 if m.memory_type == "fact" else 0.5) * 0.2  # fact类型优先
+        ),
+        reverse=True,
+    )[:max_memories]
+    
+    logger.info(f"混合检索找到 {len(sorted_memories)} 条相关记忆")
+    return sorted_memories
 
 
-def format_memories_for_context(memories: List[LongTermMemory]) -> str:
+# ==================== 记忆保存（含自动向量化）====================
+
+async def save_conversation_and_extract_memories(
+    session: Session,
+    session_id: str,
+    user_query: str,
+    assistant_reply: str,
+    settings: Settings,
+    user_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> List[Memory]:
     """
-    将记忆格式化为上下文提示词（隐式格式，用于内部处理）
-    不显示"记忆"、"记录"等标签，让信息看起来像是已知的背景知识
+    保存对话并自动提取记忆
+    
+    Returns:
+        新保存的记忆列表
     """
-    if not memories:
-        return ""
+    # 首先保存对话消息到历史记录
+    from .database import save_conversation_message
+    
+    try:
+        # 保存用户消息
+        save_conversation_message(
+            session=session,
+            session_id=session_id,
+            role="user",
+            content=user_query,
+            user_id=user_id,
+            metadata=metadata,
+        )
+        
+        # 保存助手回复
+        save_conversation_message(
+            session=session,
+            session_id=session_id,
+            role="assistant",
+            content=assistant_reply,
+            user_id=user_id,
+            metadata=metadata,
+        )
+        
+        logger.debug(f"已保存对话到会话 {session_id}")
+    except Exception as e:
+        logger.error(f"保存对话消息失败: {e}", exc_info=True)
+    
+    # 检查会话配置
+    config = get_session_config(session, session_id)
+    if config and not config.auto_extract:
+        logger.debug("会话禁用了自动提取，跳过记忆提取")
+        return []
+    
+    # 构建对话文本
+    conversation_text = f"用户: {user_query}\n助手: {assistant_reply}"
+    
+    # 提取记忆
+    extracted_memories = await extract_memories_from_conversation(
+        conversation_text=conversation_text,
+        settings=settings,
+        session_id=session_id,
+        user_id=user_id,
+    )
+    
+    # 保存提取的记忆（使用去重和合并逻辑，并自动向量化）
+    saved_memories = []
+    for mem in extracted_memories:
+        try:
+            # 使用去重保存
+            memory_record = save_memory_with_dedup(
+                session=session,
+                content=mem["content"],
+                memory_type=mem["type"],
+                importance_score=mem["importance"],
+                user_id=user_id,
+                session_id=session_id,
+                metadata={"extracted_at": "auto", **(metadata or {})},
+                threshold=0.75,
+            )
+            
+            # 向量化
+            add_memory_to_vectorstore(
+                memory_id=memory_record.id,
+                content=memory_record.content,
+                memory_type=memory_record.memory_type,
+                user_id=memory_record.user_id,
+                session_id=memory_record.session_id,
+                settings=settings,
+            )
+            
+            saved_memories.append(memory_record)
+            
+        except Exception as e:
+            logger.error(f"保存记忆失败: {e}", exc_info=True)
+    
+    logger.info(f"成功保存 {len(saved_memories)} 条记忆")
+    return saved_memories
 
-    parts = []
-    for mem in memories:
-        # 直接显示内容，不添加序号和标签，让信息更自然
-        parts.append(mem.content)
 
-    return "\n".join(parts)
+# ==================== 记忆格式化模块 ====================
 
-
-def format_memories_for_prompt(memories: List[LongTermMemory]) -> str:
+def format_memories_for_prompt(memories: List[Memory]) -> str:
     """
-    将记忆格式化为用于 LLM prompt 的格式（完全隐式）
-    不显示任何"记忆"、"信息"等标签，只提供纯内容
+    将记忆列表格式化为 LLM prompt（隐式格式）
+    不显示"记忆"、"信息"等标签，只提供纯内容
     """
     if not memories:
         return ""
     
-    # 只返回记忆内容，一行一个，没有任何标签
     return "\n".join(mem.content for mem in memories)
 
 
-def get_conversation_context(
-    session: Session,
-    session_id: str,
-    limit: int = 10,
-    user_id: Optional[str] = None,
-) -> List[Dict[str, str]]:
-    """
-    获取对话历史作为上下文
-    
-    Returns:
-        格式化的对话消息列表，格式: [{"role": "user|assistant", "content": "..."}, ...]
-    """
-    history = get_conversation_history(
-        session=session,
-        session_id=session_id,
-        limit=limit,
-        user_id=user_id,
-    )
 
-    messages = []
-    for record in history:
-        messages.append({
-            "role": record.role,
-            "content": record.content,
-        })
 
-    return messages
+
+
+
+
+
+
+
+
 

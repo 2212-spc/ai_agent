@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import logging
@@ -45,8 +45,10 @@ from .agent_builder import execute_custom_agent, stream_custom_agent
 from .agent_roles import list_available_agents
 from .memory_service import (
     retrieve_relevant_memories,
-    format_memories_for_context,
-    get_conversation_context,
+    save_conversation_and_extract_memories,
+    format_memories_for_prompt,
+    delete_memory_complete,
+    extract_memories_from_conversation,
 )
 from .auth import (
     authenticate_user,
@@ -58,25 +60,33 @@ from .auth import (
 from .database import (
     AgentConfig,
     ConversationHistory,
-    LongTermMemory,
     PromptTemplate,
     User,
+    Memory,
+    SessionConfig,
+    UserPreferences,
     get_agent_config_by_id,
     list_agent_configs,
     get_conversation_history,
-    get_recent_memories,
-    search_long_term_memory,
     list_conversation_sessions,
     search_conversation_sessions,
     delete_conversation_session,
     delete_conversation_message,
-    get_session_config,
-    create_or_update_session_config,
     get_prompt_template_by_id,
     get_active_prompt_for_agent,
     list_prompt_templates,
     create_prompt_template,
     update_prompt_template,
+    create_memory,
+    get_memory_by_id,
+    search_memories,
+    update_memory,
+    delete_memory,
+    delete_memories_batch,
+    get_session_config,
+    update_session_config,
+    get_user_preferences,
+    update_user_preferences,
     activate_prompt_template,
     delete_prompt_template,
 )
@@ -416,14 +426,16 @@ async def startup() -> None:
         register_builtin_tools_on_startup()
         
         # 预加载嵌入模型（避免首次上传文件卡住）
-        try:
-            logger.info("🔄 预加载嵌入模型...")
-            from .rag_service import get_embeddings
-            embeddings = get_embeddings()
-            test_emb = embeddings.embed_query("预热测试")
-            logger.info(f"✅ 嵌入模型已加载 (维度: {len(test_emb)})")
-        except Exception as e:
-            logger.warning(f"⚠️ 嵌入模型预加载失败: {e}")
+        # 注意：已注释掉，因为模型加载可能占用大量内存，导致系统重启
+        # 模型会在首次使用时按需加载
+        # try:
+        #     logger.info("🔄 预加载嵌入模型...")
+        #     from .rag_service import get_embeddings
+        #     embeddings = get_embeddings()
+        #     test_emb = embeddings.embed_query("预热测试")
+        #     logger.info(f"✅ 嵌入模型已加载 (维度: {len(test_emb)})")
+        # except Exception as e:
+        #     logger.warning(f"⚠️ 嵌入模型预加载失败: {e}")
             
     except Exception as exc:  # pragma: no cover
         logger.exception("启动初始化失败: %s", exc)
@@ -1332,33 +1344,6 @@ async def chat_with_langgraph_agent_stream(
                             "content": node_data["final_answer"]
                         })
                         logger.info(f"📤 已发送最终答案到前端，长度: {len(node_data['final_answer'])}")
-
-                        # 保存对话并提取记忆（异步进行，不阻塞流式响应）
-                        # 同时将知识库检索结果和工具结果写入元数据，供前端作为来源展示
-                        try:
-                            from .memory_service import save_conversation_and_extract_memories
-
-                            user_query = payload.messages[-1].content if payload.messages else ""
-                            metadata: Dict[str, Any] = {}
-
-                            if node_data.get("retrieved_contexts"):
-                                metadata["sources"] = node_data["retrieved_contexts"]
-                            if node_data.get("tool_results"):
-                                metadata["tool_results"] = node_data["tool_results"]
-
-                            saved_memories = await save_conversation_and_extract_memories(
-                                session=session,
-                                session_id=session_id,
-                                user_query=user_query,
-                                assistant_reply=node_data["final_answer"],
-                                settings=settings,
-                                user_id=payload.user_id,
-                                metadata=metadata or None,
-                            )
-                            if saved_memories:
-                                logger.info(f"💾 流式对话保存了 {len(saved_memories)} 条新记忆")
-                        except Exception as e:
-                            logger.warning(f"流式对话保存记忆失败: {e}")
                 
                 elif event_type == "completed":
                     # Agent 执行完成
@@ -2446,44 +2431,12 @@ async def chat_with_files_stream(
                         yield format_sse("assistant_final", {
                             "content": node_data["final_answer"]
                         })
-                        
-                        # 保存对话并提取记忆（异步进行，不阻塞流式响应）
-                        try:
-                            from .memory_service import save_conversation_and_extract_memories
-                            saved_memories = await save_conversation_and_extract_memories(
-                                session=session,
-                                session_id=session_id,
-                                user_query=user_query,
-                                assistant_reply=node_data["final_answer"],
-                                settings=settings,
-                                user_id=user_id,
-                            )
-                            if saved_memories:
-                                logger.info(f"💾 文件对话保存了 {len(saved_memories)} 条新记忆")
-                        except Exception as e:
-                            logger.warning(f"文件对话保存记忆失败: {e}")
                 
                 elif event_type == "final_answer":
                     final_content = event.get("content", "")
                     yield format_sse("assistant_final", {
                         "content": final_content
                     })
-                    
-                    # 保存对话并提取记忆（异步进行，不阻塞流式响应）
-                    try:
-                        from .memory_service import save_conversation_and_extract_memories
-                        saved_memories = await save_conversation_and_extract_memories(
-                            session=session,
-                            session_id=session_id,
-                            user_query=user_query,
-                            assistant_reply=final_content,
-                            settings=settings,
-                            user_id=user_id,
-                        )
-                        if saved_memories:
-                            logger.info(f"💾 文件对话保存了 {len(saved_memories)} 条新记忆")
-                    except Exception as e:
-                        logger.warning(f"文件对话保存记忆失败: {e}")
                 
                 elif event_type == "error":
                     yield format_sse("error", {
@@ -2503,24 +2456,6 @@ async def chat_with_files_stream(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-# ==================== 长期记忆系统 API ====================
-
-class MemoryItem(BaseModel):
-    """记忆项模型"""
-    model_config = ConfigDict(from_attributes=True)
-    
-    id: str
-    user_id: Optional[str]
-    memory_type: str
-    content: str
-    importance_score: int
-    source_conversation_id: Optional[str]
-    access_count: int
-    last_accessed_at: Optional[datetime]
-    created_at: datetime
-    updated_at: datetime
-
-
 class ConversationMessage(BaseModel):
     """对话消息模型（包含可选的元数据）"""
 
@@ -2531,50 +2466,6 @@ class ConversationMessage(BaseModel):
     content: str
     created_at: datetime
     metadata: Optional[Dict[str, Any]] = None
-
-
-@app.get("/memory/search", response_model=List[MemoryItem])
-async def search_memories(
-    query: str,
-    user_id: Optional[str] = None,
-    memory_types: Optional[List[str]] = None,
-    limit: int = 10,
-    session: Session = Depends(get_db_session),
-) -> List[MemoryItem]:
-    """
-    搜索长期记忆
-    
-    Args:
-        query: 搜索关键词
-        user_id: 用户ID（可选）
-        memory_types: 记忆类型过滤（可选）
-        limit: 返回数量限制
-    """
-    memories = search_long_term_memory(
-        session=session,
-        query=query,
-        user_id=user_id,
-        memory_types=memory_types,
-        limit=limit,
-    )
-    return [MemoryItem.model_validate(mem) for mem in memories]
-
-
-@app.get("/memory/recent", response_model=List[MemoryItem])
-async def get_recent_memories_api(
-    user_id: Optional[str] = None,
-    limit: int = 20,
-    session: Session = Depends(get_db_session),
-) -> List[MemoryItem]:
-    """
-    获取最近的记忆
-    """
-    memories = get_recent_memories(
-        session=session,
-        user_id=user_id,
-        limit=limit,
-    )
-    return [MemoryItem.model_validate(mem) for mem in memories]
 
 
 @app.get("/conversation/{session_id}/history", response_model=List[ConversationMessage])
@@ -2619,34 +2510,431 @@ async def get_conversation_history_api(
     return messages
 
 
-@app.get("/memory/context")
-async def get_memory_context(
-    query: str,
+# ==================== 记忆系统 API ====================
+
+class MemoryItem(BaseModel):
+    """记忆项模型"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: str
+    user_id: Optional[str]
+    session_id: Optional[str]
+    memory_type: str
+    content: str
+    importance_score: int
+    tags: Optional[list[str]] = None
+    access_count: int
+    last_accessed_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+
+class MemoryCreate(BaseModel):
+    """创建记忆请求"""
+    content: str
+    memory_type: str  # fact/preference/event/relationship
+    importance_score: int = 50
+    tags: Optional[list[str]] = None
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class MemoryUpdate(BaseModel):
+    """更新记忆请求"""
+    content: Optional[str] = None
+    importance_score: Optional[int] = None
+    tags: Optional[list[str]] = None
+
+
+class SessionConfigModel(BaseModel):
+    """会话配置模型"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    session_id: str
+    user_id: Optional[str] = None
+    share_memory: bool = True
+    auto_extract: bool = True
+
+
+class UserPreferencesModel(BaseModel):
+    """用户偏好设置模型"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    user_id: str = "default"
+    default_share_memory: bool = True
+    default_auto_extract: bool = True
+
+
+@app.get("/api/memories/search", response_model=List[MemoryItem])
+async def search_memories_api(
+    query: Optional[str] = None,
+    memory_type: Optional[str] = None,
     user_id: Optional[str] = None,
-    max_memories: int = 5,
     session_id: Optional[str] = None,
+    limit: int = 20,
+    session: Session = Depends(get_db_session),
+) -> List[MemoryItem]:
+    """搜索记忆"""
+    memories = search_memories(
+        session=session,
+        query=query,
+        memory_type=memory_type,
+        user_id=user_id,
+        session_id=session_id,
+        limit=limit,
+    )
+    
+    # 解析 tags 和 metadata
+    result = []
+    for mem in memories:
+        tags = None
+        if mem.tags:
+            try:
+                tags = json.loads(mem.tags)
+            except:
+                pass
+        
+        result.append(MemoryItem(
+            id=mem.id,
+            user_id=mem.user_id,
+            session_id=mem.session_id,
+            memory_type=mem.memory_type,
+            content=mem.content,
+            importance_score=mem.importance_score,
+            tags=tags,
+            access_count=mem.access_count,
+            last_accessed_at=mem.last_accessed_at,
+            created_at=mem.created_at,
+            updated_at=mem.updated_at,
+        ))
+    
+    return result
+
+
+@app.get("/api/memories/{memory_id}", response_model=MemoryItem)
+async def get_memory_api(
+    memory_id: str,
+    session: Session = Depends(get_db_session),
+) -> MemoryItem:
+    """获取单条记忆"""
+    memory = get_memory_by_id(session, memory_id)
+    if not memory:
+        raise HTTPException(status_code=404, detail="记忆不存在")
+    
+    tags = None
+    if memory.tags:
+        try:
+            tags = json.loads(memory.tags)
+        except:
+            pass
+    
+    return MemoryItem(
+        id=memory.id,
+        user_id=memory.user_id,
+        session_id=memory.session_id,
+        memory_type=memory.memory_type,
+        content=memory.content,
+        importance_score=memory.importance_score,
+        tags=tags,
+        access_count=memory.access_count,
+        last_accessed_at=memory.last_accessed_at,
+        created_at=memory.created_at,
+        updated_at=memory.updated_at,
+    )
+
+
+@app.post("/api/memories", response_model=MemoryItem)
+async def create_memory_api(
+    memory_data: MemoryCreate,
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> MemoryItem:
+    """创建新记忆"""
+    from .memory_service import add_memory_to_vectorstore
+    
+    memory = create_memory(
+        session=session,
+        content=memory_data.content,
+        memory_type=memory_data.memory_type,
+        importance_score=memory_data.importance_score,
+        user_id=memory_data.user_id,
+        session_id=memory_data.session_id,
+        tags=memory_data.tags,
+    )
+    
+    # 向量化
+    add_memory_to_vectorstore(
+        memory_id=memory.id,
+        content=memory.content,
+        memory_type=memory.memory_type,
+        user_id=memory.user_id,
+        session_id=memory.session_id,
+        settings=settings,
+    )
+    
+    tags = None
+    if memory.tags:
+        try:
+            tags = json.loads(memory.tags)
+        except:
+            pass
+    
+    return MemoryItem(
+        id=memory.id,
+        user_id=memory.user_id,
+        session_id=memory.session_id,
+        memory_type=memory.memory_type,
+        content=memory.content,
+        importance_score=memory.importance_score,
+        tags=tags,
+        access_count=memory.access_count,
+        last_accessed_at=memory.last_accessed_at,
+        created_at=memory.created_at,
+        updated_at=memory.updated_at,
+    )
+
+
+@app.put("/api/memories/{memory_id}", response_model=MemoryItem)
+async def update_memory_api(
+    memory_id: str,
+    memory_data: MemoryUpdate,
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> MemoryItem:
+    """更新记忆"""
+    from .memory_service import update_memory_in_vectorstore
+    
+    memory = update_memory(
+        session=session,
+        memory_id=memory_id,
+        content=memory_data.content,
+        importance_score=memory_data.importance_score,
+        tags=memory_data.tags,
+    )
+    
+    if not memory:
+        raise HTTPException(status_code=404, detail="记忆不存在")
+    
+    # 如果内容更新，需要更新向量
+    if memory_data.content:
+        update_memory_in_vectorstore(
+            memory_id=memory.id,
+            content=memory.content,
+            memory_type=memory.memory_type,
+            user_id=memory.user_id,
+            session_id=memory.session_id,
+            settings=settings,
+        )
+    
+    tags = None
+    if memory.tags:
+        try:
+            tags = json.loads(memory.tags)
+        except:
+            pass
+    
+    return MemoryItem(
+        id=memory.id,
+        user_id=memory.user_id,
+        session_id=memory.session_id,
+        memory_type=memory.memory_type,
+        content=memory.content,
+        importance_score=memory.importance_score,
+        tags=tags,
+        access_count=memory.access_count,
+        last_accessed_at=memory.last_accessed_at,
+        created_at=memory.created_at,
+        updated_at=memory.updated_at,
+    )
+
+
+@app.delete("/api/memories/{memory_id}")
+async def delete_memory_api(
+    memory_id: str,
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """删除记忆"""
+    success = delete_memory_complete(session, memory_id, settings)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="记忆不存在")
+    
+    return {"success": True, "message": "记忆已删除"}
+
+
+@app.delete("/api/memories/batch")
+async def delete_memories_batch_api(
+    memory_ids: List[str],
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """批量删除记忆"""
+    from .memory_service import delete_memory_from_vectorstore
+    
+    # 删除向量
+    for memory_id in memory_ids:
+        delete_memory_from_vectorstore(memory_id, settings)
+    
+    # 删除数据库记录
+    count = delete_memories_batch(session, memory_ids)
+    
+    return {"success": True, "deleted_count": count}
+
+
+@app.get("/api/sessions/{session_id}/config", response_model=SessionConfigModel)
+async def get_session_config_api(
+    session_id: str,
+    session: Session = Depends(get_db_session),
+) -> SessionConfigModel:
+    """获取会话配置"""
+    config = get_session_config(session, session_id)
+    
+    if not config:
+        # 创建默认配置
+        config = update_session_config(
+            session=session,
+            session_id=session_id,
+            share_memory=True,
+            auto_extract=True,
+        )
+    
+    return SessionConfigModel.model_validate(config)
+
+
+@app.put("/api/sessions/{session_id}/config", response_model=SessionConfigModel)
+async def update_session_config_api(
+    session_id: str,
+    config_data: SessionConfigModel,
+    session: Session = Depends(get_db_session),
+) -> SessionConfigModel:
+    """更新会话配置"""
+    config = update_session_config(
+        session=session,
+        session_id=session_id,
+        share_memory=config_data.share_memory,
+        auto_extract=config_data.auto_extract,
+        user_id=config_data.user_id,
+    )
+    
+    return SessionConfigModel.model_validate(config)
+
+
+@app.post("/api/memories/extract")
+async def extract_memories_api(
+    conversation_text: str,
+    session_id: str,
+    user_id: Optional[str] = None,
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """手动触发记忆提取"""
+    memories = await extract_memories_from_conversation(
+        conversation_text=conversation_text,
+        settings=settings,
+        session_id=session_id,
+        user_id=user_id,
+    )
+    
+    return {
+        "success": True,
+        "extracted_count": len(memories),
+        "memories": memories,
+    }
+
+
+@app.post("/api/memories/reindex")
+async def reindex_memories_api(
     settings: Settings = Depends(get_settings),
     session: Session = Depends(get_db_session),
 ) -> Dict[str, Any]:
     """
-    获取与查询相关的记忆上下文（用于在对话中使用）
+    重新索引所有记忆到向量库
+    修复旧记忆的 metadata 格式问题
     """
-    memories = await retrieve_relevant_memories(
+    from .memory_service import add_memory_to_vectorstore
+    
+    try:
+        # 获取所有记忆
+        all_memories = search_memories(session=session, limit=10000)
+        
+        reindexed_count = 0
+        failed_count = 0
+        
+        for memory in all_memories:
+            try:
+                # 重新添加到向量库（使用新的 metadata 格式）
+                add_memory_to_vectorstore(
+                    memory_id=memory.id,
+                    content=memory.content,
+                    memory_type=memory.memory_type,
+                    user_id=memory.user_id,
+                    session_id=memory.session_id,
+                    settings=settings,
+                )
+                reindexed_count += 1
+            except Exception as e:
+                logger.error(f"重新索引记忆 {memory.id} 失败: {e}")
+                failed_count += 1
+        
+        logger.info(f"✅ 记忆重新索引完成：成功={reindexed_count}, 失败={failed_count}")
+        
+        return {
+            "success": True,
+            "reindexed_count": reindexed_count,
+            "failed_count": failed_count,
+            "total_memories": len(all_memories),
+        }
+    
+    except Exception as e:
+        logger.error(f"记忆重新索引失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"重新索引失败: {str(e)}")
+
+
+# ==================== 用户偏好设置 API ====================
+
+@app.get("/api/preferences", response_model=UserPreferencesModel)
+async def get_preferences_api(
+    user_id: str = "default",
+    session: Session = Depends(get_db_session),
+) -> UserPreferencesModel:
+    """获取用户偏好设置"""
+    prefs = get_user_preferences(session, user_id)
+    
+    if not prefs:
+        # 创建默认偏好
+        prefs = update_user_preferences(
+            session=session,
+            user_id=user_id,
+            default_share_memory=True,
+            default_auto_extract=True,
+        )
+    
+    return UserPreferencesModel.model_validate(prefs)
+
+
+@app.put("/api/preferences", response_model=UserPreferencesModel)
+async def update_preferences_api(
+    prefs_data: UserPreferencesModel,
+    session: Session = Depends(get_db_session),
+) -> UserPreferencesModel:
+    """
+    更新用户偏好设置
+    修改后，所有新建的会话都将使用这些默认设置
+    """
+    prefs = update_user_preferences(
         session=session,
-        query=query,
-        settings=settings,
-        user_id=user_id,
-        max_memories=max_memories,
-        session_id=session_id,
+        user_id=prefs_data.user_id,
+        default_share_memory=prefs_data.default_share_memory,
+        default_auto_extract=prefs_data.default_auto_extract,
     )
     
-    context_text = format_memories_for_context(memories)
+    logger.info(
+        f"✅ 用户偏好已更新: user_id={prefs_data.user_id}, "
+        f"share_memory={prefs_data.default_share_memory}, "
+        f"auto_extract={prefs_data.default_auto_extract}"
+    )
     
-    return {
-        "memories": [MemoryItem.model_validate(mem) for mem in memories],
-        "context_text": context_text,
-        "count": len(memories),
-    }
+    return UserPreferencesModel.model_validate(prefs)
 
 
 # ==================== 会话管理 API ====================
@@ -2661,15 +2949,6 @@ class ConversationSession(BaseModel):
     first_message_time: Optional[str]
     last_message_time: Optional[str]
     preview: str
-
-
-class SessionConfigModel(BaseModel):
-    """会话配置模型"""
-    model_config = ConfigDict(from_attributes=True)
-    
-    session_id: str
-    user_id: Optional[str] = None
-    share_memory_across_sessions: bool = True
 
 
 @app.get("/conversations", response_model=List[ConversationSession])
@@ -2753,47 +3032,6 @@ async def delete_message_api(
         "success": success,
         "message_id": message_id,
     }
-
-
-@app.get("/conversation/{session_id}/config", response_model=SessionConfigModel)
-async def get_session_config_api(
-    session_id: str,
-    session: Session = Depends(get_db_session),
-) -> SessionConfigModel:
-    """
-    获取会话配置
-    """
-    config = get_session_config(session, session_id)
-    
-    if not config:
-        # 创建默认配置
-        config = create_or_update_session_config(
-            session=session,
-            session_id=session_id,
-            share_memory_across_sessions=True,
-        )
-    
-    return SessionConfigModel.model_validate(config)
-
-
-@app.put("/conversation/{session_id}/config", response_model=SessionConfigModel)
-async def update_session_config_api(
-    session_id: str,
-    config_data: SessionConfigModel,
-    user_id: Optional[str] = None,
-    session: Session = Depends(get_db_session),
-) -> SessionConfigModel:
-    """
-    更新会话配置（包括记忆共享设置）
-    """
-    config = create_or_update_session_config(
-        session=session,
-        session_id=session_id,
-        share_memory_across_sessions=config_data.share_memory_across_sessions,
-        user_id=user_id or config_data.user_id,
-    )
-    
-    return SessionConfigModel.model_validate(config)
 
 
 # ==================== 多智能体系统 API ====================
@@ -2935,23 +3173,6 @@ async def chat_with_multi_agent_stream(
                             "content": node_data["final_answer"],
                         })
                         logger.info(f"📤 多智能体模式：已发送最终答案，长度: {len(node_data['final_answer'])}")
-                        
-                        # 保存对话并提取记忆（异步进行，不阻塞流式响应）
-                        try:
-                            from .memory_service import save_conversation_and_extract_memories
-                            user_query = payload.messages[-1].content if payload.messages else ""
-                            saved_memories = await save_conversation_and_extract_memories(
-                                session=session,
-                                session_id=session_id,
-                                user_query=user_query,
-                                assistant_reply=node_data["final_answer"],
-                                settings=settings,
-                                user_id=payload.user_id,
-                            )
-                            if saved_memories:
-                                logger.info(f"💾 多智能体模式：保存了 {len(saved_memories)} 条新记忆")
-                        except Exception as e:
-                            logger.warning(f"多智能体模式：保存记忆失败: {e}")
                 
                 # 完成事件
                 elif event_type == "completed":
