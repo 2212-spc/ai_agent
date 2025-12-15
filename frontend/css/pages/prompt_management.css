@@ -321,13 +321,19 @@
             right: 0;
             bottom: 0;
             background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
+            z-index: 2000;
             align-items: center;
             justify-content: center;
+            transform: none;        /* 覆盖全局 .modal 的位移 */
+            max-width: none;        /* 防止继承组件限制 */
+            max-height: none;
+            overflow: visible;
+            box-shadow: none;
+            border-radius: 0;
         }
 
         .modal.active {
-            display: flex;
+            display: flex !important; /* 强制启用居中布局，避免内联覆盖 */
         }
 
         .modal-content {

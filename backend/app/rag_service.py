@@ -41,12 +41,15 @@ _RERANK_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 _VECTORSTORE_CACHE: dict[str, Chroma] = {}
 _RERANKER_CACHE: CrossEncoder | None = None
 _BM25_CACHE: dict[str, Tuple[BM25Okapi, List[Document]]] = {}
+_EMBEDDINGS_CACHE: HuggingFaceEmbeddings | None = None  # 添加嵌入模型缓存
 
 
 def get_embeddings() -> HuggingFaceEmbeddings:
     """Return a cached embedding model instance."""
-    # LangChain loads weights lazily; caching avoids repeated downloads.
-    return HuggingFaceEmbeddings(model_name=_EMBEDDING_MODEL_NAME)
+    global _EMBEDDINGS_CACHE
+    if _EMBEDDINGS_CACHE is None:
+        _EMBEDDINGS_CACHE = HuggingFaceEmbeddings(model_name=_EMBEDDING_MODEL_NAME)
+    return _EMBEDDINGS_CACHE
 
 
 def ingest_text_chunk(

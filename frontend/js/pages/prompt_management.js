@@ -392,12 +392,19 @@
             document.getElementById('generateResult').style.display = 'none';
             currentGeneratedPrompt = null;
             
-            document.getElementById('generateModal').style.display = 'block';
+            // 使用与创建模态框一致的显示方式，保证居中与层级
+            const modal = document.getElementById('generateModal');
+            modal.classList.add('active');
+            modal.style.display = 'flex';
         }
 
         // 关闭生成模态框
         function closeGenerateModal() {
-            document.getElementById('generateModal').style.display = 'none';
+            const modal = document.getElementById('generateModal');
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+            // 确保生成结果区域隐藏，避免残留
+            document.getElementById('generateResult').style.display = 'none';
         }
 
         // 生成Prompt

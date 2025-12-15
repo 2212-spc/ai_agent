@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆管理 - AI Agent</title>
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/pages/memory.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-main">
+                <div class="logo">🤖</div>
+                <div class="header-title">
+                    <h1>AI Agent Studio</h1>
+                    <div class="header-title-sub">记忆管理</div>
+                </div>
+                <div class="header-nav">
+                    <div class="nav-links">
+                        <a href="agent_chat.html" class="nav-link">
+                            <span>💬 对话工作台</span>
+                        </a>
+                        <a href="prompt_management.html" class="nav-link">
+                            <span>📝 Prompt 模板</span>
+                        </a>
+                        <a href="knowledge_base.html" class="nav-link">
+                            <span>📁 知识库</span>
+                        </a>
+                        <a href="memory.html" class="nav-link active">
+                            <span>🧠 记忆管理</span>
+                        </a>
+                        <a href="conversation_history.html" class="nav-link">
+                            <span>📚 会话历史</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-icon" id="themeToggle" onclick="toggleTheme()" title="切换主题">
+                    <span id="themeIcon">🌙</span>
+                </button>
+                <button class="btn btn-secondary" onclick="location.href='agent_chat.html'">
+                    ← 返回聊天
+                </button>
+                <button class="btn btn-secondary" onclick="refreshMemories()" title="刷新记忆列表">
+                    🔄 刷新
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-label">记忆总数</span>
+                <span class="stat-value" id="totalMemories">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">事实</span>
+                <span class="stat-value fact" id="factCount">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">偏好</span>
+                <span class="stat-value preference" id="preferenceCount">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">事件</span>
+                <span class="stat-value event" id="eventCount">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">关系</span>
+                <span class="stat-value relationship" id="relationshipCount">0</span>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Left Panel: Memory Configuration -->
+            <div class="config-panel">
+                <div class="panel-card">
+                    <h3>🌐 全局记忆设置</h3>
+                    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">
+                        这些设置将应用于所有新建的对话
+                    </p>
+                    
+                    <div class="config-section">
+                        <div class="config-item">
+                            <div class="config-label">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="9" cy="7" r="4"/>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                                </svg>
+                                <div>
+                                    <strong>新对话默认共享记忆</strong>
+                                    <p class="config-desc">开启后，新对话可以访问历史记忆；关闭后，新对话将完全隔离</p>
+                                </div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="shareMemoryToggle" onchange="toggleShareMemory()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="config-item">
+                            <div class="config-label">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path d="M12 20h9"/>
+                                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                                </svg>
+                                <div>
+                                    <strong>新对话默认自动提取记忆</strong>
+                                    <p class="config-desc">开启后，新对话会自动提取重要信息作为长期记忆</p>
+                                </div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="autoExtractToggle" onchange="toggleAutoExtract()">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="info-box">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 16v-4"/>
+                            <path d="M12 8h.01"/>
+                        </svg>
+                        <div>
+                            <p><strong>💡 说明：</strong></p>
+                            <ul>
+                                <li>✅ 修改这些设置后，<strong>所有新建的对话</strong>都会使用新设置</li>
+                                <li>📝 已有对话的设置不会改变</li>
+                                <li>🔒 关闭记忆共享后，新对话将无法访问历史记忆</li>
+                            </ul>
+                            <p style="margin-top: 12px;"><strong>记忆类型：</strong></p>
+                            <ul style="margin-top: 8px;">
+                                <li><span class="type-badge fact">事实</span> 明确的事实信息（姓名、职业等）</li>
+                                <li><span class="type-badge preference">偏好</span> 用户的偏好和习惯</li>
+                                <li><span class="type-badge event">事件</span> 重要的事件或计划</li>
+                                <li><span class="type-badge relationship">关系</span> 人物关系或社交信息</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Memory List -->
+            <div class="memory-panel">
+                <!-- Toolbar -->
+                <div class="toolbar">
+                    <div class="search-box">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="m21 21-4.35-4.35"/>
+                        </svg>
+                        <input 
+                            type="text" 
+                            id="searchInput" 
+                            placeholder="搜索记忆内容..."
+                            oninput="searchMemories()"
+                        />
+                    </div>
+
+                    <select id="typeFilter" class="type-filter" onchange="filterMemories()">
+                        <option value="all">所有类型</option>
+                        <option value="fact">事实</option>
+                        <option value="preference">偏好</option>
+                        <option value="event">事件</option>
+                        <option value="relationship">关系</option>
+                    </select>
+
+                    <button 
+                        class="btn btn-secondary"
+                        onclick="toggleSelectAll()"
+                        id="selectAllBtn"
+                    >
+                        全选
+                    </button>
+
+                    <button 
+                        class="btn btn-danger"
+                        onclick="deleteBatch()"
+                        id="deleteBatchBtn"
+                        disabled
+                    >
+                        删除选中 (<span id="selectedCount">0</span>)
+                    </button>
+                </div>
+
+                <!-- Memory List -->
+                <div class="memory-list" id="memoryList">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">
+        <span id="toastIcon"></span>
+        <span id="toastMessage"></span>
+    </div>
+
+    <!-- Confirm Dialog -->
+    <div class="dialog-overlay" id="confirmDialog">
+        <div class="dialog">
+            <div class="dialog-header">
+                <h3 id="dialogTitle">确认操作</h3>
+            </div>
+            <div class="dialog-body">
+                <p id="dialogMessage"></p>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-secondary" onclick="closeDialog()">取消</button>
+                <button class="btn btn-danger" id="confirmBtn" onclick="confirmAction()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/pages/memory.js"></script>
+</body>
+</html>

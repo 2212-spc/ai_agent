@@ -389,11 +389,44 @@ class ChatManager {
                             }
                         }
                     } else if (eventType === 'node' || eventType === 'status') {
-                            // 只在当前会话时更新时间线
-                            if (isCurrentSession()) {
-                        this.handleNodeUpdate(eventData);
+                        // 只在当前会话时更新时间线
+                        if (isCurrentSession()) {
+                            this.handleNodeUpdate(eventData);
+                        }
+                    } else if (eventType === 'tool_call' || eventType === 'tool_result' || eventType === 'assistant_draft' || eventType === 'assistant_final' || eventType === 'completed') {
+                        // 将后端的工具/最终事件同步到时间线
+                        if (isCurrentSession()) {
+                            if (eventType === 'tool_call') {
+                                this.handleNodeUpdate({
+                                    type: 'tool_call',
+                                    action: eventData.tool_name || eventData.tool_id || '工具调用',
+                                    node: 'tools'
+                                });
+                            } else if (eventType === 'tool_result') {
+                                this.handleNodeUpdate({
+                                    type: 'observation',
+                                    observation: eventData.output || '工具返回',
+                                    node: eventData.tool_name || 'tools'
+                                });
+                            } else if (eventType === 'assistant_draft') {
+                                this.handleNodeUpdate({
+                                    type: 'planning',
+                                    thought: eventData.content || '生成中...',
+                                    node: 'planner'
+                                });
+                            } else if (eventType === 'assistant_final') {
+                                this.handleNodeUpdate({
+                                    type: 'status',
+                                    status: '完成回答'
+                                });
+                            } else if (eventType === 'completed') {
+                                this.handleNodeUpdate({
+                                    type: 'status',
+                                    status: '流程结束'
+                                });
+                            }
+                        }
                     }
-                }
             }
         }
             }
