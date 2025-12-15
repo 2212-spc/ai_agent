@@ -193,6 +193,14 @@
             color: var(--success-color);
         }
         
+        .mode-indicator.global-memory {
+            color: var(--primary-color);
+        }
+        
+        .mode-indicator.deep-thinking {
+            color: #a855f7;
+        }
+        
         .message-time {
             margin-left: auto;
             font-size: 12px;
@@ -390,7 +398,7 @@
         }
 
         .message {
-            margin-bottom: 24px;
+            margin-bottom: 60px; /* 增加空间以容纳按钮和版本导航器 */
             padding: 0 24px;
             animation: slideIn 0.3s ease-out;
         }
@@ -3279,6 +3287,138 @@
             font-weight: 500;
         }
         
+        /* ===== 重新生成按钮样式 ===== */
+        .message-content > .regenerate-btn {
+            position: absolute !important;
+            bottom: -26px !important;
+            right: 90px !important; /* 在复制按钮左侧 */
+            top: auto !important;
+            display: inline-flex !important;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px !important;
+            background: transparent !important;
+            border: none !important;
+            border-radius: 4px;
+            color: var(--text-tertiary) !important;
+            font-size: 12px !important;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.2s ease;
+            z-index: 1;
+            white-space: nowrap;
+        }
+        
+        .message.agent-message:hover .message-content > .regenerate-btn {
+            opacity: 1;
+        }
+        
+        .message-content > .regenerate-btn:hover {
+            background: rgba(34, 197, 94, 0.1) !important;
+            color: var(--success-color) !important;
+            transform: none !important;
+        }
+        
+        .message-content > .regenerate-btn:active {
+            background: rgba(34, 197, 94, 0.15) !important;
+        }
+        
+        .message-content > .regenerate-btn svg {
+            flex-shrink: 0;
+            width: 14px;
+            height: 14px;
+        }
+        
+        .message-content > .regenerate-btn .regenerate-text {
+            font-weight: 500;
+        }
+        
+        /* 移动端 - 重新生成按钮 */
+        @media (max-width: 768px) {
+            .message-content > .regenerate-btn {
+                opacity: 0.6;
+            }
+            
+            .message.agent-message:hover .message-content > .regenerate-btn {
+                opacity: 1;
+            }
+        }
+        
+        /* ===== 版本导航器样式 ===== */
+        .version-navigator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            transition: all 0.2s ease;
+        }
+        
+        .version-info {
+            font-weight: 600;
+            color: var(--primary-color);
+            min-width: 40px;
+            text-align: center;
+        }
+        
+        .version-nav-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .version-nav-btn:hover:not(:disabled) {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+            transform: scale(1.05);
+        }
+        
+        .version-nav-btn:active:not(:disabled) {
+            transform: scale(0.95);
+        }
+        
+        .version-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            background: var(--bg-tertiary);
+        }
+        
+        .version-nav-btn svg {
+            display: block;
+        }
+        
+        /* 版本导航器动画 */
+        @keyframes versionFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .version-navigator {
+            animation: versionFadeIn 0.3s ease;
+        }
+        
         /* ===== 编辑模式样式 ===== */
         /* 编辑模式：模糊其他内容 */
         body.editing-mode .session-messages .message:not(.editing-active) {
@@ -3417,5 +3557,321 @@
             
             .message:hover .message-content > .edit-btn {
                 opacity: 1;
+            }
+        }
+        
+        /* ===== 深度思考模式样式 ===== */
+        
+        /* 思考面板容器 */
+        .thinking-panel {
+            margin: 12px 0;
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            border-radius: 12px;
+            background: linear-gradient(135deg, 
+                rgba(99, 102, 241, 0.03) 0%, 
+                rgba(168, 85, 247, 0.05) 100%);
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 8px rgba(168, 85, 247, 0.08);
+        }
+        
+        .thinking-panel:hover {
+            box-shadow: 0 4px 16px rgba(168, 85, 247, 0.12);
+            border-color: rgba(168, 85, 247, 0.3);
+        }
+        
+        .thinking-panel.collapsed .thinking-content {
+            display: none;
+        }
+        
+        /* 思考头部 */
+        .thinking-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s ease;
+            background: rgba(168, 85, 247, 0.02);
+        }
+        
+        .thinking-header:hover {
+            background: rgba(168, 85, 247, 0.08);
+        }
+        
+        .thinking-header:active {
+            background: rgba(168, 85, 247, 0.12);
+        }
+        
+        /* 思考图标动画 */
+        .thinking-icon {
+            font-size: 20px;
+            animation: thinking-pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes thinking-pulse {
+            0%, 100% { 
+                opacity: 1; 
+                transform: scale(1); 
+            }
+            50% { 
+                opacity: 0.6; 
+                transform: scale(1.15); 
+            }
+        }
+        
+        /* 思考标题 */
+        .thinking-title {
+            font-weight: 600;
+            font-size: 15px;
+            color: #a855f7;
+            letter-spacing: 0.3px;
+        }
+        
+        /* 步骤徽章 */
+        .thinking-badge {
+            padding: 3px 10px;
+            background: linear-gradient(135deg, #a855f7, #8b5cf6);
+            color: white;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 6px rgba(168, 85, 247, 0.3);
+        }
+        
+        /* 思考用时 */
+        .thinking-time {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--text-tertiary);
+            font-weight: 500;
+            font-family: 'Monaco', 'Courier New', monospace;
+        }
+        
+        /* 展开/折叠指示器 */
+        .thinking-toggle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .thinking-panel:not(.collapsed) .thinking-toggle {
+            transform: rotate(180deg);
+        }
+        
+        /* 思考内容区域 */
+        .thinking-content {
+            padding: 0 16px 16px;
+            animation: thinking-fadeIn 0.3s ease;
+        }
+        
+        @keyframes thinking-fadeIn {
+            from { 
+                opacity: 0; 
+                transform: translateY(-10px); 
+            }
+            to { 
+                opacity: 1; 
+                transform: translateY(0); 
+            }
+        }
+        
+        /* 思考步骤容器 */
+        .thinking-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        /* 单个思考步骤 */
+        .thinking-step {
+            padding: 14px;
+            background: var(--bg-primary);
+            border-left: 3px solid #a855f7;
+            border-radius: 8px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+            animation: thinking-slideIn 0.3s ease;
+            transition: all 0.2s ease;
+        }
+        
+        .thinking-step:hover {
+            box-shadow: 0 2px 8px rgba(168, 85, 247, 0.15);
+            transform: translateX(2px);
+        }
+        
+        @keyframes thinking-slideIn {
+            from { 
+                opacity: 0; 
+                transform: translateX(-20px); 
+            }
+            to { 
+                opacity: 1; 
+                transform: translateX(0); 
+            }
+        }
+        
+        /* 步骤头部 */
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        /* 步骤图标 */
+        .step-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+            filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+        }
+        
+        /* 步骤标题 */
+        .step-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-primary);
+            flex: 1;
+        }
+        
+        /* 步骤状态徽章 */
+        .step-status {
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+        }
+        
+        .step-status.thinking,
+        .step-status.processing {
+            background: rgba(59, 130, 246, 0.12);
+            color: #3b82f6;
+            animation: status-pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes status-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .step-status.completed,
+        .step-status.success {
+            background: rgba(34, 197, 94, 0.12);
+            color: #22c55e;
+        }
+        
+        .step-status.error {
+            background: rgba(239, 68, 68, 0.12);
+            color: #ef4444;
+        }
+        
+        .step-status.skipped {
+            background: rgba(156, 163, 175, 0.12);
+            color: #9ca3af;
+        }
+        
+        /* 步骤内容 */
+        .step-content {
+            font-size: 14px;
+            line-height: 1.7;
+            color: var(--text-secondary);
+            padding-left: 30px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        
+        /* 步骤详细信息 */
+        .step-details {
+            margin-top: 10px;
+            padding: 10px;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            font-size: 13px;
+            color: var(--text-tertiary);
+            font-family: 'Monaco', 'Courier New', monospace;
+            line-height: 1.6;
+            border-left: 2px solid rgba(168, 85, 247, 0.3);
+        }
+        
+        /* 暗色主题适配 */
+        [data-theme="dark"] .thinking-panel {
+            background: linear-gradient(135deg, 
+                rgba(99, 102, 241, 0.05) 0%, 
+                rgba(168, 85, 247, 0.08) 100%);
+            border-color: rgba(168, 85, 247, 0.3);
+        }
+        
+        [data-theme="dark"] .thinking-header {
+            background: rgba(168, 85, 247, 0.05);
+        }
+        
+        [data-theme="dark"] .thinking-header:hover {
+            background: rgba(168, 85, 247, 0.12);
+        }
+        
+        [data-theme="dark"] .thinking-step {
+            background: rgba(30, 30, 40, 0.8);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        [data-theme="dark"] .thinking-step:hover {
+            box-shadow: 0 2px 8px rgba(168, 85, 247, 0.25);
+        }
+        
+        [data-theme="dark"] .step-details {
+            background: rgba(20, 20, 30, 0.6);
+        }
+        
+        /* 移动端优化 */
+        @media (max-width: 768px) {
+            .thinking-panel {
+                margin: 8px 0;
+                border-radius: 8px;
+            }
+            
+            .thinking-header {
+                padding: 10px 12px;
+                gap: 8px;
+            }
+            
+            .thinking-icon {
+                font-size: 18px;
+            }
+            
+            .thinking-title {
+                font-size: 14px;
+            }
+            
+            .thinking-badge {
+                font-size: 10px;
+                padding: 2px 8px;
+            }
+            
+            .thinking-time {
+                font-size: 11px;
+            }
+            
+            .thinking-content {
+                padding: 0 12px 12px;
+            }
+            
+            .thinking-step {
+                padding: 12px;
+            }
+            
+            .step-icon {
+                font-size: 18px;
+            }
+            
+            .step-title {
+                font-size: 13px;
+            }
+            
+            .step-content {
+                font-size: 13px;
+                padding-left: 28px;
             }
         }

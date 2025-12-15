@@ -494,6 +494,28 @@ async def save_conversation_and_extract_memories(
     保存对话并自动提取记忆
     返回新保存的记忆列表
     """
+    # 🔐 严格检查：没有 user_id 不保存记忆（防止跨账号混淆）
+    if not user_id:
+        logger.warning("⚠️ 缺少 user_id，跳过记忆保存（安全考虑）")
+        # 仍然保存对话记录（不需要 user_id）
+        save_conversation_message(
+            session=session,
+            session_id=session_id,
+            role="user",
+            content=user_query,
+            user_id=None,
+            metadata=metadata,
+        )
+        save_conversation_message(
+            session=session,
+            session_id=session_id,
+            role="assistant",
+            content=assistant_reply,
+            user_id=None,
+            metadata=metadata,
+        )
+        return []
+    
     # 保存用户消息
     save_conversation_message(
         session=session,
@@ -568,7 +590,7 @@ async def retrieve_relevant_memories(
         session: 数据库会话
         query: 查询文本
         settings: 配置对象
-        user_id: 用户ID
+        user_id: 用户ID（必需，用于隔离不同账号的记忆）
         max_memories: 最大返回记忆数
         session_id: 当前会话ID（用于记忆隔离）
         share_memory: 是否共享记忆（None 表示使用会话配置）
@@ -576,18 +598,24 @@ async def retrieve_relevant_memories(
     Returns:
         相关记忆列表
     """
-    # 检查会话配置，决定是否共享记忆
-    should_share = True  # 默认共享
+    # 🔐 严格检查：必须有 user_id，否则返回空列表（防止跨账号记忆泄露）
+    if not user_id:
+        logger.warning("⚠️ 记忆检索缺少 user_id，为安全起见返回空列表")
+        return []
     
-    if session_id:
+    # 检查会话配置，决定是否共享记忆
+    # 🔒 默认值改为 False（独立记忆），只有显式开启全局记忆时才共享
+    should_share = False  # 默认：独立记忆（会话隔离）
+    
+    # 如果明确传递了 share_memory 参数，优先使用
+    if share_memory is not None:
+        should_share = share_memory
+    # 否则，检查会话配置
+    elif session_id:
         from .database import get_session_config
         config = get_session_config(session, session_id)
         if config:
             should_share = config.share_memory_across_sessions
-        elif share_memory is not None:
-            should_share = share_memory
-    elif share_memory is not None:
-        should_share = share_memory
     
     # 如果不应共享记忆，只检索当前会话的记忆
     if not should_share and session_id:
@@ -932,6 +960,11 @@ def _retrieve_memories_by_embedding(
     
     使用 Chroma 向量数据库进行语义相似度搜索
     """
+    # 🔐 严格检查：必须有 user_id，否则返回空列表
+    if not user_id:
+        logger.warning("⚠️ 向量检索缺少 user_id，返回空列表")
+        return []
+    
     try:
         vectorstore = get_memory_vectorstore(settings)
         

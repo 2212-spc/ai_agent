@@ -138,6 +138,13 @@ class ChatRequest(BaseModel):
     user_id: Optional[str] = Field(
         default=None, description="用户ID，用于多用户场景。"
     )
+    # 记忆控制字段（前端发送）
+    memory_mode: Optional[str] = Field(
+        default="session", description="记忆模式：'global'（全局记忆）或 'session'（独立记忆）"
+    )
+    share_memory: Optional[bool] = Field(
+        default=None, description="是否共享记忆（显式控制，优先级最高）"
+    )
 
 
 class ContextSnippet(BaseModel):
@@ -1261,6 +1268,41 @@ async def chat_with_langgraph_agent_stream(
     
     # 获取或生成 session_id
     session_id = payload.session_id or str(uuid.uuid4())
+    
+    # 🔒 根据前端请求设置会话的记忆配置
+    from .database import get_session_config, SessionConfig
+    session_config = get_session_config(session, session_id)
+    
+    # 确定是否共享记忆
+    share_memory_value = False  # 默认：独立记忆
+    if payload.share_memory is not None:
+        # 如果前端显式指定，优先使用前端的值
+        share_memory_value = payload.share_memory
+    elif payload.memory_mode == 'global':
+        # 如果前端指定了全局记忆模式
+        share_memory_value = True
+    elif session_config:
+        # 使用已有的会话配置
+        share_memory_value = session_config.share_memory_across_sessions
+    
+    # 创建或更新会话配置
+    if not session_config:
+        session_config = SessionConfig(
+            session_id=session_id,
+            user_id=payload.user_id,
+            share_memory_across_sessions=share_memory_value
+        )
+        session.add(session_config)
+    else:
+        # 更新配置
+        session_config.share_memory_across_sessions = share_memory_value
+    
+    try:
+        session.commit()
+        logger.info(f"🔒 会话 {session_id} 记忆模式: {'全局共享' if share_memory_value else '独立隔离'}")
+    except Exception as e:
+        session.rollback()
+        logger.warning(f"保存会话配置失败: {e}")
     
     async def event_generator() -> AsyncGenerator[bytes, None]:
         try:
@@ -2806,6 +2848,13 @@ class MultiAgentChatRequest(BaseModel):
     execution_mode: str = Field(default="sequential", description="执行模式：sequential 或 parallel")
     session_id: Optional[str] = Field(default=None, description="会话ID")
     user_id: Optional[str] = Field(default=None, description="用户ID")
+    # 记忆控制字段
+    memory_mode: Optional[str] = Field(
+        default="session", description="记忆模式：'global'（全局记忆）或 'session'（独立记忆）"
+    )
+    share_memory: Optional[bool] = Field(
+        default=None, description="是否共享记忆（显式控制，优先级最高）"
+    )
 
 
 class MultiAgentChatResponse(BaseModel):
@@ -2892,6 +2941,37 @@ async def chat_with_multi_agent_stream(
         tool_records = list_tools(session, include_inactive=False)
     
     session_id = payload.session_id or str(uuid.uuid4())
+    
+    # 🔒 根据前端请求设置会话的记忆配置
+    from .database import get_session_config, SessionConfig
+    session_config = get_session_config(session, session_id)
+    
+    # 确定是否共享记忆
+    share_memory_value = False  # 默认：独立记忆
+    if payload.share_memory is not None:
+        share_memory_value = payload.share_memory
+    elif payload.memory_mode == 'global':
+        share_memory_value = True
+    elif session_config:
+        share_memory_value = session_config.share_memory_across_sessions
+    
+    # 创建或更新会话配置
+    if not session_config:
+        session_config = SessionConfig(
+            session_id=session_id,
+            user_id=payload.user_id,
+            share_memory_across_sessions=share_memory_value
+        )
+        session.add(session_config)
+    else:
+        session_config.share_memory_across_sessions = share_memory_value
+    
+    try:
+        session.commit()
+        logger.info(f"🔒 多智能体会话 {session_id} 记忆模式: {'全局共享' if share_memory_value else '独立隔离'}")
+    except Exception as e:
+        session.rollback()
+        logger.warning(f"保存会话配置失败: {e}")
     
     async def event_generator() -> AsyncGenerator[bytes, None]:
         try:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+# 🔐 日志记录器
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -330,6 +334,11 @@ def save_long_term_memory(
     metadata: Optional[dict] = None,
 ) -> LongTermMemory:
     """保存长期记忆"""
+    # 🔐 严格检查：必须有 user_id 才能保存记忆
+    if not user_id:
+        logger.error("❌ 保存记忆失败：缺少 user_id（安全限制）")
+        raise ValueError("user_id is required for saving memories")
+    
     memory_id = str(uuid.uuid4())
     record = LongTermMemory(
         id=memory_id,
@@ -355,12 +364,15 @@ def search_long_term_memory(
     min_importance: int = 0,
 ) -> list[LongTermMemory]:
     """搜索长期记忆（基于关键词匹配）"""
-    statement = select(LongTermMemory).where(
-        LongTermMemory.content.like(f"%{query}%")
-    )
+    # 🔐 严格检查：必须有 user_id，否则返回空列表
+    if not user_id:
+        logger.warning("⚠️ 记忆搜索缺少 user_id，返回空列表（安全考虑）")
+        return []
     
-    if user_id:
-        statement = statement.where(LongTermMemory.user_id == user_id)
+    statement = select(LongTermMemory).where(
+        LongTermMemory.content.like(f"%{query}%"),
+        LongTermMemory.user_id == user_id  # 强制过滤 user_id
+    )
     
     if memory_types:
         statement = statement.where(LongTermMemory.memory_type.in_(memory_types))
@@ -382,14 +394,18 @@ def get_recent_memories(
     limit: int = 20,
 ) -> list[LongTermMemory]:
     """获取最近的记忆（按访问时间和重要性）"""
-    statement = select(LongTermMemory).order_by(
+    # 🔐 严格检查：必须有 user_id，否则返回空列表
+    if not user_id:
+        logger.warning("⚠️ 获取最近记忆缺少 user_id，返回空列表（安全考虑）")
+        return []
+    
+    statement = select(LongTermMemory).where(
+        LongTermMemory.user_id == user_id  # 强制过滤 user_id
+    ).order_by(
         LongTermMemory.last_accessed_at.desc().nullslast(),
         LongTermMemory.importance_score.desc(),
         LongTermMemory.created_at.desc()
     ).limit(limit)
-    
-    if user_id:
-        statement = statement.where(LongTermMemory.user_id == user_id)
     
     return list(session.execute(statement).scalars())
 

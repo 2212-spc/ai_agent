@@ -8,6 +8,21 @@ class ChatManager {
         this.API_BASE = 'http://127.0.0.1:8000';
         this.currentSessionId = null;
         this.isMultiAgentMode = false;
+        this.isGlobalMemory = false; // 全局记忆模式
+        this.isDeepThinkMode = false; // 深度思考模式
+        
+        // 🔐 获取当前登录用户ID（从localStorage）
+        this.currentUserId = localStorage.getItem('user_id') || null;
+        if (!this.currentUserId) {
+            console.warn('⚠️ 未找到用户ID，请先登录');
+        } else {
+            console.log('🔐 当前用户ID:', this.currentUserId);
+        }
+        
+        // 全局记忆session ID（每个用户独立，包含user_id以隔离）
+        this.globalMemorySessionId = this.currentUserId 
+            ? `global_memory_${this.currentUserId}_${Date.now()}`
+            : 'global_memory_' + Date.now();
         
         // 多会话管理
         this.sessions = new Map(); // sessionId -> { status, abortController, messages, lastQuestion, containerDiv }
@@ -25,6 +40,20 @@ class ChatManager {
         // 编辑状态
         this.editingMessageId = null;
         this.editingMessageDiv = null;
+        
+        // 思考步骤图标映射
+        this.thinkingIcons = {
+            'understand': '🧠',
+            'plan': '📋',
+            'analyze': '🔍',
+            'tool': '🛠️',
+            'synthesis': '✨',
+            'verify': '✅',
+            'search': '🔎',
+            'calculate': '🧮',
+            'reasoning': '💡',
+            'conclusion': '🎯'
+        };
     }
 
     /**
@@ -40,6 +69,10 @@ class ChatManager {
         this.setupEventListeners();
         this.setupScrollListener();
         this.loadSessionFromUrl();
+        
+        // 清理过期的思考数据
+        this.cleanupThinkingData();
+        
         console.log('✅ 聊天管理器初始化成功');
     }
     
@@ -302,6 +335,9 @@ class ChatManager {
         const session = this.sessions.get(sessionId);
         session.abortController = new AbortController();
         
+        // 根据记忆模式决定使用哪个session_id
+        const apiSessionId = this.isGlobalMemory ? this.globalMemorySessionId : sessionId;
+        
         const response = await fetch(`${this.API_BASE}${endpoint}`, {
             method: 'POST',
             headers: {
@@ -309,9 +345,13 @@ class ChatManager {
             },
             body: JSON.stringify({
                 messages: [{ role: 'user', content: message }],
-                session_id: sessionId,
+                session_id: apiSessionId, // 使用根据模式选择的session_id
+                user_id: this.currentUserId,  // 🔐 必须传递用户ID，隔离不同账号的记忆
                 use_knowledge_base: useKB,
-                use_tools: useTools
+                use_tools: useTools,
+                // 🔒 记忆控制：显式告知后端是否共享记忆
+                memory_mode: this.isGlobalMemory ? 'global' : 'session',
+                share_memory: this.isGlobalMemory  // 布尔值，后端优先使用此字段
             }),
             signal: session.abortController.signal
         });
@@ -364,10 +404,6 @@ class ChatManager {
                 }
                 
                 if (eventType && eventData) {
-                        // 只在当前会话时打印详细日志
-                        if (isCurrentSession()) {
-                    console.log('📨 收到事件:', eventType, eventData);
-                        }
                     
                     if (eventType === 'content' || eventType === 'message' || eventType === 'assistant_final' || eventType === 'assistant_draft') {
                         const newContent = eventData.content || eventData.message || '';
@@ -381,22 +417,124 @@ class ChatManager {
                                 console.log('📝 累积内容长度:', fullContent.length, 'SessionId:', sessionId);
                             }
                             // 更新消息内容（DOM始终存在，无论是否当前会话）
-                            this.updateMessageContent(contentDiv, fullContent);
+                        this.updateMessageContent(contentDiv, fullContent);
                             
                             // 只在当前会话时才滚动
                             if (isCurrentSession() && this.mainContainer) {
                                 this.mainContainer.scrollTop = this.mainContainer.scrollHeight;
                             }
                         }
+                    } else if (eventType === 'agent_thought') {
+                        // 🔥 后端发送的详细思考内容（这是关键！）
+                        if (this.isDeepThinkMode && agentMessageDiv) {
+                            const nodeName = eventData.node || 'agent';
+                            const thoughtText = eventData.thought || '';
+                            
+                            if (thoughtText) {
+                                console.log('💭 收到思考内容:', nodeName, thoughtText.substring(0, 50) + '...');
+                                
+                                this.addThinkingStep(agentMessageDiv, {
+                                    type: nodeName,
+                                    title: this.getNodeTitle(nodeName),
+                                    content: thoughtText,
+                                    status: 'processing'
+                                });
+                            }
+                        }
+                        
+                        // 同时更新时间线
+                        if (isCurrentSession()) {
+                            this.handleNodeUpdate({
+                                node: eventData.node,
+                                type: 'thought',
+                                thought: eventData.thought
+                            });
+                        }
+                    } else if (eventType === 'agent_observation') {
+                        // 🔥 后端发送的观察结果
+                        if (this.isDeepThinkMode && agentMessageDiv) {
+                            const nodeName = eventData.node || 'agent';
+                            const observationText = eventData.observation || '';
+                            
+                            if (observationText) {
+                                console.log('👁️ 收到观察结果:', nodeName, observationText.substring(0, 50) + '...');
+                                
+                                this.addThinkingStep(agentMessageDiv, {
+                                    type: 'observation',
+                                    title: '观察结果',
+                                    content: observationText,
+                                    status: 'completed'
+                                });
+                            }
+                        }
+                        
+                        // 同时更新时间线
+                        if (isCurrentSession()) {
+                            this.handleNodeUpdate({
+                                node: eventData.node,
+                                type: 'observation',
+                                observation: eventData.observation
+                            });
+                        }
+                    } else if (eventType === 'agent_node') {
+                        // 节点开始/完成事件
+                        const nodeName = eventData.node || eventData.type || 'step';
+                        
+                        // 更新时间线
+                        if (isCurrentSession()) {
+                            this.handleNodeUpdate(eventData);
+                        }
+                        
+                        // 深度思考模式：记录节点开始
+                        if (this.isDeepThinkMode && agentMessageDiv && eventData.status !== 'completed') {
+                            this.addThinkingStep(agentMessageDiv, {
+                                type: nodeName,
+                                title: this.getNodeTitle(nodeName),
+                                content: '开始执行...',
+                                status: 'processing'
+                            });
+                        }
                     } else if (eventType === 'node' || eventType === 'status') {
-                            // 只在当前会话时更新时间线
-                            if (isCurrentSession()) {
-                        this.handleNodeUpdate(eventData);
+                        // 兼容旧的node事件
+                        if (isCurrentSession()) {
+                            this.handleNodeUpdate(eventData);
+                        }
+                        
+                        // 深度思考模式：添加思考步骤（兜底逻辑，优先级低）
+                        if (this.isDeepThinkMode && agentMessageDiv) {
+                            const readableContent = eventData.thought
+                                || eventData.message
+                                || eventData.observation
+                                || eventData.action
+                                || eventData.status
+                                || `正在处理 ${eventData.node || eventData.type || '步骤'}`;
+                            
+                            this.addThinkingStep(agentMessageDiv, {
+                                type: eventData.node || eventData.type || 'step',
+                                title: this.getNodeTitle(eventData.node || eventData.type || '步骤'),
+                                content: readableContent,
+                                status: eventData.status === 'completed' ? 'completed' : 'processing',
+                                details: eventData.action || eventData.observation || ''
+                            });
+                        }
+                    } else if (eventType === 'thinking') {
+                        // 专门的thinking事件（未来后端支持）
+                        if (this.isDeepThinkMode && agentMessageDiv) {
+                            const readableContent = eventData.content
+                                || eventData.message
+                                || eventData.status
+                                || eventData.thought
+                                || `正在处理 ${eventData.type || '步骤'}`;
+                            
+                            this.addThinkingStep(agentMessageDiv, {
+                                ...eventData,
+                                content: readableContent
+                            });
+                        }
                     }
                 }
             }
         }
-            }
             
             // 保存完整回答
             session.lastAnswer = fullContent;
@@ -412,6 +550,35 @@ class ChatManager {
             // 设置状态为已完成
             this.setSessionStatus(sessionId, this.SESSION_STATUS.COMPLETED);
             console.log('✅ 会话状态已设置为COMPLETED - Session:', sessionId);
+            
+            // 标记思考面板为完成（如果存在）
+            if (this.isDeepThinkMode && agentMessageDiv) {
+                const thinkingPanel = agentMessageDiv.querySelector('.thinking-panel');
+                if (thinkingPanel) {
+                    const thinkingIcon = thinkingPanel.querySelector('.thinking-icon');
+                    if (thinkingIcon) {
+                        thinkingIcon.style.animation = 'none'; // 停止脉动动画
+                    }
+                    
+                    // 将所有步骤标记为完成，避免停留在“处理中”
+                    this.completeThinkingSteps(thinkingPanel);
+                    
+                    // 更新最终时间
+                    this.updateThinkingStats(thinkingPanel);
+                    
+                    // 保存思考步骤数据到消息
+                    const stepsData = this.extractThinkingSteps(thinkingPanel);
+                    if (stepsData.length > 0) {
+                        const contentDiv = agentMessageDiv.querySelector('.message-content');
+                        if (contentDiv) {
+                            contentDiv.dataset.thinkingSteps = JSON.stringify(stepsData);
+                        }
+                        
+                        // 同时保存到localStorage（用于刷新后恢复）
+                        this.saveThinkingToLocalStorage(sessionId, agentMessageDiv, stepsData);
+                    }
+                }
+            }
             
             // 如果不是当前会话，发送通知
             if (!isCurrentSession()) {
@@ -497,12 +664,30 @@ class ChatManager {
         if (!content || content.trim() === '') {
             console.warn('⚠️ 内容为空');
             contentDiv.innerHTML = '<p style="color: var(--text-secondary); font-style: italic;">⚠️ 生成内容为空</p>';
-            // 显示复制按钮（即使内容为空）
+            // 显示按钮（即使内容为空）
+            const regenerateBtn = contentDiv.querySelector('.regenerate-btn');
             const copyBtn = contentDiv.querySelector('.copy-btn');
-            if (copyBtn) {
-                copyBtn.style.display = '';
-            }
+            if (regenerateBtn) regenerateBtn.style.display = '';
+            if (copyBtn) copyBtn.style.display = '';
             return;
+        }
+        
+        // 保存版本信息到父消息元素
+        const messageDiv = contentDiv.closest('.message');
+        if (messageDiv) {
+            let versions = [];
+            try {
+                versions = JSON.parse(messageDiv.dataset.versions || '[]');
+            } catch (e) {
+                console.error('解析版本数据失败:', e);
+            }
+            
+            // 添加新版本
+            versions.push(content);
+            messageDiv.dataset.versions = JSON.stringify(versions);
+            messageDiv.dataset.currentVersion = String(versions.length - 1);
+            
+            console.log('💾 保存版本，当前版本数:', versions.length);
         }
         
         // 保存原始文本到data属性
@@ -563,11 +748,20 @@ class ChatManager {
             img.onclick = () => this.openImageModal(img.src);
         });
         
-        // 显示消息复制按钮（按钮在 message-content 内部）
-        const copyBtn = contentDiv.querySelector('.copy-btn');
-        if (copyBtn) {
-            copyBtn.style.display = '';
+        // 添加版本导航器（如果有多个版本）
+        const messageDiv2 = contentDiv.closest('.message');
+        if (messageDiv2) {
+            const versions = JSON.parse(messageDiv2.dataset.versions || '[]');
+            if (versions.length > 1) {
+                this.updateVersionNavigator(contentDiv, messageDiv2);
+            }
         }
+        
+        // 显示消息按钮（按钮在 message-content 内部）
+        const regenerateBtn = contentDiv.querySelector('.regenerate-btn');
+        const copyBtn = contentDiv.querySelector('.copy-btn');
+        if (regenerateBtn) regenerateBtn.style.display = '';
+        if (copyBtn) copyBtn.style.display = '';
         
         // 添加代码块复制按钮
         this.addCopyButtons(contentDiv);
@@ -741,6 +935,10 @@ class ChatManager {
         // 生成唯一ID
         const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
         
+        // 初始化版本数据
+        messageDiv.dataset.versions = JSON.stringify([]);
+        messageDiv.dataset.currentVersion = '0';
+        
         messageDiv.innerHTML = `
             <div class="message-header">
                 <div class="avatar">🤖</div>
@@ -752,6 +950,13 @@ class ChatManager {
                     <div class="loading-spinner"></div>
                     <span>AI正在思考中...</span>
                 </div>
+                <button class="regenerate-btn" onclick="chatManager.regenerateAnswer('${messageId}')" title="重新生成" style="display: none;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 4v6h6"></path>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                    </svg>
+                    <span class="regenerate-text">重新生成</span>
+                </button>
                 <button class="copy-btn" onclick="chatManager.copyMessageContent('${messageId}')" title="复制" style="display: none;">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -764,11 +969,402 @@ class ChatManager {
         
         session.containerDiv.appendChild(messageDiv);
         
+        // 如果开启深度思考模式，创建思考面板
+        if (this.isDeepThinkMode) {
+            this.createThinkingPanel(messageDiv);
+        }
+        
         if (this.mainContainer) {
             this.mainContainer.scrollTop = this.mainContainer.scrollHeight;
         }
         
         return messageDiv;
+    }
+    
+    /**
+     * 创建思考面板
+     */
+    createThinkingPanel(messageDiv) {
+        const thinkingPanel = document.createElement('div');
+        thinkingPanel.className = 'thinking-panel collapsed';
+        thinkingPanel.dataset.startTime = Date.now();
+        thinkingPanel.dataset.stepCount = '0';
+        
+        thinkingPanel.innerHTML = `
+            <div class="thinking-header" onclick="chatManager.toggleThinkingPanel(this)">
+                <span class="thinking-icon">💭</span>
+                <span class="thinking-title">思考过程</span>
+                <span class="thinking-badge">0 步骤</span>
+                <span class="thinking-time">0.0秒</span>
+                <span class="thinking-toggle">▼</span>
+            </div>
+            <div class="thinking-content">
+                <div class="thinking-steps"></div>
+            </div>
+        `;
+        
+        // 插入到message-content之前
+        const messageContent = messageDiv.querySelector('.message-content');
+        messageDiv.insertBefore(thinkingPanel, messageContent);
+        
+        return thinkingPanel;
+    }
+    
+    /**
+     * 切换思考面板展开/折叠
+     */
+    toggleThinkingPanel(headerElement) {
+        const panel = headerElement.closest('.thinking-panel');
+        if (panel) {
+            panel.classList.toggle('collapsed');
+        }
+    }
+    
+    /**
+     * 测试功能：手动添加思考步骤（用于调试）
+     */
+    testAddThinkingSteps() {
+        const currentMessage = document.getElementById('currentAgentMessage');
+        if (!currentMessage) {
+            console.warn('没有找到当前消息');
+            return;
+        }
+        
+        // 模拟多个思考步骤
+        const testSteps = [
+            { type: 'understand', title: '理解问题', content: '分析用户的问题和需求...', status: 'completed' },
+            { type: 'plan', title: '制定计划', content: '1. 分析需求\n2. 设计方案\n3. 实施步骤', status: 'completed' },
+            { type: 'analyze', title: '深入分析', content: '对问题进行多角度分析...', status: 'completed' },
+            { type: 'tool', title: '工具调用', content: '调用知识库检索相关信息...', status: 'processing', details: 'search_kb(query="深度思考")' },
+            { type: 'synthesis', title: '综合结论', content: '基于以上分析，得出结论...', status: 'processing' }
+        ];
+        
+        // 逐步添加，模拟实时效果
+        let delay = 0;
+        testSteps.forEach((step, index) => {
+            setTimeout(() => {
+                this.addThinkingStep(currentMessage, step);
+                
+                // 最后一个步骤标记为完成
+                if (index === testSteps.length - 1) {
+                    setTimeout(() => {
+                        this.addThinkingStep(currentMessage, {
+                            ...step,
+                            status: 'completed'
+                        });
+                    }, 800);
+                }
+            }, delay);
+            delay += 600;
+        });
+    }
+    
+    /**
+     * 添加思考步骤
+     */
+    addThinkingStep(messageDiv, stepData) {
+        if (!messageDiv || !this.isDeepThinkMode) return;
+        
+        const panel = messageDiv.querySelector('.thinking-panel');
+        if (!panel) {
+            this.createThinkingPanel(messageDiv);
+            return this.addThinkingStep(messageDiv, stepData);
+        }
+        
+        const stepsContainer = panel.querySelector('.thinking-steps');
+        if (!stepsContainer) return;
+        
+        const stepType = stepData.type || 'step';
+        const stepTitle = stepData.title || '思考中';
+        const status = stepData.status || 'processing';
+        const icon = this.thinkingIcons[stepType] || stepData.icon || '💭';
+        const contentText = stepData.content || stepData.details || `正在处理 ${stepTitle}`;
+        
+        // 首次添加步骤时展开面板，确保用户能看到内容
+        if (panel.classList.contains('collapsed')) {
+            panel.classList.remove('collapsed');
+        }
+        
+        // 简化逻辑：查找是否有完全相同的步骤（type + title）
+        const existingSteps = Array.from(stepsContainer.querySelectorAll('.thinking-step'));
+        const existingStep = existingSteps.find(step => 
+            step.dataset.type === stepType && 
+            step.dataset.title === stepTitle
+        );
+        
+        // 如果找到已存在的步骤，更新它
+        if (existingStep) {
+            // 更新状态
+            const statusElement = existingStep.querySelector('.step-status');
+            if (statusElement) {
+                statusElement.className = `step-status ${status}`;
+                statusElement.textContent = this.getStatusText(status);
+            }
+            
+            // 更新内容（如果有新内容）
+            if (contentText) {
+                let contentDiv = existingStep.querySelector('.step-content');
+                if (!contentDiv) {
+                    contentDiv = document.createElement('div');
+                    contentDiv.className = 'step-content';
+                    existingStep.querySelector('.step-header').after(contentDiv);
+                }
+                contentDiv.textContent = contentText;
+            }
+            
+            // 更新详情（如果有）
+            if (stepData.details) {
+                let detailsDiv = existingStep.querySelector('.step-details');
+                if (!detailsDiv) {
+                    detailsDiv = document.createElement('div');
+                    detailsDiv.className = 'step-details';
+                    existingStep.appendChild(detailsDiv);
+                }
+                detailsDiv.textContent = stepData.details;
+            }
+            
+            this.updateThinkingStats(panel);
+            return;
+        }
+        
+        // 创建新步骤
+        const stepDiv = document.createElement('div');
+        stepDiv.className = 'thinking-step';
+        stepDiv.dataset.type = stepType;
+        stepDiv.dataset.title = stepTitle;
+        
+        stepDiv.innerHTML = `
+            <div class="step-header">
+                <span class="step-icon">${icon}</span>
+                <span class="step-title">${this.escapeHtml(stepTitle)}</span>
+                <span class="step-status ${status}">${this.getStatusText(status)}</span>
+            </div>
+            ${contentText ? `<div class="step-content">${this.escapeHtml(contentText)}</div>` : ''}
+            ${stepData.details ? `<div class="step-details">${this.escapeHtml(stepData.details)}</div>` : ''}
+        `;
+        
+        stepsContainer.appendChild(stepDiv);
+        this.updateThinkingStats(panel);
+        
+        // 滚动到最新步骤
+        if (this.mainContainer) {
+            requestAnimationFrame(() => {
+                stepDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            });
+        }
+    }
+    
+    /**
+     * 更新思考统计信息
+     */
+    updateThinkingStats(panel) {
+        const stepsContainer = panel.querySelector('.thinking-steps');
+        const badge = panel.querySelector('.thinking-badge');
+        const timeSpan = panel.querySelector('.thinking-time');
+        
+        if (stepsContainer && badge) {
+            const stepCount = stepsContainer.children.length;
+            badge.textContent = `${stepCount} 步骤`;
+            panel.dataset.stepCount = stepCount;
+        }
+        
+        if (timeSpan && panel.dataset.startTime) {
+            const elapsed = (Date.now() - parseInt(panel.dataset.startTime)) / 1000;
+            timeSpan.textContent = `${elapsed.toFixed(1)}秒`;
+        }
+    }
+    
+    /**
+     * 获取节点标题（中文）
+     */
+    getNodeTitle(nodeName) {
+        const titleMap = {
+            'planner': '规划分析',
+            'executor': '执行任务',
+            'reviewer': '检查结果',
+            'aggregator': '整合答案',
+            'tools': '工具调用',
+            'tool_call': '使用工具',
+            'agent': 'AI思考',
+            'observation': '观察结果',
+            'understand': '理解问题',
+            'plan': '制定计划',
+            'analyze': '深入分析',
+            'synthesis': '综合结论',
+            'verify': '验证结果',
+            'search': '搜索信息',
+            'calculate': '计算处理',
+            'reasoning': '逻辑推理',
+            'conclusion': '得出结论'
+        };
+        return titleMap[nodeName] || nodeName;
+    }
+    
+    /**
+     * 获取状态文本
+     */
+    getStatusText(status) {
+        const statusMap = {
+            'thinking': '思考中',
+            'processing': '处理中',
+            'completed': '完成',
+            'success': '成功',
+            'error': '错误',
+            'skipped': '跳过'
+        };
+        return statusMap[status] || status;
+    }
+    
+    /**
+     * 将所有思考步骤标记为完成（防止停留在处理中）
+     */
+    completeThinkingSteps(panel) {
+        const stepsContainer = panel.querySelector('.thinking-steps');
+        if (!stepsContainer) return;
+        
+        stepsContainer.querySelectorAll('.step-status').forEach(statusEl => {
+            statusEl.className = 'step-status completed';
+            statusEl.textContent = this.getStatusText('completed');
+        });
+    }
+    
+    /**
+     * 提取思考步骤数据（用于保存）
+     */
+    extractThinkingSteps(panel) {
+        const stepsContainer = panel.querySelector('.thinking-steps');
+        if (!stepsContainer) return [];
+        
+        const steps = [];
+        const stepElements = stepsContainer.querySelectorAll('.thinking-step');
+        
+        stepElements.forEach(stepDiv => {
+            const type = stepDiv.dataset.type || 'step';
+            const title = stepDiv.querySelector('.step-title')?.textContent || '';
+            const content = stepDiv.querySelector('.step-content')?.textContent || '';
+            const details = stepDiv.querySelector('.step-details')?.textContent || '';
+            const statusElement = stepDiv.querySelector('.step-status');
+            const status = statusElement ? statusElement.classList[1] : 'completed'; // 第二个class是状态
+            
+            steps.push({
+                type,
+                title,
+                content,
+                details,
+                status
+            });
+        });
+        
+        return steps;
+    }
+    
+    /**
+     * 保存思考步骤到localStorage
+     */
+    saveThinkingToLocalStorage(sessionId, messageDiv, stepsData) {
+        try {
+            const key = `thinking_steps_${sessionId}`;
+            
+            // 获取现有数据
+            let allData = {};
+            const existing = localStorage.getItem(key);
+            if (existing) {
+                allData = JSON.parse(existing);
+            }
+            
+            // 优先使用 messageId 作为键，保证切换/刷新后能准确匹配
+            const messageId = messageDiv?.querySelector('.message-content')?.dataset?.messageId;
+            const session = this.sessions.get(sessionId);
+            if (session && session.containerDiv) {
+                const agentMessages = Array.from(session.containerDiv.querySelectorAll('.agent-message'));
+                if (agentMessages.length === 0) return;
+                const msgIndex = agentMessages.indexOf(messageDiv);
+                const fallbackIndex = msgIndex >= 0 ? msgIndex : agentMessages.length - 1;
+                
+                // 同时写入 messageId 键与索引键，保证刷新/重新加载都能命中
+                if (messageId) {
+                    allData[`msg_${messageId}`] = stepsData;
+                }
+                allData[`msg_${fallbackIndex}`] = stepsData;
+                localStorage.setItem(key, JSON.stringify(allData));
+            }
+        } catch (e) {
+            console.warn('保存思考步骤失败:', e);
+        }
+    }
+    
+    /**
+     * 清理过期的思考数据
+     */
+    cleanupThinkingData() {
+        try {
+            const keys = Object.keys(localStorage);
+            const thinkingKeys = keys.filter(k => k.startsWith('thinking_steps_'));
+            
+            // 保留最近30个会话的数据
+            if (thinkingKeys.length > 30) {
+                const toDelete = thinkingKeys.slice(0, thinkingKeys.length - 30);
+                toDelete.forEach(key => localStorage.removeItem(key));
+            }
+        } catch (e) {
+            console.warn('清理思考数据失败:', e);
+        }
+    }
+    
+    /**
+     * 恢复思考步骤（从保存的数据）
+     */
+    restoreThinkingSteps(messageDiv, stepsData) {
+        if (!stepsData || stepsData.length === 0) return;
+        
+        // 创建思考面板
+        let panel = messageDiv.querySelector('.thinking-panel');
+        if (!panel) {
+            this.createThinkingPanel(messageDiv);
+            panel = messageDiv.querySelector('.thinking-panel');
+        }
+        
+        if (!panel) return;
+        
+        const stepsContainer = panel.querySelector('.thinking-steps');
+        if (!stepsContainer) return;
+        
+        // 清空现有步骤
+        stepsContainer.innerHTML = '';
+        
+        // 添加每个步骤
+        stepsData.forEach(stepData => {
+            const icon = this.thinkingIcons[stepData.type] || '💭';
+            
+            const stepDiv = document.createElement('div');
+            stepDiv.className = 'thinking-step';
+            stepDiv.dataset.type = stepData.type;
+            
+            stepDiv.innerHTML = `
+                <div class="step-header">
+                    <span class="step-icon">${icon}</span>
+                    <span class="step-title">${this.escapeHtml(stepData.title)}</span>
+                    <span class="step-status ${stepData.status}">${this.getStatusText(stepData.status)}</span>
+                </div>
+                ${stepData.content ? `<div class="step-content">${this.escapeHtml(stepData.content)}</div>` : ''}
+                ${stepData.details ? `<div class="step-details">${this.escapeHtml(stepData.details)}</div>` : ''}
+            `;
+            
+            stepsContainer.appendChild(stepDiv);
+        });
+        
+        // 更新统计信息
+        panel.dataset.stepCount = stepsData.length;
+        const badge = panel.querySelector('.thinking-badge');
+        if (badge) {
+            badge.textContent = `${stepsData.length} 步骤`;
+        }
+        
+        // 停止动画
+        const thinkingIcon = panel.querySelector('.thinking-icon');
+        if (thinkingIcon) {
+            thinkingIcon.style.animation = 'none';
+        }
     }
 
     /**
@@ -793,11 +1389,32 @@ class ChatManager {
             // 清空会话容器
             session.containerDiv.innerHTML = '';
             
-            messages.forEach(msg => {
+            // 尝试从localStorage加载思考步骤数据
+            const thinkingDataKey = `thinking_steps_${sessionId}`;
+            let savedThinkingData = {};
+            try {
+                const savedData = localStorage.getItem(thinkingDataKey);
+                if (savedData) {
+                    savedThinkingData = JSON.parse(savedData);
+                }
+            } catch (e) {
+                console.warn('加载思考数据失败:', e);
+            }
+            
+            let assistantIndex = 0;
+            messages.forEach((msg, index) => {
                 if (msg.role === 'user') {
                     this.addUserMessage(msg.content, sessionId);
                 } else if (msg.role === 'assistant') {
-                    this.addAssistantMessage(msg.content, sessionId);
+                    // 尝试获取该消息的思考步骤（优先按message_id匹配，其次按助手序号）
+                    const msgIdKey = msg.message_id ? `msg_${msg.message_id}` : null;
+                    const assistantKey = `msg_${assistantIndex}`;
+                    const thinkingSteps = (msgIdKey && savedThinkingData[msgIdKey])
+                        ? savedThinkingData[msgIdKey]
+                        : (savedThinkingData[assistantKey] || msg.thinking_steps || null);
+                    
+                    this.addAssistantMessage(msg.content, sessionId, thinkingSteps, msg.message_id);
+                    assistantIndex += 1;
                 }
             });
             
@@ -813,14 +1430,28 @@ class ChatManager {
             
         } catch (error) {
             console.error('加载历史消息失败:', error);
-            notificationManager.show('加载历史记录失败', 'error');
+            
+            // 如果是404（新会话没有历史记录），显示空状态而不是报错
+            if (error.message.includes('404')) {
+                console.log('新会话，没有历史记录，显示空状态');
+                if (sessionId === this.currentSessionId) {
+                    this.showEmptyState();
+                }
+            } else {
+                // 其他错误才提示用户
+                notificationManager.show('加载历史记录失败', 'error');
+                // 即使出错，也显示空状态（避免界面空白）
+                if (sessionId === this.currentSessionId) {
+                    this.showEmptyState();
+                }
+            }
         }
     }
 
     /**
      * 添加助手消息
      */
-    addAssistantMessage(content, sessionId = null) {
+    addAssistantMessage(content, sessionId = null, thinkingSteps = null, messageIdFromHistory = null) {
         const sid = sessionId || this.currentSessionId;
         const session = this.sessions.get(sid);
         if (!session || !session.containerDiv) {
@@ -837,7 +1468,11 @@ class ChatManager {
         messageDiv.className = 'message agent-message';
         
         // 生成唯一ID
-        const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        const messageId = messageIdFromHistory || ('msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9));
+        
+        // 初始化版本数据（历史消息只有一个版本）
+        messageDiv.dataset.versions = JSON.stringify([content]);
+        messageDiv.dataset.currentVersion = '0';
         
         const renderedContent = marked.parse(content);
         const sanitizedContent = DOMPurify.sanitize(renderedContent);
@@ -850,6 +1485,13 @@ class ChatManager {
             </div>
             <div class="message-content" data-message-id="${messageId}">
                 ${sanitizedContent}
+                <button class="regenerate-btn" onclick="chatManager.regenerateAnswer('${messageId}')" title="重新生成">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 4v6h6"></path>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                    </svg>
+                    <span class="regenerate-text">重新生成</span>
+                </button>
                 <button class="copy-btn" onclick="chatManager.copyMessageContent('${messageId}')" title="复制">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -866,6 +1508,11 @@ class ChatManager {
         
         session.containerDiv.appendChild(messageDiv);
         
+        // 如果有思考步骤数据，恢复思考面板
+        if (thinkingSteps && thinkingSteps.length > 0) {
+            this.restoreThinkingSteps(messageDiv, thinkingSteps);
+        }
+        
         // 代码高亮
         if (typeof hljs !== 'undefined') {
             messageDiv.querySelectorAll('pre code').forEach(block => {
@@ -878,6 +1525,8 @@ class ChatManager {
         if (this.mainContainer) {
             this.mainContainer.scrollTop = this.mainContainer.scrollHeight;
         }
+        
+        return messageDiv;
     }
 
     /**
@@ -1120,6 +1769,264 @@ class ChatManager {
     }
     
     /**
+     * 重新生成AI答案
+     */
+    async regenerateAnswer(messageId) {
+        const contentDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+        if (!contentDiv) {
+            console.error('找不到消息元素:', messageId);
+            return;
+        }
+        
+        const messageDiv = contentDiv.closest('.message');
+        if (!messageDiv) {
+            console.error('找不到消息容器');
+            return;
+        }
+        
+        // 找到对应的用户问题（前一个用户消息）
+        let userMessageDiv = messageDiv.previousElementSibling;
+        while (userMessageDiv && !userMessageDiv.classList.contains('user-message')) {
+            userMessageDiv = userMessageDiv.previousElementSibling;
+        }
+        
+        if (!userMessageDiv) {
+            console.error('找不到对应的用户问题');
+            notificationManager.show('无法找到对应的问题', 'error');
+            return;
+        }
+        
+        const userContentDiv = userMessageDiv.querySelector('.message-content');
+        const question = userContentDiv?.dataset.originalText || userContentDiv?.textContent.trim();
+        
+        if (!question) {
+            console.error('无法获取用户问题');
+            notificationManager.show('无法获取用户问题', 'error');
+            return;
+        }
+        
+        console.log('🔄 重新生成答案，问题:', question);
+        
+        // 显示loading状态
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'loading-enhanced';
+        loadingDiv.innerHTML = `
+            <div class="loading-spinner"></div>
+            <span>AI正在思考中...</span>
+        `;
+        
+        // 清除当前显示的内容（保留按钮）
+        const buttons = Array.from(contentDiv.querySelectorAll('button'));
+        contentDiv.innerHTML = '';
+        contentDiv.appendChild(loadingDiv);
+        buttons.forEach(btn => contentDiv.appendChild(btn));
+        
+        // 隐藏版本导航器
+        const versionNav = contentDiv.parentElement.querySelector('.version-navigator');
+        if (versionNav) {
+            versionNav.style.display = 'none';
+        }
+        
+        // 设置为当前生成消息
+        messageDiv.id = 'currentAgentMessage';
+        
+        // 设置会话状态
+        const sessionId = this.currentSessionId;
+        this.setSessionStatus(sessionId, this.SESSION_STATUS.GENERATING);
+        
+        try {
+            // 获取配置
+            const useKB = document.getElementById('useKB')?.checked || false;
+            const useTools = document.getElementById('useTools')?.checked || false;
+            
+            // 选择API端点
+            const endpoint = this.isMultiAgentMode 
+                ? '/chat/multi-agent/stream'
+                : '/chat/agent/stream';
+            
+            // 重新生成（使用现有的streamChat方法）
+            await this.streamChat(question, useKB, useTools, endpoint, messageDiv, sessionId);
+            
+        } catch (error) {
+            console.error('重新生成失败:', error);
+            contentDiv.innerHTML = `<p style="color: var(--error-color);">❌ 生成失败: ${error.message}</p>`;
+            // 恢复按钮
+            buttons.forEach(btn => contentDiv.appendChild(btn));
+            notificationManager.show('重新生成失败', 'error');
+            this.setSessionStatus(sessionId, this.SESSION_STATUS.IDLE);
+        }
+    }
+    
+    /**
+     * 更新版本导航器
+     */
+    updateVersionNavigator(contentDiv, messageDiv) {
+        const versions = JSON.parse(messageDiv.dataset.versions || '[]');
+        const currentVersion = parseInt(messageDiv.dataset.currentVersion || '0');
+        
+        if (versions.length <= 1) {
+            // 如果只有一个版本，隐藏导航器
+            const existingNav = contentDiv.parentElement.querySelector('.version-navigator');
+            if (existingNav) {
+                existingNav.style.display = 'none';
+            }
+            return;
+        }
+        
+        // 检查是否已存在导航器
+        let navigator = contentDiv.parentElement.querySelector('.version-navigator');
+        if (!navigator) {
+            navigator = document.createElement('div');
+            navigator.className = 'version-navigator';
+            // 插入到message-content之后
+            contentDiv.parentElement.insertBefore(navigator, contentDiv.nextSibling);
+        }
+        
+        const messageId = contentDiv.dataset.messageId;
+        
+        navigator.innerHTML = `
+            <button class="version-nav-btn version-prev" 
+                    onclick="chatManager.switchVersion('${messageId}', ${currentVersion - 1})"
+                    ${currentVersion === 0 ? 'disabled' : ''}>
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </button>
+            <span class="version-info">${currentVersion + 1}/${versions.length}</span>
+            <button class="version-nav-btn version-next" 
+                    onclick="chatManager.switchVersion('${messageId}', ${currentVersion + 1})"
+                    ${currentVersion === versions.length - 1 ? 'disabled' : ''}>
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+        `;
+        
+        navigator.style.display = 'flex';
+    }
+    
+    /**
+     * 切换版本显示
+     */
+    async switchVersion(messageId, targetVersion) {
+        const contentDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+        if (!contentDiv) {
+            console.error('找不到消息元素:', messageId);
+            return;
+        }
+        
+        const messageDiv = contentDiv.closest('.message');
+        if (!messageDiv) {
+            console.error('找不到消息容器');
+            return;
+        }
+        
+        const versions = JSON.parse(messageDiv.dataset.versions || '[]');
+        
+        if (targetVersion < 0 || targetVersion >= versions.length) {
+            console.error('版本索引越界:', targetVersion);
+            return;
+        }
+        
+        // 更新当前版本索引
+        messageDiv.dataset.currentVersion = String(targetVersion);
+        
+        // 获取目标版本的内容
+        const content = versions[targetVersion];
+        contentDiv.dataset.originalText = content;
+        
+        // 渲染内容
+        if (typeof marked !== 'undefined') {
+            const rendered = marked.parse(content);
+            if (typeof DOMPurify !== 'undefined') {
+                contentDiv.innerHTML = DOMPurify.sanitize(rendered);
+            } else {
+                contentDiv.innerHTML = rendered;
+            }
+        } else {
+            contentDiv.textContent = content;
+        }
+        
+        // 代码高亮
+        if (typeof hljs !== 'undefined') {
+            contentDiv.querySelectorAll('pre code').forEach(block => {
+                try {
+                    hljs.highlightElement(block);
+                } catch (e) {
+                    console.warn('代码高亮失败:', e);
+                }
+            });
+        }
+        
+        // 渲染Mermaid图表
+        if (typeof mermaid !== 'undefined') {
+            const mermaidBlocks = contentDiv.querySelectorAll('code.language-mermaid');
+            for (const block of mermaidBlocks) {
+                const mermaidCode = block.textContent;
+                const mermaidDiv = document.createElement('div');
+                mermaidDiv.className = 'mermaid';
+                mermaidDiv.id = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                mermaidDiv.textContent = mermaidCode;
+                mermaidDiv.setAttribute('data-mermaid-code', mermaidCode);
+                mermaidDiv.style.cursor = 'zoom-in';
+                block.parentElement.replaceWith(mermaidDiv);
+                
+                try {
+                    await mermaid.run({ nodes: [mermaidDiv] });
+                    mermaidDiv.onclick = (e) => {
+                        e.preventDefault();
+                        this.openMermaidModal(mermaidCode);
+                    };
+                } catch (err) {
+                    console.error('Mermaid渲染失败:', err);
+                }
+            }
+        }
+        
+        // 图片点击放大
+        contentDiv.querySelectorAll('img').forEach(img => {
+            img.onclick = () => this.openImageModal(img.src);
+        });
+        
+        // 添加代码块复制按钮
+        this.addCopyButtons(contentDiv);
+        
+        // 恢复按钮
+        const messageId2 = contentDiv.dataset.messageId;
+        const regenerateBtn = document.createElement('button');
+        regenerateBtn.className = 'regenerate-btn';
+        regenerateBtn.setAttribute('onclick', `chatManager.regenerateAnswer('${messageId2}')`);
+        regenerateBtn.setAttribute('title', '重新生成');
+        regenerateBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 4v6h6"></path>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+            </svg>
+            <span class="regenerate-text">重新生成</span>
+        `;
+        
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'copy-btn';
+        copyBtn.setAttribute('onclick', `chatManager.copyMessageContent('${messageId2}')`);
+        copyBtn.setAttribute('title', '复制');
+        copyBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span class="copy-text">复制</span>
+        `;
+        
+        contentDiv.appendChild(regenerateBtn);
+        contentDiv.appendChild(copyBtn);
+        
+        // 更新版本导航器
+        this.updateVersionNavigator(contentDiv, messageDiv);
+        
+        console.log('✅ 切换到版本:', targetVersion + 1);
+    }
+    
+    /**
      * 复制消息内容（保留原始格式）
      */
     async copyMessageContent(messageId) {
@@ -1189,7 +2096,7 @@ class ChatManager {
         
         document.body.removeChild(textArea);
     }
-    
+
     /**
      * 转义HTML
      */
@@ -1197,6 +2104,28 @@ class ChatManager {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * 切换全局记忆模式
+     */
+    toggleGlobalMemory(enabled) {
+        this.isGlobalMemory = enabled;
+        console.log('全局记忆模式:', enabled ? '开启' : '关闭');
+        
+        if (enabled) {
+            console.log('🌐 全局记忆模式：所有对话共享记忆，session_id:', this.globalMemorySessionId);
+        } else {
+            console.log('🔒 独立记忆模式：每个对话独立记忆，当前session_id:', this.currentSessionId);
+        }
+    }
+    
+    /**
+     * 切换深度思考模式
+     */
+    toggleDeepThink(enabled) {
+        this.isDeepThinkMode = enabled;
+        console.log('深度思考模式:', enabled ? '开启💭' : '关闭');
     }
 
     /**

@@ -55,6 +55,78 @@ function toggleTimeline() {
     }
 }
 
+// ========== 全局记忆模式切换 ==========
+function toggleGlobalMemory() {
+    const checkbox = document.getElementById('globalMemoryToggle');
+    const isEnabled = checkbox?.checked || false;
+    const memoryIndicator = document.getElementById('memoryIndicator');
+    
+    console.log('全局记忆模式:', isEnabled ? '开启' : '关闭');
+    
+    // 更新chatManager状态
+    if (window.chatManager && typeof window.chatManager.toggleGlobalMemory === 'function') {
+        window.chatManager.toggleGlobalMemory(isEnabled);
+    }
+    
+    // 更新记忆模式指示器
+    if (memoryIndicator) {
+        if (isEnabled) {
+            memoryIndicator.textContent = '全局记忆🌐';
+            memoryIndicator.classList.add('global-memory');
+        } else {
+            memoryIndicator.textContent = '独立记忆';
+            memoryIndicator.classList.remove('global-memory');
+        }
+    }
+    
+    // 显示系统消息
+    const message = isEnabled 
+        ? '🌐 已启用全局记忆！AI将记住所有对话的内容，可以跨对话引用信息。'
+        : '🔒 已切换到独立记忆模式！每个对话拥有独立的记忆，互不干扰。';
+    
+    if (window.notificationManager) {
+        window.notificationManager.show(message, 'success', 3000);
+    }
+    
+    console.log(`记忆模式切换: ${isEnabled ? '全局记忆' : '独立记忆'}`);
+}
+
+// ========== 深度思考模式切换 ==========
+function toggleDeepThink() {
+    const checkbox = document.getElementById('deepThinkToggle');
+    const isEnabled = checkbox?.checked || false;
+    const thinkIndicator = document.getElementById('thinkIndicator');
+    
+    console.log('深度思考模式:', isEnabled ? '开启' : '关闭');
+    
+    // 更新chatManager状态
+    if (window.chatManager && typeof window.chatManager.toggleDeepThink === 'function') {
+        window.chatManager.toggleDeepThink(isEnabled);
+    }
+    
+    // 更新思考模式指示器
+    if (thinkIndicator) {
+        if (isEnabled) {
+            thinkIndicator.textContent = '深度思考💭';
+            thinkIndicator.classList.add('deep-thinking');
+        } else {
+            thinkIndicator.textContent = '标准模式';
+            thinkIndicator.classList.remove('deep-thinking');
+        }
+    }
+    
+    // 显示系统消息
+    const message = isEnabled 
+        ? '🧠 已启用深度思考模式！AI将展示完整的思考过程，帮助您理解推理步骤。'
+        : '✨ 已切换到标准模式。AI将直接给出答案。';
+    
+    if (window.notificationManager) {
+        window.notificationManager.show(message, 'success', 3000);
+    }
+    
+    console.log(`思考模式切换: ${isEnabled ? '深度思考' : '标准模式'}`);
+}
+
 // ========== 多智能体模式切换 ==========
 function toggleMultiAgentMode() {
     const checkbox = document.getElementById('multiAgentToggle');
@@ -230,19 +302,43 @@ function newChat() {
         return;
     }
     
-    // 清空消息
-    const messagesContainer = document.getElementById('messagesContainer');
-    if (messagesContainer) {
-        messagesContainer.innerHTML = '';
+    if (!window.chatManager) {
+        console.error('chatManager 未初始化');
+        return;
     }
     
     // 生成新会话ID
-    if (window.chatManager) {
-        window.chatManager.currentSessionId = window.chatManager.generateSessionId();
-        console.log('新会话ID:', window.chatManager.currentSessionId);
+    const newSessionId = window.chatManager.generateSessionId();
+    console.log('🆕 新建会话ID:', newSessionId);
+    
+    // 保存当前会话的滚动位置
+    if (window.chatManager.currentSessionId && window.chatManager.mainContainer) {
+        const currentSession = window.chatManager.sessions.get(window.chatManager.currentSessionId);
+        if (currentSession) {
+            currentSession.scrollPosition = window.chatManager.mainContainer.scrollTop;
+        }
     }
     
-    // 清空时间线
+    // 隐藏当前会话的容器
+    if (window.chatManager.currentSessionId) {
+        const currentSession = window.chatManager.sessions.get(window.chatManager.currentSessionId);
+        if (currentSession && currentSession.containerDiv) {
+            currentSession.containerDiv.style.display = 'none';
+        }
+    }
+    
+    // 创建新会话
+    window.chatManager.ensureSession(newSessionId);
+    window.chatManager.currentSessionId = newSessionId;
+    
+    // 显示新会话的容器（空的）
+    const newSession = window.chatManager.sessions.get(newSessionId);
+    if (newSession && newSession.containerDiv) {
+        newSession.containerDiv.style.display = 'block';
+        console.log('📂 已显示新会话容器（空）');
+    }
+    
+    // 清空时间线（新会话没有节点）
     const timelineContent = document.getElementById('timelineContent');
     if (timelineContent) {
         timelineContent.innerHTML = '';
@@ -253,6 +349,12 @@ function newChat() {
     historyItems.forEach(item => {
         item.classList.remove('active');
     });
+    
+    // 显示空状态（欢迎界面）
+    window.chatManager.showEmptyState();
+    
+    // 更新UI按钮状态
+    window.chatManager.updateSendButton(newSessionId);
     
     if (window.notificationManager) {
         window.notificationManager.show('✅ 新会话已创建', 'success', 2000);
@@ -817,6 +919,8 @@ document.addEventListener('DOMContentLoaded', () => {
 window.toggleSidebar = toggleSidebar;
 window.closeSidebar = closeSidebar;
 window.toggleTimeline = toggleTimeline;
+window.toggleGlobalMemory = toggleGlobalMemory;
+window.toggleDeepThink = toggleDeepThink;
 window.toggleMultiAgentMode = toggleMultiAgentMode;
 window.exportChat = exportChat;
 window.clearChat = clearChat;

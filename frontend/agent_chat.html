@@ -58,6 +58,14 @@
                 </div>
             </div>
             <div class="header-actions">
+                <div class="mode-switch-container" title="切换全局/独立记忆模式">
+                    <span class="mode-switch-label">记忆:</span>
+                    <label class="mode-switch">
+                        <input type="checkbox" id="globalMemoryToggle" onchange="toggleGlobalMemory()">
+                        <span class="mode-slider"></span>
+                    </label>
+                    <span class="mode-indicator" id="memoryIndicator">独立记忆</span>
+                </div>
                 <div class="mode-switch-container" title="切换单/多智能体模式">
                     <span class="mode-switch-label">模式:</span>
                     <label class="mode-switch">
@@ -65,6 +73,14 @@
                         <span class="mode-slider"></span>
                     </label>
                     <span class="mode-indicator" id="modeIndicator">单智能体</span>
+                </div>
+                <div class="mode-switch-container" title="切换深度思考模式">
+                    <span class="mode-switch-label">思考:</span>
+                    <label class="mode-switch">
+                        <input type="checkbox" id="deepThinkToggle" onchange="toggleDeepThink()">
+                        <span class="mode-slider"></span>
+                    </label>
+                    <span class="mode-indicator" id="thinkIndicator">标准模式</span>
                 </div>
                 <button class="btn-icon icon-btn" id="themeToggle" onclick="toggleTheme()" title="切换主题">
                     <span id="themeIcon">🌙</span>

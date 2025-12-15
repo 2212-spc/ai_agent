@@ -27,6 +27,19 @@ const isGenerating = computed(() => {
     return sessionStatus.value === chatStore.SESSION_STATUS.GENERATING;
 });
 
+// 监听生成状态变化，从生成中变为非生成时强制滚动到底部
+watch(isGenerating, (newVal, oldVal) => {
+    // 从生成中变为非生成状态（生成完成）
+    if (oldVal === true && newVal === false) {
+        console.log('🎯 生成完成，强制滚动到底部');
+        nextTick(() => {
+            scrollToBottom();
+            // 再次延迟滚动，确保DOM完全更新
+            setTimeout(() => scrollToBottom(), 100);
+        });
+    }
+});
+
 // 判断是否在编辑模式
 const isEditMode = computed(() => editingMessageId.value !== null);
 
@@ -86,8 +99,12 @@ async function sendMessage() {
                 nextTick(() => scrollToBottom());
             }
         });
+        
+        // 消息发送完成后，多次尝试滚动确保显示最新内容
         await nextTick();
         scrollToBottom();
+        setTimeout(() => scrollToBottom(), 100);
+        setTimeout(() => scrollToBottom(), 300);
     } catch (error) {
         console.error('发送失败:', error);
     }
@@ -170,6 +187,35 @@ function stopGeneration() {
     chatStore.stopGeneration(currentSessionId.value);
 }
 
+// 🔄 重新生成AI答案
+async function regenerateMessage(messageId) {
+    if (isGenerating.value) {
+        console.log('正在生成中，无法重新生成');
+        return;
+    }
+    
+    try {
+        console.log('🔄 开始重新生成消息:', messageId);
+        
+        await chatStore.regenerateAnswer(messageId, (streamContent, sessionId) => {
+            // 流式更新回调
+            if (sessionId === currentSessionId.value) {
+                nextTick(() => scrollToBottom());
+            }
+        });
+        
+        // 多次尝试滚动确保显示最新内容
+        await nextTick();
+        scrollToBottom();
+        setTimeout(() => scrollToBottom(), 100);
+        setTimeout(() => scrollToBottom(), 300);
+        
+        console.log('✅ 重新生成完成');
+    } catch (error) {
+        console.error('重新生成失败:', error);
+    }
+}
+
 function scrollToBottom() {
     if (chatContainer.value) {
         chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
@@ -187,9 +233,20 @@ function renderMarkdown(content) {
     return marked(content);
 }
 
-watch(messages, () => {
-    nextTick(() => scrollToBottom());
-});
+watch(messages, (newMessages, oldMessages) => {
+    // 消息数量变化或最后一条消息内容变化时滚动
+    const needScroll = newMessages.length !== oldMessages?.length || 
+                      (newMessages.length > 0 && oldMessages?.length > 0 && 
+                       newMessages[newMessages.length - 1]?.content !== oldMessages[oldMessages.length - 1]?.content);
+    
+    if (needScroll) {
+        nextTick(() => {
+            scrollToBottom();
+            // 延迟再次滚动，确保内容完全渲染
+            setTimeout(() => scrollToBottom(), 50);
+        });
+    }
+}, { deep: true });
 </script>
 
 <template>
@@ -225,6 +282,31 @@ watch(messages, () => {
                     {{ msg.role === 'user' ? '👤' : msg.role === 'assistant' ? '🤖' : '⚠️' }}
                 </div>
                 <div class="message-content-wrapper">
+                <!-- 💭 思考步骤面板（深度思考模式） -->
+                <div v-if="msg.thinkingSteps && msg.thinkingSteps.length > 0" class="thinking-panel">
+                    <div class="thinking-header">
+                        <span class="thinking-icon">💭</span>
+                        <span class="thinking-title">思考过程</span>
+                        <span class="thinking-badge">{{ msg.thinkingSteps.length }} 步骤</span>
+                    </div>
+                    <div class="thinking-steps">
+                        <div 
+                            v-for="(step, index) in msg.thinkingSteps" 
+                            :key="index"
+                            class="thinking-step"
+                        >
+                            <div class="step-header">
+                                <span class="step-number">{{ index + 1 }}</span>
+                                <span class="step-title">{{ step.title }}</span>
+                                <span :class="['step-status', step.status]">
+                                    {{ step.status === 'completed' ? '✓ 完成' : step.status === 'processing' ? '⚙️ 处理中' : '⏳ 等待' }}
+                                </span>
+                            </div>
+                            <div class="step-content">{{ step.content }}</div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="message-content">
                     <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
                     <div class="message-time">{{ new Date(msg.timestamp).toLocaleTimeString() }}</div>
@@ -244,6 +326,21 @@ watch(messages, () => {
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                             </svg>
                             <span class="action-text">编辑</span>
+                        </button>
+                        
+                        <!-- 🔄 重新生成按钮 - 只对AI消息显示 -->
+                        <button 
+                            v-if="msg.role === 'assistant'" 
+                            class="action-btn regenerate-btn"
+                            @click="regenerateMessage(msg.id)"
+                            :disabled="isGenerating"
+                            title="重新生成答案"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 4v6h6"></path>
+                                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                            </svg>
+                            <span class="action-text">重新生成</span>
                         </button>
                         
                         <!-- 复制按钮 -->
@@ -792,6 +889,38 @@ watch(messages, () => {
     color: #4CAF50;
 }
 
+/* 🔄 重新生成按钮样式 */
+.regenerate-btn {
+    color: #10b981;
+}
+
+.regenerate-btn:hover:not(:disabled) {
+    background: rgba(16, 185, 129, 0.1);
+    color: #059669;
+}
+
+.regenerate-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.regenerate-btn svg {
+    animation: rotate-reverse 2s linear infinite paused;
+}
+
+.regenerate-btn:hover:not(:disabled) svg {
+    animation-play-state: running;
+}
+
+@keyframes rotate-reverse {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(-360deg);
+    }
+}
+
 /* 编辑提示条 */
 .edit-hint {
     display: flex;
@@ -841,6 +970,123 @@ watch(messages, () => {
 
 .input-container.edit-mode .send-btn:hover:not(:disabled) {
     background: #f57c00;
+}
+
+/* 💭 思考步骤面板样式 */
+.thinking-panel {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.thinking-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.thinking-icon {
+    font-size: 18px;
+}
+
+.thinking-title {
+    font-weight: 600;
+    color: white;
+    flex: 1;
+}
+
+.thinking-badge {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.thinking-steps {
+    padding: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.thinking-step {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 10px;
+}
+
+.thinking-step:last-child {
+    margin-bottom: 0;
+}
+
+.step-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.step-number {
+    width: 24px;
+    height: 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.step-title {
+    font-weight: 600;
+    color: #333;
+    flex: 1;
+}
+
+.step-status {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.step-status.completed {
+    background: #d4edda;
+    color: #155724;
+}
+
+.step-status.processing {
+    background: #fff3cd;
+    color: #856404;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.step-status.pending {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.step-content {
+    color: #555;
+    line-height: 1.6;
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
 }
 
 /* 响应式设计 */

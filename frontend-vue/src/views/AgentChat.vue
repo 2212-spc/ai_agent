@@ -46,8 +46,27 @@ function clearChat() {
 }
 
 function startNewChat() {
-    chatStore.clearMessages();
-    chatStore.setSessionId(null);
+    if (!confirm('确定要创建新会话吗？当前聊天记录将被保存。')) {
+        return;
+    }
+    
+    // 生成新会话ID
+    const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    console.log('🆕 新建会话:', newSessionId);
+    
+    // 创建新会话并切换
+    chatStore.ensureSession(newSessionId);
+    chatStore.setSessionId(newSessionId);
+    
+    // 清空timeline
+    chatStore.clearTimelineSteps();
+    
+    // 提示用户
+    if (window.notificationManager) {
+        window.notificationManager.show('✅ 新会话已创建', 'success', 2000);
+    }
+    
+    console.log('✅ 新会话已创建:', newSessionId);
 }
 
 function onModeChange() {
@@ -87,17 +106,40 @@ async function selectConversation(sessionId) {
         
         // 如果会话消息为空，从后端加载历史消息
         if (session.messages.length === 0) {
-            const response = await fetch(`http://127.0.0.1:8000/conversation/${sessionId}/history`);
+            const response = await fetch(`http://127.0.0.1:8000/conversation/${sessionId}/history?limit=100`);
+            
+            // 如果是404（新会话），不报错
+            if (!response.ok) {
+                if (response.status === 404) {
+                    console.log('新会话，没有历史记录');
+                    return;
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
             const data = await response.json();
             
-            // 加载历史消息到会话中
-            session.messages = data.map(msg => ({
-                id: msg.id,
-                role: msg.role,
-                content: msg.content,
-                timestamp: msg.created_at,
-                type: 'text'
-            }));
+            // 加载历史消息到会话中，并尝试恢复思考步骤
+            session.messages = data.map((msg, index) => {
+                const messageObj = {
+                    id: msg.id || `msg_${Date.now()}_${index}`,
+                    role: msg.role,
+                    content: msg.content,
+                    timestamp: msg.created_at,
+                    type: 'text'
+                };
+                
+                // 如果是助手消息，尝试加载思考步骤
+                if (msg.role === 'assistant' && messageObj.id) {
+                    const thinkingSteps = chatStore.loadThinkingSteps(sessionId, messageObj.id);
+                    if (thinkingSteps) {
+                        messageObj.thinkingSteps = thinkingSteps;
+                        console.log('📥 恢复思考步骤:', thinkingSteps.length, '个');
+                    }
+                }
+                
+                return messageObj;
+            });
             
             console.log('已加载会话:', sessionId, '消息数:', data.length);
         } else {
@@ -105,7 +147,11 @@ async function selectConversation(sessionId) {
         }
     } catch (error) {
         console.error('加载会话失败:', error);
-        alert('加载历史会话失败: ' + error.message);
+        
+        // 不要用alert，使用通知系统
+        if (window.notificationManager) {
+            window.notificationManager.show('加载历史会话失败', 'error', 3000);
+        }
     }
 }
 
@@ -220,7 +266,29 @@ onUnmounted(() => {
             </div>
             
             <div class="header-right">
-                <!-- 模式切换 -->
+                <!-- 🔒 全局记忆模式切换 -->
+                <div class="mode-switch-container">
+                    <label class="mode-switch">
+                        <input type="checkbox" v-model="chatStore.isGlobalMemory" @change="chatStore.toggleGlobalMemory(chatStore.isGlobalMemory)">
+                        <span class="mode-slider"></span>
+                    </label>
+                    <span class="mode-indicator" :class="{ 'global-memory': chatStore.isGlobalMemory }">
+                        {{ chatStore.isGlobalMemory ? '全局记忆🌐' : '独立记忆' }}
+                    </span>
+                </div>
+                
+                <!-- 💭 深度思考模式切换 -->
+                <div class="mode-switch-container">
+                    <label class="mode-switch">
+                        <input type="checkbox" v-model="chatStore.isDeepThinkMode" @change="chatStore.toggleDeepThink(chatStore.isDeepThinkMode)">
+                        <span class="mode-slider"></span>
+                    </label>
+                    <span class="mode-indicator" :class="{ 'deep-think': chatStore.isDeepThinkMode }">
+                        {{ chatStore.isDeepThinkMode ? '深度思考💭' : '标准模式' }}
+                    </span>
+                </div>
+                
+                <!-- 多智能体模式切换 -->
                 <div class="mode-switch-container">
                     <span class="mode-switch-label">模式:</span>
                     <label class="mode-switch">
@@ -594,6 +662,23 @@ input:checked + .mode-slider:before {
     padding: 4px 10px;
     border-radius: 12px;
     border: 1px solid var(--border-secondary);
+    transition: all 0.3s ease;
+}
+
+/* 🔒 全局记忆模式样式 */
+.mode-indicator.global-memory {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: #667eea;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+/* 💭 深度思考模式样式 */
+.mode-indicator.deep-think {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    border-color: #f093fb;
+    box-shadow: 0 2px 8px rgba(240, 147, 251, 0.3);
 }
 
 .header-right {
