@@ -7,12 +7,9 @@
 }
 
 body {
-    font-family: var(--font-family);
+    font-family: var(--font-body);
     background: var(--bg-secondary);
     min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     padding: 0;
     margin: 0;
     color: var(--text-primary);
@@ -52,18 +49,18 @@ body {
 
 /* 焦点样式 */
 *:focus-visible {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid var(--brand-primary-500);
     outline-offset: 2px;
 }
 
 /* 选中文本样式 */
 ::selection {
-    background: var(--primary-light);
+    background: var(--brand-primary-100);
     color: var(--text-primary);
 }
 
 [data-theme="dark"] ::selection {
-    background: var(--primary-color);
+    background: var(--brand-primary-500);
     color: var(--text-inverse);
 }
 
@@ -102,10 +99,10 @@ body {
 
 @keyframes pulse {
     0%, 100% {
-        box-shadow: 0 0 0 1px var(--primary-color);
+        box-shadow: 0 0 0 1px var(--brand-primary-500);
     }
     50% {
-        box-shadow: 0 0 0 4px rgba(16, 163, 127, 0.3);
+        box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.3);
     }
 }
 

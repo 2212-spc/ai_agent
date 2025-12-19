@@ -444,14 +444,14 @@ onUnmounted(() => {
 }
 
 .history-item:hover {
-    background: var(--bg-hover);
-    border-color: var(--primary-color);
+    background: var(--hover-bg);
+    border-color: var(--brand-primary-500);
 }
 
 .history-item.active {
-    background: var(--primary-light);
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+    background: var(--bg-brand);
+    border-color: var(--brand-primary-500);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
 }
 
 .history-title {
@@ -517,7 +517,7 @@ onUnmounted(() => {
 }
 
 .resize-handle:hover {
-    background: var(--primary-color);
+    background: var(--brand-primary-500);
 }
 
 .resize-handle-left {
@@ -591,8 +591,8 @@ onUnmounted(() => {
 }
 
 .nav-link.active {
-    background: var(--primary-light);
-    color: var(--primary-color);
+    background: var(--bg-brand);
+    color: var(--brand-primary-600);
     font-weight: 500;
 }
 
@@ -646,7 +646,7 @@ onUnmounted(() => {
 }
 
 input:checked + .mode-slider {
-    background-color: var(--primary-color);
+    background-color: var(--brand-primary-500);
 }
 
 input:checked + .mode-slider:before {

@@ -268,8 +268,8 @@ async def retrieval_specialist_node(
                 tool_decision, _ = await invoke_llm(
                     messages=[{"role": "user", "content": tool_selection_prompt}],
                     settings=settings,
-                    temperature=0.2,
-                    max_tokens=4000,  # 增加token限制以支持生成完整的工具参数
+                    temperature=0.1,  # 降低温度提高确定性
+                    max_tokens=1500,  # 优化：工具选择不需要太多tokens
                 )
                 
                 decision_data = parse_json_from_llm(tool_decision)
@@ -335,8 +335,8 @@ async def retrieval_specialist_node(
                                         content, _ = await invoke_llm(
                                             messages=[{"role": "user", "content": content_prompt}],
                                             settings=settings,
-                                            temperature=0.7,
-                                            max_tokens=4000,
+                                            temperature=0.6,  # 优化：降低温度
+                                            max_tokens=2000,  # 优化：减少token限制
                                         )
                                         tool_args["content"] = content.strip()
                                         logger.info(f"✅ 已生成笔记内容，长度：{len(content)} 字符")
@@ -396,8 +396,8 @@ graph TD
                                         diagram_code, _ = await invoke_llm(
                                             messages=[{"role": "user", "content": diagram_prompt}],
                                             settings=settings,
-                                            temperature=0.7,
-                                            max_tokens=2000,
+                                            temperature=0.5,  # 优化：降低温度
+                                            max_tokens=1500,  # 优化：减少token限制
                                         )
                                         # 清理可能的markdown代码块标记
                                         diagram_code = diagram_code.strip()
@@ -656,8 +656,8 @@ async def analysis_specialist_node(
         llm_response, _ = await invoke_llm(
             messages=[{"role": "user", "content": analysis_prompt}],
             settings=settings,
-            temperature=0.4,  # 稍高的温度以获得更有创意的洞察
-            max_tokens=2500,  # 增加token限制以支持更深入的分析
+            temperature=0.4,  # 保持适中温度
+            max_tokens=2000,  # 优化：减少token限制
         )
         
         # 解析 LLM 响应
@@ -890,8 +890,8 @@ async def summarization_specialist_node(
         final_answer, _ = await invoke_llm(
             messages=[{"role": "user", "content": summarization_prompt}],
             settings=settings,
-            temperature=0.6,  # 平衡创造性和准确性
-            max_tokens=3000,  # 增加token以支持更长的报告
+            temperature=0.45,  # 优化：降低温度提高稳定性
+            max_tokens=2000,  # 优化：减少token限制提升速度
         )
         
         # 检查是否是错误消息

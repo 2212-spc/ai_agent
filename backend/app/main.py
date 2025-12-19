@@ -3159,6 +3159,49 @@ class MultiAgentChatResponse(BaseModel):
     session_id: str
 
 
+def is_simple_query(query: str) -> bool:
+    """
+    判断问题是否简单，简单问题可以走快速路径
+
+    简单问题特征：
+    - 问候语、闲聊
+    - 简单定义性问题（什么是X）
+    - 短问题（少于20字）
+    - 不需要深度分析或多步骤处理
+    """
+    query_lower = query.lower().strip()
+    query_len = len(query)
+
+    # 问候语和闲聊
+    greetings = ["你好", "hello", "hi", "嗨", "早上好", "晚上好", "谢谢", "再见", "好的", "ok"]
+    if any(query_lower.startswith(g) or query_lower == g for g in greetings):
+        return True
+
+    # 简单定义问题
+    simple_patterns = ["什么是", "是什么", "who is", "what is", "定义", "解释一下"]
+    if query_len < 30 and any(p in query_lower for p in simple_patterns):
+        return True
+
+    # 非常短的问题
+    if query_len < 15:
+        return True
+
+    # 复杂问题关键词（需要多智能体）
+    complex_keywords = [
+        "分析", "对比", "比较", "研究", "报告", "总结多个",
+        "深度", "详细", "全面", "综合", "evaluate", "analyze",
+        "最新", "趋势", "发展", "前沿", "现状"
+    ]
+    if any(kw in query_lower for kw in complex_keywords):
+        return False
+
+    # 默认：中等长度问题判为简单
+    if query_len < 50:
+        return True
+
+    return False
+
+
 @app.post("/chat/multi-agent", response_model=MultiAgentChatResponse)
 async def chat_with_multi_agent(
     payload: MultiAgentChatRequest,
@@ -3174,29 +3217,65 @@ async def chat_with_multi_agent(
     - 并行/串行执行
     - 结果智能汇总
     """
+    user_query = payload.messages[-1].content if payload.messages else ""
+    session_id = payload.session_id or str(uuid.uuid4())
+
+    # ⚡ 智能路由：简单问题走快速路径
+    if is_simple_query(user_query):
+        logger.info(f"⚡ [快速模式] 检测到简单问题，使用直接回复: {user_query[:50]}...")
+
+        from .graph_agent import invoke_llm
+
+        # 直接用一次LLM调用回答简单问题
+        quick_prompt = f"""请直接回答用户的问题。保持简洁友好。
+
+用户问题：{user_query}
+
+请直接给出答案："""
+
+        try:
+            quick_answer, _ = await invoke_llm(
+                messages=[{"role": "user", "content": quick_prompt}],
+                settings=settings,
+                temperature=0.7,
+                max_tokens=500,  # 简单问题不需要太长的回复
+            )
+
+            return MultiAgentChatResponse(
+                reply=quick_answer,
+                orchestrator_plan="[快速模式] 简单问题，直接回复",
+                sub_tasks=[],
+                agent_results={},
+                thoughts=["检测到简单问题，使用快速回复模式"],
+                observations=[],
+                quality_score=0.9,
+                thread_id=str(uuid.uuid4()),
+                session_id=session_id,
+            )
+        except Exception as e:
+            logger.warning(f"快速模式失败，回退到多智能体: {e}")
+
+    # 复杂问题走多智能体流程
     logger.info("🤖🤖🤖 [多智能体系统] 开始处理请求")
-    
-    # 导入多智能体模块
+
     from .multi_agent import run_multi_agent
-    
-    # 获取可用工具
+
     tool_records = []
     if payload.use_tools:
         tool_records = list_tools(session, include_inactive=False)
-    
-    # 运行多智能体系统
+
     result = await run_multi_agent(
-        user_query=payload.messages[-1].content if payload.messages else "",
+        user_query=user_query,
         settings=settings,
         session=session,
         tool_records=tool_records,
         use_knowledge_base=payload.use_knowledge_base,
         conversation_history=[msg.model_dump() for msg in payload.messages],
-        session_id=payload.session_id,
+        session_id=session_id,
         user_id=payload.user_id,
         execution_mode=payload.execution_mode,
     )
-    
+
     return MultiAgentChatResponse(
         reply=result.get("final_answer", "未能生成答案"),
         orchestrator_plan=result.get("orchestrator_plan", ""),
@@ -3218,26 +3297,68 @@ async def chat_with_multi_agent_stream(
 ) -> StreamingResponse:
     """
     使用多智能体系统处理对话（流式）
-    
+
     实时返回各智能体的执行过程
     """
+    user_query = payload.messages[-1].content if payload.messages else ""
+    session_id = payload.session_id or str(uuid.uuid4())
+
+    # ⚡ 智能路由：简单问题走快速路径
+    if is_simple_query(user_query):
+        logger.info(f"⚡ [快速模式-流式] 检测到简单问题: {user_query[:50]}...")
+
+        from .graph_agent import invoke_llm
+
+        async def quick_event_generator() -> AsyncGenerator[bytes, None]:
+            try:
+                yield format_sse("status", {"stage": "started", "mode": "quick_reply"})
+                yield format_sse("orchestrator_plan", {
+                    "plan": "[快速模式] 简单问题，直接回复",
+                    "timestamp": datetime.now().isoformat(),
+                })
+
+                # 直接用一次LLM调用
+                quick_prompt = f"""请直接回答用户的问题。保持简洁友好。
+
+用户问题：{user_query}
+
+请直接给出答案："""
+
+                quick_answer, _ = await invoke_llm(
+                    messages=[{"role": "user", "content": quick_prompt}],
+                    settings=settings,
+                    temperature=0.7,
+                    max_tokens=500,
+                )
+
+                # 发送答案
+                yield format_sse("assistant_final", {"content": quick_answer})
+                yield format_sse("completed", {
+                    "thread_id": str(uuid.uuid4()),
+                    "timestamp": datetime.now().isoformat(),
+                })
+
+            except Exception as e:
+                logger.error(f"快速模式失败: {e}")
+                yield format_sse("error", {"message": str(e)})
+
+        return StreamingResponse(quick_event_generator(), media_type="text/event-stream")
+
+    # 复杂问题走多智能体流程
     logger.info("🌊🤖🤖🤖 [多智能体系统-流式] 开始处理")
-    
+
     from .multi_agent import stream_multi_agent
-    
+
     tool_records = []
     if payload.use_tools:
         tool_records = list_tools(session, include_inactive=False)
-    
-    session_id = payload.session_id or str(uuid.uuid4())
-    
+
     async def event_generator() -> AsyncGenerator[bytes, None]:
         try:
             yield format_sse("status", {"stage": "started", "mode": "multi_agent"})
-            
-            # 流式执行多智能体系统
+
             async for event in stream_multi_agent(
-                user_query=payload.messages[-1].content if payload.messages else "",
+                user_query=user_query,
                 settings=settings,
                 session=session,
                 tool_records=tool_records,
@@ -3248,43 +3369,39 @@ async def chat_with_multi_agent_stream(
                 execution_mode=payload.execution_mode,
             ):
                 event_type = event.get("event", "unknown")
-                
-                # 协调器事件
+
                 if event_type == "orchestrator_plan":
                     yield format_sse("orchestrator_plan", {
                         "plan": event.get("data", {}).get("orchestrator_plan", ""),
                         "timestamp": event.get("timestamp"),
                     })
-                
-                # 智能体执行事件
+
                 elif event_type == "agent_execution":
                     node_name = event.get("node", "")
                     node_data = event.get("data", {})
-                    
+
                     yield format_sse("agent_execution", {
                         "agent": node_name,
                         "data": node_data,
                         "timestamp": event.get("timestamp"),
                     })
-                    
-                    # 如果有最终答案，发送
+
                     if "final_answer" in node_data and node_data["final_answer"]:
                         yield format_sse("assistant_final", {
                             "content": node_data["final_answer"],
                         })
                         logger.info(f"📤 多智能体模式：已发送最终答案，长度: {len(node_data['final_answer'])}")
-                
-                # 完成事件
+
                 elif event_type == "completed":
                     yield format_sse("completed", {
                         "thread_id": event.get("thread_id"),
                         "timestamp": event.get("timestamp"),
                     })
-            
+
         except Exception as e:
             logger.error(f"多智能体系统流式执行失败: {e}", exc_info=True)
             yield format_sse("error", {"message": str(e)})
-    
+
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
