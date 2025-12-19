@@ -91,6 +91,44 @@
             border-bottom: 1px solid var(--border-primary);
         }
 
+        .bulk-actions {
+            background: var(--bg-primary);
+            padding: 10px 24px;
+            border-bottom: 1px solid var(--border-primary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .bulk-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .bulk-right {
+            display: flex;
+            gap: 8px;
+        }
+
+        .checkbox {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            user-select: none;
+            color: var(--text-primary);
+        }
+
+        .checkbox input {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
         .search-input {
             width: 100%;
             max-width: 600px;
@@ -128,6 +166,12 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+
+        .conversation-item.selected {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px var(--primary-light);
+            background: var(--bg-tertiary);
         }
 
         .conversation-item:hover {
@@ -168,6 +212,17 @@
         .conversation-actions {
             display: flex;
             gap: 8px;
+        }
+
+        .conversation-select {
+            display: flex;
+            align-items: center;
+            margin-right: 12px;
+        }
+
+        .conversation-select input {
+            width: 16px;
+            height: 16px;
         }
 
         .loading {

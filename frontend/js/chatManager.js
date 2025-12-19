@@ -371,7 +371,6 @@ class ChatManager {
         // 检查是否是当前活跃会话
         const isCurrentSession = () => this.currentSessionId === sessionId;
         
-        try {
         while (true) {
             const { done, value } = await reader.read();
             
@@ -495,12 +494,9 @@ class ChatManager {
                             });
                         }
                     } else if (eventType === 'node' || eventType === 'status') {
-                        // 兼容旧的node事件
                         if (isCurrentSession()) {
                             this.handleNodeUpdate(eventData);
                         }
-                        
-                        // 深度思考模式：添加思考步骤（兜底逻辑，优先级低）
                         if (this.isDeepThinkMode && agentMessageDiv) {
                             const readableContent = eventData.thought
                                 || eventData.message
@@ -508,9 +504,8 @@ class ChatManager {
                                 || eventData.action
                                 || eventData.status
                                 || `正在处理 ${eventData.node || eventData.type || '步骤'}`;
-                            
                             this.addThinkingStep(agentMessageDiv, {
-                                type: eventData.node || eventData.type || 'step',
+                                type: eventData.node || eventType || 'step',
                                 title: this.getNodeTitle(eventData.node || eventData.type || '步骤'),
                                 content: readableContent,
                                 status: eventData.status === 'completed' ? 'completed' : 'processing',
@@ -518,26 +513,56 @@ class ChatManager {
                             });
                         }
                     } else if (eventType === 'thinking') {
-                        // 专门的thinking事件（未来后端支持）
                         if (this.isDeepThinkMode && agentMessageDiv) {
                             const readableContent = eventData.content
                                 || eventData.message
                                 || eventData.status
                                 || eventData.thought
                                 || `正在处理 ${eventData.type || '步骤'}`;
-                            
                             this.addThinkingStep(agentMessageDiv, {
                                 ...eventData,
                                 content: readableContent
                             });
                         }
+                    } else if (eventType === 'tool_call' || eventType === 'tool_result' || eventType === 'assistant_draft' || eventType === 'assistant_final' || eventType === 'completed') {
+                        if (isCurrentSession()) {
+                            if (eventType === 'tool_call') {
+                                this.handleNodeUpdate({
+                                    type: 'tool_call',
+                                    action: eventData.tool_name || eventData.tool_id || '工具调用',
+                                    node: 'tools'
+                                });
+                            } else if (eventType === 'tool_result') {
+                                this.handleNodeUpdate({
+                                    type: 'observation',
+                                    observation: eventData.output || '工具返回',
+                                    node: eventData.tool_name || 'tools'
+                                });
+                            } else if (eventType === 'assistant_draft') {
+                                this.handleNodeUpdate({
+                                    type: 'planning',
+                                    thought: eventData.content || '生成中...',
+                                    node: 'planner'
+                                });
+                            } else if (eventType === 'assistant_final') {
+                                this.handleNodeUpdate({
+                                    type: 'status',
+                                    status: '完成回答'
+                                });
+                            } else if (eventType === 'completed') {
+                                this.handleNodeUpdate({
+                                    type: 'status',
+                                    status: '流程结束'
+                                });
+                            }
+                        }
                     }
                 }
             }
-        }
-            
-            // 保存完整回答
-            session.lastAnswer = fullContent;
+        } // end while
+
+        // 保存完整回答
+        session.lastAnswer = fullContent;
         
         console.log('🎯 流式传输完成，准备最终渲染 - Session:', sessionId, '内容长度:', fullContent.length);
         
@@ -590,17 +615,8 @@ class ChatManager {
                 this.mainContainer.scrollTop = this.mainContainer.scrollHeight;
             }
             
-        } catch (error) {
-            if (error.name === 'AbortError') {
-                console.log('⏹️ 用户停止生成 - Session:', sessionId);
-                contentDiv.innerHTML += '<p style="color: var(--text-secondary); font-style: italic;">⏹️ 已停止生成</p>';
-            } else {
-                throw error;
-            }
-        } finally {
-            // 清理 AbortController
-            session.abortController = null;
-        }
+        // 清理 AbortController
+        session.abortController = null;
     }
 
     /**

@@ -3025,7 +3025,9 @@
         
         /* ========== 画布节点样式 ========== */
         .canvas-node {
-            transition: all 0.2s ease;
+            /* 仅在视觉效果上做过渡，避免拖拽时 top/left 触发动画 */
+            transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+            will-change: left, top, transform;
             image-rendering: -webkit-optimize-contrast;
             image-rendering: crisp-edges;
             image-rendering: pixelated;

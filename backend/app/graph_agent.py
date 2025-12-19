@@ -25,9 +25,8 @@ from .rag_service import retrieve_context
 from .tool_service import execute_tool, parse_tool_call
 from .memory_service import (
     retrieve_relevant_memories,
+    format_memories_for_prompt,
     save_conversation_and_extract_memories,
-    format_memories_for_context,
-    get_conversation_context,
 )
 
 logger = logging.getLogger(__name__)
@@ -200,9 +199,7 @@ async def planner_node(
     user_query = state["user_query"]
     use_knowledge_base = state.get("use_knowledge_base", False)
     
-    # 检索相关长期记忆
-    # 注意：即使没有 session_id，如果有 user_id，也应该检索记忆
-    # 这样可以确保跨会话也能使用记忆
+    # 检索相关记忆
     relevant_memories = []
     if session and (session_id or user_id):
         try:
@@ -211,26 +208,24 @@ async def planner_node(
                 query=user_query,
                 settings=settings,
                 user_id=user_id,
-                max_memories=5,
                 session_id=session_id,
+                max_memories=5,
             )
             if relevant_memories:
                 logger.info(f"📚 在规划器中检索到 {len(relevant_memories)} 条相关记忆")
-                for mem in relevant_memories:
-                    logger.debug(f"  - [{mem.memory_type}] {mem.content} (重要性: {mem.importance_score})")
         except Exception as e:
             logger.warning(f"记忆检索失败: {e}")
     
     # 格式化工具描述
     tools_desc = format_tools_description(tool_records)
     
-    # 构建智能规划提示词
-    # 在规划器中，记忆用于内部决策，但不影响最终回答
+    # 构建记忆上下文
     memory_context = ""
     if relevant_memories:
-        # 规划器内部使用，可以显示"用户信息"用于规划，但不会出现在最终回答中
-        memory_context = f"\n用户已知信息（用于规划参考，不会在最终回答中暴露来源）：\n{format_memories_for_context(relevant_memories)}\n"
+        memory_lines = [f"- {mem.content}" for mem in relevant_memories]
+        memory_context = f"\n用户已知信息（用于规划参考）：\n" + "\n".join(memory_lines) + "\n"
     
+    # 构建智能规划提示词
     planning_prompt = f"""你是一个智能任务规划助手。请分析用户问题，制定执行计划。
 
 用户问题：{user_query}
@@ -839,8 +834,7 @@ async def synthesizer_node(
     tool_results = state.get("tool_results", [])
     skipped_tasks = state.get("skipped_tasks", [])
 
-    # 检索相关长期记忆（在生成答案时也使用）
-    # 注意：即使没有 session_id，如果有 user_id，也应该检索记忆
+    # 检索相关记忆
     relevant_memories = []
     if session and (session_id or user_id):
         try:
@@ -849,8 +843,8 @@ async def synthesizer_node(
                 query=user_query,
                 settings=settings,
                 user_id=user_id,
-                max_memories=5,
                 session_id=session_id,
+                max_memories=5,
             )
             if relevant_memories:
                 logger.info(f"📚 在合成器中检索到 {len(relevant_memories)} 条相关记忆")
@@ -860,12 +854,13 @@ async def synthesizer_node(
     # 构建信息上下文
     context_parts: List[str] = []
     
-    # 0. 添加长期记忆（隐式添加，不显示"记忆"标签）
-    memory_context_lines = []
+    # 0. 添加记忆信息（明确标识为用户已知信息）
+    memory_context = ""
     if relevant_memories:
-        # 使用隐式格式，不显示"记忆"、"信息"等标签
-        for mem in relevant_memories:
-            memory_context_lines.append(mem.content)
+        memory_lines = [mem.content for mem in relevant_memories]
+        # 给记忆添加明确标识，确保 LLM 能够识别和使用这些信息
+        memory_context = "## 用户已知信息\n" + "\n".join(f"- {line}" for line in memory_lines)
+        context_parts.insert(0, memory_context)
     
     # 1. 添加知识库检索内容
     if retrieved_contexts:
@@ -892,7 +887,7 @@ async def synthesizer_node(
         ])
         context_parts.append(f"## 跳过的任务\n{skip_info}")
     
-    # 判断是否有足够信息（包括记忆）
+    # 判断是否有足够信息（包括记忆信息）
     has_info = bool(retrieved_contexts or tool_results or relevant_memories)
     
     try:
@@ -910,44 +905,19 @@ async def synthesizer_node(
 4. 不要编造信息
 """
         else:
-            # 构建完整的上下文，将记忆信息完全隐式嵌入
-            # 如果有记忆，将它们直接融入上下文，不显示任何标签
-            all_context_parts = []
-            
-            # 将记忆信息放在最前面，但不显示任何标签，让它们看起来像是系统已知的信息
-            if memory_context_lines:
-                # 完全隐式：不显示任何标签，直接列出内容
-                # 这些信息会被 LLM 当作已知信息使用，但不会在回答中暴露来源
-                all_context_parts.extend(memory_context_lines)
-            
-            # 添加其他上下文（知识库、工具结果等）
-            if context_parts:
-                all_context_parts.extend(context_parts)
-            
             # 构建完整上下文
-            all_context = "\n\n".join(all_context_parts) if all_context_parts else ""
-            
-            # 如果有记忆信息，在系统提示中隐式说明，但不显示标签
-            memory_instruction = ""
-            if memory_context_lines:
-                memory_instruction = """**重要**：上下文中的用户信息（如姓名、偏好等）是你已知的信息，直接自然地使用即可。
-- 不要提到"记忆"、"记录"、"存储"、"背景信息"等词汇
-- 直接使用用户信息，就像你本来就知道一样
-- 例如：如果知道用户叫"杨博文"，直接说"你好，杨博文"或"你是杨博文，对吧？"
-- 不要显示信息来源，让对话自然流畅
-
-"""
+            all_context = "\n\n".join(context_parts) if context_parts else ""
             
             synthesis_prompt = f"""用户问题：{user_query}
 
 {all_context}
 
-{memory_instruction}请基于以上信息，自然地回答用户问题，就像和朋友对话一样。
+请基于以上信息，自然地回答用户问题，就像和朋友对话一样。
 
 要求：
 1. 回答要自然、流畅，就像在和一个熟悉的朋友聊天
-2. 如果上下文中有用户信息（如姓名），直接自然地使用，不要解释来源
-3. 不要显示思考过程、信息来源或技术细节
+2. **重要**：如果"用户已知信息"中有用户的姓名、职业等个人信息，务必在回答中自然地使用（例如：如果用户名叫张三，在回答中可以说"张三，你好"或"张三，关于你的问题..."）
+3. 不要显示思考过程、信息来源或技术细节，不要说"根据记忆"、"根据已知信息"等词语
 4. 保持客观准确，不要编造内容
 5. 回答要有条理，使用 Markdown 格式
 6. 如果有工具执行结果，可以提到，但不要过度强调技术细节
@@ -1812,16 +1782,35 @@ async def stream_agent(
     config = {"configurable": {"thread_id": thread_id}}
     
     # 流式执行
+    final_state = None
     async for event in app.astream(initial_state, config=config):
         # event 是一个字典，键是节点名，值是该节点的输出
         for node_name, node_output in event.items():
             if node_name != "__end__":
+                final_state = node_output  # 保存最后一个状态
                 yield {
                     "event": "node_output",
                     "node": node_name,
                     "data": node_output,
                     "timestamp": datetime.now().isoformat()
                 }
+    
+    # 保存对话并提取记忆
+    if final_state and final_state.get("final_answer"):
+        try:
+            saved_memories = await save_conversation_and_extract_memories(
+                session=session,
+                session_id=session_id,
+                user_query=user_query,
+                assistant_reply=final_state["final_answer"],
+                settings=settings,
+                user_id=user_id,
+                metadata={"thread_id": thread_id},
+            )
+            if saved_memories:
+                logger.info(f"💾 流式模式保存了 {len(saved_memories)} 条新记忆")
+        except Exception as e:
+            logger.warning(f"流式模式保存记忆失败: {e}")
     
     # 流式结束
     yield {

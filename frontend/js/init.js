@@ -9,6 +9,32 @@
     
     console.log('🚀 init.js 已加载，等待其他模块...');
     
+    function loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = () => resolve(true);
+            s.onerror = () => reject(new Error('加载失败: ' + src));
+            document.body.appendChild(s);
+        });
+    }
+    
+    async function ensureModules() {
+        const map = {
+            NotificationManager: 'js/utils.js',
+            InputValidator: 'js/utils.js',
+            ErrorHandler: 'js/errorHandler.js',
+            CanvasManager: 'js/canvasManager.js',
+            ChatManager: 'js/chatManager.js',
+        };
+        const order = ['NotificationManager','InputValidator','ErrorHandler','CanvasManager','ChatManager'];
+        for (const name of order) {
+            if (typeof window[name] === 'undefined') {
+                await loadScript(map[name]);
+            }
+        }
+    }
+    
     // 延迟执行初始化，确保所有script标签都已加载
     function checkAndInitialize() {
         console.log('🔍 开始检查必要模块...');
@@ -27,9 +53,7 @@
         });
         
         if (missingModules.length > 0) {
-            console.error('❌ 缺少必要模块:', missingModules);
-            console.log('📊 当前window对象中的模块:', Object.keys(window).filter(k => k.includes('Manager') || k.includes('Validator')));
-            alert('应用初始化失败：缺少必要模块 ' + missingModules.join(', '));
+            console.warn('缺少必要模块:', missingModules);
             return false;
         }
         
@@ -38,11 +62,15 @@
     }
     
     // 2. 初始化应用的主函数
-    function initializeApp() {
-        // 先检查模块
+    async function initializeApp() {
         if (!checkAndInitialize()) {
-            return; // 如果模块检查失败，直接返回
+            try {
+                await ensureModules();
+            } catch (e) {
+                console.error('模块加载失败:', e);
+            }
         }
+        if (!checkAndInitialize()) return;
         
         try {
             // 创建全局单例实例

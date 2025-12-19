@@ -366,13 +366,12 @@ function startNewChat() {
     newChat();
 }
 
-// ========== 设置面板 ==========
-function openSettings() {
-    // 打开设置页面（新标签页）
-    window.open('conversation_settings.html', '_blank');
-    
-    console.log('打开设置页面');
-}
+// ========== 设置面板（已移除，请使用导航栏的"记忆管理"） ==========
+// function openSettings() {
+//     // 打开设置页面（新标签页）
+//     window.open('conversation_settings.html', '_blank');
+//     console.log('打开设置页面');
+// }
 
 // ========== 输入选项面板 ==========
 function toggleInputOptions() {
@@ -930,7 +929,7 @@ window.closeImageModal = closeImageModal;
 window.closeMermaidModal = closeMermaidModal;
 window.newChat = newChat;
 window.startNewChat = startNewChat;
-window.openSettings = openSettings;
+// window.openSettings = openSettings; // 已移除
 window.sendQuickExample = sendQuickExample;
 window.useExample = useExample; // 添加这个！
 window.toggleBuilder = toggleBuilder;

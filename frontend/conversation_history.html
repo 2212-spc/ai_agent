@@ -28,6 +28,9 @@
                     <a href="knowledge_base.html" class="nav-link">
                         <span>📁 知识库</span>
                     </a>
+                    <a href="memory.html" class="nav-link">
+                        <span>🧠 记忆管理</span>
+                    </a>
                     <a href="conversation_history.html" class="nav-link active">
                         <span>📚 会话历史</span>
                     </a>
@@ -52,6 +55,19 @@
             placeholder="🔍 搜索对话内容..."
             onkeyup="handleSearch(event)"
         >
+    </div>
+
+    <div class="bulk-actions" id="bulkActions" style="display:none;">
+        <div class="bulk-left">
+            <label class="checkbox">
+                <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                <span>全选</span>
+            </label>
+            <span id="selectedCountText">已选 0 条</span>
+        </div>
+        <div class="bulk-right">
+            <button class="btn btn-danger btn-small" onclick="deleteSelected()">批量删除</button>
+        </div>
     </div>
 
     <div class="container">
