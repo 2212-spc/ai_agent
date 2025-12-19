@@ -280,38 +280,12 @@ async def planner_node(
 预期结果：{plan_data.get('expected_result', '为用户提供准确答案')}
 """
         
-        # 生成详细的思考过程（用于深度思考模式展示）
-        detailed_thoughts = []
-        
-        # 1. 理解问题
-        detailed_thoughts.append(f"**理解问题**：用户提出了「{user_query}」。经过分析，这是一个关于{task_type}的问题，需要我运用相应的策略来处理。")
-        
-        # 2. 任务分析
-        detailed_thoughts.append(f"**任务分析**：{analysis}")
-        
-        # 3. 执行计划
-        steps_text = "\n".join(f"   {i+1}. {step}" for i, step in enumerate(steps))
-        detailed_thoughts.append(f"**制定计划**：为了完成这个任务，我制定了以下执行步骤：\n{steps_text}")
-        
-        # 4. 资源评估
-        resource_notes = []
-        if plan_data.get('required_tools'):
-            resource_notes.append(f"需要调用 {len(plan_data['required_tools'])} 个工具")
-        if plan_data.get('need_knowledge_base'):
-            resource_notes.append("需要检索知识库")
-        if relevant_memories:
-            resource_notes.append(f"已检索到 {len(relevant_memories)} 条相关历史记忆")
-        
-        if resource_notes:
-            detailed_thoughts.append(f"**资源评估**：{'; '.join(resource_notes)}。")
-        
-        # 5. 预期结果
-        detailed_thoughts.append(f"**预期结果**：{plan_data.get('expected_result', '为用户提供准确、完整的答案')}。")
+        thought = f"智能规划完成：识别为【{task_type}】，共 {len(steps)} 个步骤"
         
         return {
             "plan": plan_text,
             "current_step": 0,
-            "thoughts": detailed_thoughts,  # 返回详细的思考列表
+            "thoughts": [thought],
             "next_action": "route"
         }
     

@@ -10,8 +10,7 @@ from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Literal
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -109,13 +108,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-frontend_dir = Path(__file__).resolve().parents[2] / "frontend"
-app.mount("/frontend", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
-
-@app.get("/")
-async def root_redirect():
-    return RedirectResponse(url="/frontend/agent_chat.html")
-
 # 添加请求日志中间件
 @app.middleware("http")
 async def log_requests(request, call_next):
@@ -155,13 +147,6 @@ class ChatRequest(BaseModel):
     )
     user_id: Optional[str] = Field(
         default=None, description="用户ID，用于多用户场景。"
-    )
-    # 记忆控制字段（前端发送）
-    memory_mode: Optional[str] = Field(
-        default="session", description="记忆模式：'global'（全局记忆）或 'session'（独立记忆）"
-    )
-    share_memory: Optional[bool] = Field(
-        default=None, description="是否共享记忆（显式控制，优先级最高）"
     )
 
 
@@ -1174,23 +1159,6 @@ async def chat_with_langgraph_agent(
     # 获取可用工具
     tool_records = select_tool_records(payload, session)
     
-    # 获取或生成 session_id，并根据请求更新会话记忆配置
-    session_id = payload.session_id or str(uuid.uuid4())
-    current_config = get_session_config(session, session_id)
-    share_memory_value = False
-    if payload.share_memory is not None:
-        share_memory_value = payload.share_memory
-    elif payload.memory_mode == 'global':
-        share_memory_value = True
-    elif current_config:
-        share_memory_value = current_config.share_memory
-    update_session_config(
-        session=session,
-        session_id=session_id,
-        share_memory=share_memory_value,
-        user_id=payload.user_id,
-    )
-    
     # 运行 LangGraph Agent
     result = await run_agent(
         user_query=payload.messages[-1].content if payload.messages else "",
@@ -1199,7 +1167,7 @@ async def chat_with_langgraph_agent(
         tool_records=tool_records,
         use_knowledge_base=payload.use_knowledge_base,
         conversation_history=[msg.model_dump() for msg in payload.messages],
-        session_id=session_id,
+        session_id=payload.session_id,
         user_id=payload.user_id,
     )
     
@@ -1305,31 +1273,6 @@ async def chat_with_langgraph_agent_stream(
     
     # 获取或生成 session_id
     session_id = payload.session_id or str(uuid.uuid4())
-    
-    # 🔒 根据前端请求设置会话的记忆配置
-    from .database import get_session_config, SessionConfig
-    session_config = get_session_config(session, session_id)
-    
-    # 确定是否共享记忆
-    share_memory_value = False  # 默认：独立记忆
-    if payload.share_memory is not None:
-        # 如果前端显式指定，优先使用前端的值
-        share_memory_value = payload.share_memory
-    elif payload.memory_mode == 'global':
-        # 如果前端指定了全局记忆模式
-        share_memory_value = True
-    elif session_config:
-        # 使用已有的会话配置
-        share_memory_value = session_config.share_memory
-    
-    # 创建或更新会话配置
-    session_config = update_session_config(
-        session=session,
-        session_id=session_id,
-        share_memory=share_memory_value,
-        user_id=payload.user_id,
-    )
-    logger.info(f"🔒 会话 {session_id} 记忆模式: {'全局共享' if session_config.share_memory else '独立隔离'}")
     
     async def event_generator() -> AsyncGenerator[bytes, None]:
         try:
@@ -3201,13 +3144,6 @@ class MultiAgentChatRequest(BaseModel):
     execution_mode: str = Field(default="sequential", description="执行模式：sequential 或 parallel")
     session_id: Optional[str] = Field(default=None, description="会话ID")
     user_id: Optional[str] = Field(default=None, description="用户ID")
-    # 记忆控制字段
-    memory_mode: Optional[str] = Field(
-        default="session", description="记忆模式：'global'（全局记忆）或 'session'（独立记忆）"
-    )
-    share_memory: Optional[bool] = Field(
-        default=None, description="是否共享记忆（显式控制，优先级最高）"
-    )
 
 
 class MultiAgentChatResponse(BaseModel):
@@ -3248,23 +3184,6 @@ async def chat_with_multi_agent(
     if payload.use_tools:
         tool_records = list_tools(session, include_inactive=False)
     
-    # 获取或生成 session_id，并根据请求更新会话记忆配置
-    session_id = payload.session_id or str(uuid.uuid4())
-    current_config = get_session_config(session, session_id)
-    share_memory_value = False
-    if payload.share_memory is not None:
-        share_memory_value = payload.share_memory
-    elif payload.memory_mode == 'global':
-        share_memory_value = True
-    elif current_config:
-        share_memory_value = current_config.share_memory
-    update_session_config(
-        session=session,
-        session_id=session_id,
-        share_memory=share_memory_value,
-        user_id=payload.user_id,
-    )
-    
     # 运行多智能体系统
     result = await run_multi_agent(
         user_query=payload.messages[-1].content if payload.messages else "",
@@ -3273,7 +3192,7 @@ async def chat_with_multi_agent(
         tool_records=tool_records,
         use_knowledge_base=payload.use_knowledge_base,
         conversation_history=[msg.model_dump() for msg in payload.messages],
-        session_id=session_id,
+        session_id=payload.session_id,
         user_id=payload.user_id,
         execution_mode=payload.execution_mode,
     )
@@ -3311,28 +3230,6 @@ async def chat_with_multi_agent_stream(
         tool_records = list_tools(session, include_inactive=False)
     
     session_id = payload.session_id or str(uuid.uuid4())
-    
-    # 🔒 根据前端请求设置会话的记忆配置
-    from .database import get_session_config, SessionConfig
-    session_config = get_session_config(session, session_id)
-    
-    # 确定是否共享记忆
-    share_memory_value = False  # 默认：独立记忆
-    if payload.share_memory is not None:
-        share_memory_value = payload.share_memory
-    elif payload.memory_mode == 'global':
-        share_memory_value = True
-    elif session_config:
-        share_memory_value = session_config.share_memory
-    
-    # 创建或更新会话配置
-    session_config = update_session_config(
-        session=session,
-        session_id=session_id,
-        share_memory=share_memory_value,
-        user_id=payload.user_id,
-    )
-    logger.info(f"🔒 多智能体会话 {session_id} 记忆模式: {'全局共享' if session_config.share_memory else '独立隔离'}")
     
     async def event_generator() -> AsyncGenerator[bytes, None]:
         try:
