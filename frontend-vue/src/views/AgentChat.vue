@@ -22,6 +22,20 @@ const isLoadingHistory = ref(false);
 const sidebarWidth = ref(280);
 const builderWidth = ref(500);
 const timelineWidth = ref(320);
+const isMobile = ref(false);
+
+function checkMobile() {
+    const mobile = window.innerWidth <= 768;
+    if (mobile !== isMobile.value) {
+        isMobile.value = mobile;
+        // On mobile, sidebar is closed by default
+        if (mobile) {
+            isSidebarOpen.value = false;
+        } else {
+            isSidebarOpen.value = true;
+        }
+    }
+}
 
 function toggleBuilder() {
     showBuilder.value = !showBuilder.value;
@@ -33,6 +47,12 @@ function toggleTimeline() {
 
 function toggleSidebar() {
     isSidebarOpen.value = !isSidebarOpen.value;
+}
+
+function closeSidebar() {
+    if (isMobile.value) {
+        isSidebarOpen.value = false;
+    }
 }
 
 function openSettings() {
@@ -103,6 +123,11 @@ async function selectConversation(sessionId) {
         
         // 切换会话,但不关闭sidebar
         chatStore.setSessionId(sessionId);
+        
+        // Auto-close sidebar on mobile
+        if (isMobile.value) {
+            isSidebarOpen.value = false;
+        }
         
         // 如果会话消息为空，从后端加载历史消息
         if (session.messages.length === 0) {
@@ -225,6 +250,10 @@ onMounted(() => {
     console.log('AgentChat mounted');
     loadHistoryList();
     
+    // Initial mobile check
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
     // 每30秒自动刷新历史记录
     setInterval(() => {
         loadHistoryList();
@@ -235,6 +264,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+    window.removeEventListener('resize', checkMobile);
     // 清理事件监听
     window.removeEventListener('background-generation-complete', handleBackgroundGenerationComplete);
 });
@@ -242,6 +272,9 @@ onUnmounted(() => {
 
 <template>
     <div class="agent-chat-container">
+        <!-- Global Cosmic Background -->
+        <div class="cosmic-background"></div>
+        
         <!-- Notification Container -->
         <NotificationContainer />
         <!-- Header -->
@@ -257,11 +290,24 @@ onUnmounted(() => {
                 </div>
                 <!-- 导航链接 -->
                 <div class="header-nav">
-                    <router-link to="/chat" class="nav-link active">💬 对话工作台</router-link>
-                    <router-link to="/prompts" class="nav-link">📝 Prompt模板</router-link>
-                    <router-link to="/knowledge" class="nav-link">📁 知识库</router-link>
-                    <router-link to="/memory" class="nav-link">🧠 记忆管理</router-link>
-                    <router-link to="/history" class="nav-link">📚 会话历史</router-link>
+                    <router-link to="/chat" class="nav-link active" title="对话工作台">
+                        💬 <span class="nav-text">对话工作台</span>
+                    </router-link>
+                    <router-link to="/prompts" class="nav-link" title="Prompt模板">
+                        📝 <span class="nav-text">Prompt模板</span>
+                    </router-link>
+                    <router-link to="/knowledge" class="nav-link" title="知识库">
+                        📁 <span class="nav-text">知识库</span>
+                    </router-link>
+                    <router-link to="/memory" class="nav-link" title="记忆管理">
+                        🧠 <span class="nav-text">记忆管理</span>
+                    </router-link>
+                    <router-link to="/history" class="nav-link" title="会话历史">
+                        📚 <span class="nav-text">会话历史</span>
+                    </router-link>
+                    <router-link to="/agent/builder" class="nav-link" title="Agent构建器">
+                        🤖 <span class="nav-text">Agent构建器</span>
+                    </router-link>
                 </div>
             </div>
             
@@ -310,9 +356,14 @@ onUnmounted(() => {
         </div>
 
         <!-- Main Content -->
-        <div class="main-content" :class="{ 'sidebar-closed': !isSidebarOpen }">
+        <div class="main-content" :class="{ 'sidebar-closed': !isSidebarOpen, 'is-mobile': isMobile }">
+            <!-- Mobile Sidebar Overlay -->
+            <Transition name="fade">
+                <div v-if="isMobile && isSidebarOpen" class="sidebar-overlay" @click="closeSidebar"></div>
+            </Transition>
+
             <!-- Sidebar -->
-            <aside class="sidebar" v-show="isSidebarOpen" :style="{ width: sidebarWidth + 'px' }">
+            <aside class="sidebar" v-show="isSidebarOpen" :class="{ 'mobile-drawer': isMobile }" :style="!isMobile ? { width: sidebarWidth + 'px' } : {}">
                 <button class="btn btn-primary btn-small new-chat-btn" @click="startNewChat">
                     ➕ 新建对话
                 </button>
@@ -320,6 +371,31 @@ onUnmounted(() => {
                     <div class="sidebar-header">
                         <h3 class="section-title">📚 历史记录</h3>
                         <button class="btn-icon" @click="refreshHistory" title="刷新">🔄</button>
+                    </div>
+                    
+                    <!-- Mobile Mode Switches (Visible only on mobile sidebar) -->
+                    <div v-if="isMobile" class="mobile-modes-panel">
+                        <div class="mobile-mode-item">
+                            <span class="mode-label">全局记忆</span>
+                            <label class="mode-switch">
+                                <input type="checkbox" v-model="chatStore.isGlobalMemory" @change="chatStore.toggleGlobalMemory(chatStore.isGlobalMemory)">
+                                <span class="mode-slider"></span>
+                            </label>
+                        </div>
+                        <div class="mobile-mode-item">
+                            <span class="mode-label">深度思考</span>
+                            <label class="mode-switch">
+                                <input type="checkbox" v-model="chatStore.isDeepThinkMode" @change="chatStore.toggleDeepThink(chatStore.isDeepThinkMode)">
+                                <span class="mode-slider"></span>
+                            </label>
+                        </div>
+                        <div class="mobile-mode-item">
+                            <span class="mode-label">多智能体模式</span>
+                            <label class="mode-switch">
+                                <input type="checkbox" v-model="chatStore.isMultiAgentMode" @change="onModeChange">
+                                <span class="mode-slider"></span>
+                            </label>
+                        </div>
                     </div>
                     
                     <!-- 加载中 -->
@@ -389,6 +465,56 @@ onUnmounted(() => {
     flex-direction: column;
     height: 100vh;
     background: var(--bg-secondary);
+    position: relative;
+    overflow: hidden;
+}
+
+/* 🌌 Global Cosmic Background */
+.cosmic-background {
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at center, #1e1b4b 0%, #0f172a 40%, #020617 100%);
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.cosmic-background::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+        radial-gradient(circle at 20% 30%, rgba(139, 92, 246, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(6, 182, 212, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 50% 50%, rgba(236, 72, 153, 0.1) 0%, transparent 60%);
+    animation: auroraFlow 20s infinite alternate ease-in-out;
+    filter: blur(60px);
+}
+
+@keyframes auroraFlow {
+    0% { transform: scale(1) translate(0, 0); }
+    50% { transform: scale(1.1) translate(-2%, 2%); }
+    100% { transform: scale(1) translate(2%, -2%); }
+}
+
+.header {
+    position: relative;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.1); /* Glass effect base */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="light"] .header {
+    background: rgba(255, 255, 255, 0.8);
+    border-bottom: 1px solid var(--border-primary);
 }
 
 .main-content {
@@ -396,12 +522,16 @@ onUnmounted(() => {
     flex: 1;
     overflow: hidden;
     transition: all 0.3s ease;
+    position: relative;
+    z-index: 5;
 }
 
 .sidebar {
     width: 280px;
-    background: var(--bg-primary);
-    border-right: 1px solid var(--border-primary);
+    background: rgba(255, 255, 255, 0.05); /* Glass effect */
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
     padding: 16px;
     overflow-y: auto;
     transition: transform 0.3s ease;
@@ -410,8 +540,22 @@ onUnmounted(() => {
     gap: 16px;
 }
 
+[data-theme="light"] .sidebar {
+    background: rgba(255, 255, 255, 0.9);
+    border-right: 1px solid var(--border-primary);
+}
+
 .new-chat-btn {
     width: 100%;
+    background: var(--gradient-primary);
+    border: none;
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+    transition: all 0.3s ease;
+}
+
+.new-chat-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5);
 }
 
 .sidebar-header {
@@ -437,21 +581,37 @@ onUnmounted(() => {
 .history-item {
     padding: 10px 12px;
     border-radius: 8px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-primary);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.05);
     cursor: pointer;
     transition: all 0.2s;
 }
 
+[data-theme="light"] .history-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+}
+
 .history-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(4px);
+    border-color: var(--brand-primary-400);
+}
+
+[data-theme="light"] .history-item:hover {
     background: var(--hover-bg);
-    border-color: var(--brand-primary-500);
 }
 
 .history-item.active {
+    background: linear-gradient(90deg, rgba(139, 92, 246, 0.2) 0%, transparent 100%);
+    border-left: 3px solid var(--brand-primary-500);
+    border-color: transparent transparent transparent var(--brand-primary-500);
+}
+
+[data-theme="light"] .history-item.active {
     background: var(--bg-brand);
-    border-color: var(--brand-primary-500);
-    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+    border: 1px solid var(--brand-primary-500);
+    border-left: 3px solid var(--brand-primary-500);
 }
 
 .history-title {
@@ -495,43 +655,39 @@ onUnmounted(() => {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background: transparent; /* Transparent for cosmic bg */
 }
 
 .builder-panel {
     position: relative;
-    background: var(--bg-primary);
-    border-left: 1px solid var(--border-primary);
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
     overflow: hidden;
     min-width: 300px;
     max-width: 800px;
 }
 
-.resize-handle {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    background: transparent;
-    cursor: ew-resize;
-    z-index: 10;
-}
-
-.resize-handle:hover {
-    background: var(--brand-primary-500);
-}
-
-.resize-handle-left {
-    left: 0;
+[data-theme="light"] .builder-panel {
+    background: var(--bg-primary);
+    border-left: 1px solid var(--border-primary);
 }
 
 .timeline-panel-container {
     position: relative;
-    background: var(--bg-primary);
-    border-left: 1px solid var(--border-primary);
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
     overflow: hidden;
     min-width: 250px;
     max-width: 600px;
 }
+
+[data-theme="light"] .timeline-panel-container {
+    background: var(--bg-primary);
+    border-left: 1px solid var(--border-primary);
+}
+
 
 .section-title {
     font-size: 14px;
@@ -685,5 +841,127 @@ input:checked + .mode-slider:before {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* Responsive Enhancements */
+@media (max-width: 1280px) {
+    .header-title-sub {
+        display: none;
+    }
+    .header-nav {
+        margin-left: 12px;
+        gap: 4px;
+    }
+    .nav-link {
+        padding: 6px 8px;
+    }
+}
+
+@media (max-width: 1100px) {
+    .nav-text {
+        display: none;
+    }
+    .mode-indicator {
+        display: none;
+    }
+    .mode-switch-label {
+        display: none;
+    }
+    .header-right {
+        gap: 4px;
+    }
+    .mode-switch-container {
+        margin-right: 4px;
+        gap: 4px;
+    }
+}
+
+@media (max-width: 768px) {
+    .header-nav {
+        display: none;
+    }
+    
+    .header-title h1 {
+        font-size: 18px;
+    }
+    
+    /* Mobile Drawer Styles */
+    .sidebar.mobile-drawer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 80%;
+        max-width: 300px;
+        z-index: 100;
+        border-right: 1px solid var(--border-primary);
+        box-shadow: 20px 0 50px rgba(0, 0, 0, 0.5);
+        background: var(--bg-secondary); /* Ensure opaque background */
+    }
+    
+    [data-theme="dark"] .sidebar.mobile-drawer {
+        background: #0f172a;
+    }
+    
+    /* Overlay */
+    .sidebar-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        z-index: 90;
+    }
+    
+    .main-content.is-mobile .sidebar {
+        transform: none !important; /* Reset transform for drawer */
+    }
+    
+    /* Hide non-essential header items on mobile */
+    .btn-icon[title="Agent构建器"],
+    .btn-icon[title="会话设置"],
+    .btn-secondary,
+    .mode-switch-container {
+        display: none;
+    }
+    
+    /* Mobile Modes Panel in Sidebar */
+    .mobile-modes-panel {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .mobile-mode-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .mobile-mode-item:last-child {
+        border-bottom: none;
+    }
+    
+    .mode-label {
+        font-size: 14px;
+        color: var(--text-primary);
+    }
+}
+
+/* Animations */
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
 }
 </style>

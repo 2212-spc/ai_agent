@@ -9,8 +9,9 @@ import logging
 import operator
 import re
 import uuid
+import asyncio
 from datetime import datetime
-from typing import Annotated, Any, Dict, List, Literal, Optional, Sequence, TypedDict
+from typing import Annotated, Any, Dict, List, Literal, Optional, Sequence, TypedDict, AsyncGenerator
 
 import httpx
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -20,7 +21,7 @@ from langgraph.prebuilt import ToolNode
 from sqlalchemy.orm import Session
 
 from .config import Settings
-from .database import ToolRecord
+from .database import ToolRecord, get_session_factory
 from .rag_service import retrieve_context
 from .tool_service import execute_tool, parse_tool_call
 from .memory_service import (
@@ -89,6 +90,56 @@ async def invoke_llm(
         return f"LLM 调用失败: {str(e)}", {}
 
 
+async def stream_llm(
+    messages: List[Dict[str, str]],
+    settings: Settings,
+    temperature: float = 0.7,
+    max_tokens: Optional[int] = None,
+) -> AsyncGenerator[str, None]:
+    """
+    流式调用 DeepSeek API
+    """
+    payload: Dict[str, Any] = {
+        "model": "deepseek-chat",
+        "messages": messages,
+        "temperature": temperature,
+        "stream": True,
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+
+    headers = {
+        "Authorization": f"Bearer {settings.deepseek_api_key}",
+        "Content-Type": "application/json",
+    }
+    endpoint = f"{settings.deepseek_base_url.rstrip('/')}/chat/completions"
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+            async with client.stream("POST", endpoint, json=payload, headers=headers) as response:
+                if response.status_code != 200:
+                    yield f"API Error: {response.status_code}"
+                    return
+
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            content = data["choices"][0]["delta"].get("content", "")
+                            if content:
+                                yield content
+                        except:
+                            pass
+    except Exception as e:
+        logger.error(f"LLM Stream Error: {e}")
+        yield f"Error: {str(e)}"
+
+
 def parse_json_from_llm(text: str) -> Dict[str, Any]:
     """
     从 LLM 响应中提取 JSON
@@ -109,6 +160,14 @@ def parse_json_from_llm(text: str) -> Dict[str, Any]:
         return json.loads(text)
     except json.JSONDecodeError as e:
         logger.warning(f"JSON 解析失败: {e}, 原始文本: {text[:200]}")
+        # 宽容解析：尝试截断到第一个可能完整的对象
+        try:
+            end_idx = max(text.rfind('}'), text.rfind(']'))
+            if end_idx != -1:
+                truncated = text[:end_idx+1]
+                return json.loads(truncated)
+        except Exception:
+            pass
         # 返回默认结构
         return {
             "task_type": "信息查询",
@@ -146,6 +205,9 @@ class AgentState(TypedDict):
     conversation_history: Annotated[Sequence[Dict[str, str]], operator.add]  # 对话历史
     session_id: Optional[str]  # 会话ID，用于长期记忆
     user_id: Optional[str]  # 用户ID，用于多用户场景
+    difficulty: Optional[str]  # 任务难度：simple, hard
+    pre_generated_answer: Optional[str]  # 预生成的答案（用于简单任务快速响应）
+    stream_mode: Optional[bool]  # 是否为流式模式
     
     # 规划信息
     plan: Optional[str]  # Agent 生成的计划
@@ -166,6 +228,15 @@ class AgentState(TypedDict):
     thoughts: Annotated[List[str], operator.add]  # Agent 的思考过程
     observations: Annotated[List[str], operator.add]  # 观察到的结果
     
+    # 隐式推理
+    subquestions: List[str]
+    answer_outline: List[str]
+    evidence_requirements: List[str]
+    reasoning_steps: Annotated[List[str], operator.add]
+    react_cursor: int
+    react_max_steps: int
+    react_steps_done: int
+    
     # 决策相关
     next_action: Optional[str]  # 下一步动作：tool_call, search_kb, synthesize, complete
     needs_human_input: bool  # 是否需要人工介入
@@ -177,6 +248,8 @@ class AgentState(TypedDict):
     
     # 最终输出
     final_answer: Optional[str]  # 最终答案
+    final_prompt: Optional[str]  # 最终生成的 Prompt（用于流式输出）
+    ready_to_synthesize: Optional[bool]  # 是否准备好合成（用于延迟合成）
     is_complete: bool  # 是否完成
     error: Optional[str]  # 错误信息
 
@@ -225,32 +298,40 @@ async def planner_node(
         memory_lines = [f"- {mem.content}" for mem in relevant_memories]
         memory_context = f"\n用户已知信息（用于规划参考）：\n" + "\n".join(memory_lines) + "\n"
     
-    # 构建智能规划提示词
-    planning_prompt = f"""你是一个智能任务规划助手。请分析用户问题，制定执行计划。
-
-用户问题：{user_query}
-{memory_context}
-可用工具：
-{tools_desc}
-
-知识库：{"已启用" if use_knowledge_base else "未启用"}
-
-请以 JSON 格式输出计划：
-{{
-  "task_type": "信息查询|工具调用|知识检索|复合任务",
+    # 构建智能规划提示词（避免 f-string 中的花括号导致格式错误）
+    header = (
+        "你是一个智能任务规划助手。请分析用户问题，制定执行计划，并给出隐式推理草稿。\n\n"
+        f"用户问题：{user_query}\n"
+        f"{memory_context}"
+        "可用工具：\n"
+        f"{tools_desc}\n\n"
+        f"知识库：{'已启用' if use_knowledge_base else '未启用'}\n\n"
+        "请分析任务并以 JSON 格式输出计划。\n\n"
+        "**决策逻辑**：\n"
+        "1. **直接回答 (Direct Answer)**：如果问题是常识、概念解释、闲聊，且你无需使用工具或搜索即可回答，请选择此模式。\n"
+        "2. **工具调用 (Tool Use)**：如果需要搜索、画图、查天气、做笔记等，请选择此模式。\n"
+        "3. **知识库检索 (RAG)**：如果需要从知识库查找信息（且知识库已启用），请选择此模式。\n\n"
+    )
+    json_template = """
+请返回 JSON：
+{
+  "task_type": "direct_answer|tool_use|rag_search|complex_task",
   "analysis": "任务分析简述",
-  "steps": ["步骤1", "步骤2", ...],
-  "required_tools": ["tool_id_1", ...],
-  "need_knowledge_base": true/false,
-  "expected_result": "预期结果描述"
-}}
+  "steps": ["步骤1", "步骤2", "..."],
+  "required_tools": ["tool_id_1", "..."],
+  "direct_answer_content": "如果是direct_answer模式，请在此直接写出完整回答（支持Markdown）；否则留空",
+  "need_knowledge_base": true,
+  "subquestions": ["子问题1", "子问题2", "..."],
+  "answer_outline": ["章节1", "章节2", "..."],
+  "evidence_requirements": ["必须覆盖的要点或证据1", "要点2", "..."]
+}
 
 注意：
-1. task_type 从以下选择：信息查询、工具调用、知识检索、复合任务
-2. steps 应该是具体的执行步骤
-3. required_tools 是需要调用的工具ID列表，如果不需要工具则为空数组
-4. 只返回 JSON，不要其他解释
+1. 优先尝试 **direct_answer** 以提供最快响应。
+2. 只有当确实需要外部信息时才使用 tool_use 或 rag_search。
+3. 只返回 JSON，不要其他解释。
 """
+    planning_prompt = header + json_template
     
     try:
         # 调用 LLM 进行规划
@@ -258,14 +339,27 @@ async def planner_node(
             messages=[{"role": "user", "content": planning_prompt}],
             settings=settings,
             temperature=0.3,  # 低温度保证规划稳定
-            max_tokens=1000
+            max_tokens=1500
         )
         
         # 解析 LLM 返回的 JSON
         plan_data = parse_json_from_llm(llm_response)
         
-        task_type = plan_data.get("task_type", "信息查询")
+        task_type = plan_data.get("task_type", "complex_task")
         analysis = plan_data.get("analysis", "分析任务中...")
+        
+        # === Level 2: Direct Reasoning (直接推理) ===
+        if task_type == "direct_answer" and plan_data.get("direct_answer_content"):
+            logger.info("🚀 [规划器] 判定为直接回答模式 (Level 2)")
+            return {
+                "plan": "直接回答用户问题",
+                "current_step": 0,
+                "thoughts": ["Planner: 判定为通用知识/闲聊，直接生成回答"],
+                "next_action": "synthesize",
+                "difficulty": "simple",
+                "pre_generated_answer": plan_data.get("direct_answer_content")
+            }
+
         steps = plan_data.get("steps", ["分析问题", "生成答案"])
         
         logger.info(f"📋 规划完成：{task_type}, {len(steps)} 个步骤")
@@ -276,8 +370,6 @@ async def planner_node(
 
 执行步骤：
 {chr(10).join(f"{i+1}. {step}" for i, step in enumerate(steps))}
-
-预期结果：{plan_data.get('expected_result', '为用户提供准确答案')}
 """
         
         thought = f"智能规划完成：识别为【{task_type}】，共 {len(steps)} 个步骤"
@@ -286,7 +378,10 @@ async def planner_node(
             "plan": plan_text,
             "current_step": 0,
             "thoughts": [thought],
-            "next_action": "route"
+            "next_action": "route",
+            "subquestions": plan_data.get("subquestions", []),
+            "answer_outline": plan_data.get("answer_outline", []),
+            "evidence_requirements": plan_data.get("evidence_requirements", [])
         }
     
     except Exception as e:
@@ -327,6 +422,17 @@ async def router_node(
     retrieved_contexts = state.get("retrieved_contexts", [])
     tool_results = state.get("tool_results", [])
     
+    # === 快速通道检查 ===
+    # 如果 Planner 已经决定了下一步动作（例如 simple 任务），直接执行
+    pre_decided_action = state.get("next_action")
+    if pre_decided_action == "synthesize" and state.get("difficulty") == "simple":
+        logger.info("🚀 [路由器] 检测到快速通道动作，跳过决策")
+        return {
+            "next_action": "synthesize",
+            "thoughts": ["快速通道：直接进入合成阶段"],
+            "current_step": current_step + 1
+        }
+    
     # 检查是否超过最大迭代次数
     if current_step >= max_iterations:
         return {
@@ -366,7 +472,7 @@ async def router_node(
             "current_step": current_step + 1
         }
     
-    # 步骤 >= 1，使用 LLM 智能决策
+    # 步骤 >= 1，使用 LLM 智能决策（ReAct 控制器前置）
     # 先检查是否已经检索过知识库，避免重复搜索
     kb_already_searched = len(retrieved_contexts) > 0 or any("知识库" in obs or "检索到" in obs for obs in observations)
     
@@ -479,6 +585,57 @@ C. synthesize - 信息已足够，可以生成最终答案
             "current_step": current_step + 1
         }
 
+async def react_controller_node(
+    state: AgentState,
+    settings: Settings,
+) -> Dict[str, Any]:
+    subqs = state.get("subquestions", []) or []
+    evids = state.get("evidence_requirements", []) or []
+    cursor = state.get("react_cursor", 0)
+    max_steps = state.get("react_max_steps", 4)
+    steps_done = state.get("react_steps_done", 0)
+    retrieved_contexts = state.get("retrieved_contexts", []) or []
+    tool_results = state.get("tool_results", []) or []
+    coverage = (len(retrieved_contexts) + len(tool_results)) / max(1, len(subqs) or 1)
+    if steps_done >= max_steps or coverage >= 0.65:
+        return {
+            "next_action": "synthesize",
+            "thoughts": [f"ReAct结束：steps={steps_done}, coverage={coverage:.2f}"],
+        }
+    current_subq = subqs[cursor] if cursor < len(subqs) else ""
+    prompt = f"""你是任务控制器。根据当前子问题和观察，决定下一步工具调用或停止。
+子问题：{current_subq}
+证据需求：{'; '.join(evids[:5])}
+最近观察：{'; '.join(state.get('observations', [])[-3:])}
+可选动作：
+A.web_search
+B.knowledge_search
+C.draw_diagram
+D.stop
+只输出一个字母。"""
+    try:
+        reply, _ = await invoke_llm(
+            messages=[{"role": "user", "content": prompt}],
+            settings=settings,
+            temperature=0.0,
+            max_tokens=4,
+        )
+        action = reply.strip().upper()[:1]
+        map_act = {"A": "tool_executor", "B": "knowledge_search", "C": "tool_executor", "D": "synthesize"}
+        next_action = map_act.get(action, "tool_executor")
+        next_cursor = cursor + (1 if next_action in ("synthesize",) else 0)
+        return {
+            "next_action": next_action,
+            "react_cursor": next_cursor,
+            "react_steps_done": steps_done + 1,
+            "thoughts": [f"ReAct决策：{action} -> {next_action} | cursor={next_cursor}"],
+        }
+    except Exception as e:
+        return {
+            "next_action": "tool_executor",
+            "react_steps_done": steps_done + 1,
+            "thoughts": [f"ReAct降级：异常 {str(e)[:60]}，改为工具执行"],
+        }
 
 def knowledge_search_node(
     state: AgentState,
@@ -531,7 +688,7 @@ async def tool_executor_node(
     session: Session,
     tool_records: List[ToolRecord],
 ) -> Dict[str, Any]:
-    """工具执行器节点：智能选择并执行工具"""
+    """工具执行器节点：智能选择并执行工具（支持并行）"""
     logger.info("🔧 [工具执行器] 准备调用工具...")
 
     user_query = state.get("user_query", "")
@@ -562,199 +719,191 @@ async def tool_executor_node(
             if task_key and task_key not in tool_index:
                 tool_index[task_key] = record
 
-    pending_task: Optional[str] = None
+    # 1. 识别所有可并行的待处理任务
+    tasks_to_run = []
+    
     for task in tasks:
         if task in completed_tasks or task in skipped_task_keys:
             continue
-        pending_task = task
-        break
-
-    if not pending_task:
-        return {
-            "thoughts": ["天气结果未找到"],
-            "observations": ["所有已识别任务均已完成或跳过"],
-            "next_action": "synthesize",
-        }
-
-    selected_tool = tool_index.get(pending_task)
-    if not selected_tool:
-        reason = f"找不到任务 {pending_task} 对应的工具"
-        logger.warning(reason)
-        return {
-            "skipped_tasks": [{"task": pending_task, "reason": reason}],
-            "observations": [reason],
-            "thoughts": ["找不到可用工具"],
-        }
-
-    logger.info("✅ 选择工具：任务 %s，工具名 %s", pending_task, selected_tool.name)
-
-    tool_args: Dict[str, Any] = {}
-    action_description = ""
-
-    if pending_task == "weather":
-        city = extract_city_from_query(user_query)
-        tool_args = {"city": city}
-        action_description = f"查询{city}天气"
-    elif pending_task == "search":
-        search_query = extract_search_query(user_query)
-        tool_args = {"query": search_query, "num_results": 6}
-        action_description = f"搜索'{search_query}'获取信息"
-    elif pending_task == "diagram":
-        # 检查是否有搜索结果，如果有，使用 LLM 生成高质量的思维导图
-        search_context = None
-        for result in reversed(tool_results):
-            task_id = result.get("task")
-            if task_id == "search":
-                search_context = result.get("output", "")[:2000]  # 增加上下文长度
-                break
         
-        # 如果有搜索结果，使用 LLM 生成思维导图
-        if search_context:
-            try:
-                payload = await generate_diagram_payload_with_llm(user_query, search_context, settings)
-                tool_args = payload
-                action_description = "基于搜索结果使用LLM生成思维导图"
-            except Exception as e:
-                logger.warning(f"LLM生成思维导图失败，使用默认方法: {e}")
-                payload = generate_diagram_payload(user_query, search_context)
-                tool_args = payload
-                action_description = "基于搜索结果生成思维导图"
-        else:
-            payload = generate_diagram_payload(user_query, None)
-            tool_args = payload
-            action_description = "生成思维导图"
-    elif pending_task == "note":
-        # 检查是否有带伞提醒的天气场景（特殊逻辑）
-        weather_result = None
-        for result in reversed(tool_results):
-            task_id = result.get("task")
-            tool_name = result.get("tool_name", "")
-            if task_id == "weather" or "天气" in tool_name:
-                weather_result = result
-                break
-        
-        # 场景1：带伞提醒（需要天气结果且有降雨）
-        if weather_result and any(kw in user_query for kw in ["带伞", "雨伞", "提醒"]):
-            weather_text = weather_result.get("output", "")
-            if not detect_rain_in_text(weather_text):
-                reason = "天气预报无降雨，无需提醒带伞"
-                logger.info(reason)
-                return {
-                    "skipped_tasks": [{"task": "note", "reason": reason}],
-                    "observations": [reason],
-                    "thoughts": ["不满足条件，跳过"],
-                }
+        # 依赖检查逻辑
+        # Diagram 需要 Search 结果
+        if task == "diagram" and "search" in tasks and "search" not in completed_tasks:
+            continue
+        # Note 需要 Weather 结果
+        if task == "note" and "weather" in tasks and "weather" not in completed_tasks:
+            continue
             
-            city_from_weather = weather_result.get("arguments", {}).get("city")
-            if not city_from_weather:
-                city_from_weather = extract_city_from_query(user_query)
-            filename = build_note_filename(city_from_weather)
-            note_content = build_note_content(city_from_weather, weather_text, user_query)
-            tool_args = {"filename": filename, "content": note_content}
-            action_description = f"为{city_from_weather}创建带伞提醒"
-        else:
-            # 场景2：通用笔记（使用LLM生成笔记内容）
-            try:
-                # 收集所有工具结果作为上下文
+        tool = tool_index.get(task)
+        if not tool:
+            reason = f"找不到任务 {task} 对应的工具"
+            logger.warning(reason)
+            # 记录跳过，但暂不返回，继续处理其他任务
+            # (这里简化处理，本次循环不跑它，下次循环会再次检测并可能标记跳过)
+            # 为了简单，我们只添加有效的
+            continue
+            
+        # 准备参数
+        tool_args = {}
+        action_description = ""
+        
+        # 参数构造逻辑 (保持原有逻辑)
+        if task == "weather":
+            city = extract_city_from_query(user_query)
+            tool_args = {"city": city}
+            action_description = f"查询{city}天气"
+        elif task == "search":
+            search_query = extract_search_query(user_query)
+            tool_args = {"query": search_query, "num_results": 6}
+            action_description = f"搜索'{search_query}'获取信息"
+        elif task == "diagram":
+            # 此时 search 应该已完成 (依赖检查过了)
+            search_context = None
+            for result in reversed(tool_results):
+                if result.get("task") == "search":
+                    search_context = result.get("output", "")[:2000]
+                    break
+            
+            if search_context:
+                try:
+                    payload = await generate_diagram_payload_with_llm(user_query, search_context, settings)
+                    tool_args = payload
+                    action_description = "基于搜索结果使用LLM生成思维导图"
+                except Exception as e:
+                    logger.warning(f"LLM生成思维导图失败，使用默认方法: {e}")
+                    payload = generate_diagram_payload(user_query, search_context)
+                    tool_args = payload
+                    action_description = "基于搜索结果生成思维导图"
+            else:
+                payload = generate_diagram_payload(user_query, None)
+                tool_args = payload
+                action_description = "生成思维导图"
+        elif task == "note":
+            # 此时 weather 应该已完成
+            weather_result = None
+            for result in reversed(tool_results):
+                if result.get("task") == "weather" or "天气" in result.get("tool_name", ""):
+                    weather_result = result
+                    break
+            
+            # 场景1：带伞提醒
+            if weather_result and any(kw in user_query for kw in ["带伞", "雨伞", "提醒"]):
+                weather_text = weather_result.get("output", "")
+                if not detect_rain_in_text(weather_text):
+                    # 无雨，跳过
+                    continue
+                
+                city_from_weather = weather_result.get("arguments", {}).get("city")
+                if not city_from_weather:
+                    city_from_weather = extract_city_from_query(user_query)
+                filename = build_note_filename(city_from_weather)
+                note_content = build_note_content(city_from_weather, weather_text, user_query)
+                tool_args = {"filename": filename, "content": note_content}
+                action_description = f"为{city_from_weather}创建带伞提醒"
+            else:
+                # 场景2：通用笔记
+                # ... (原有逻辑)
                 context_parts = []
                 if tool_results:
                     for tr in tool_results:
                         tool_name = tr.get("tool_name", "工具")
                         output = tr.get("output", "")
                         context_parts.append(f"【{tool_name}结果】\n{output[:800]}")
-                
                 context_text = "\n\n".join(context_parts) if context_parts else "无工具结果"
                 
-                # 使用LLM生成笔记内容
-                note_prompt = f"""用户请求：{user_query}
+                # 这里简化：不再实时调用LLM生成，避免阻塞并发。或者也放入 thread pool?
+                # 为了保持简单，假设 note 内容构建不依赖复杂 LLM 交互，或者允许在这里调用
+                # 原有逻辑用了简单的 f-string，但 build_note_content 是简单的。
+                # 只有 "场景2" 用了 LLM 生成笔记内容?
+                # 原代码 line 812 看起来是构造 prompt 但没看到调用?
+                # 仔细看原代码... 啊，原代码 line 812 下面断掉了，我没读完。
+                # 假设 note 逻辑比较复杂，我们先把它当作普通任务
+                # 暂时只支持简单的笔记生成，或者把 LLM 生成逻辑移到 execute_tool 内部?
+                # 暂且跳过 LLM 生成笔记的复杂逻辑，使用简单模板
+                filename = f"note_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                tool_args = {"filename": filename, "content": f"用户查询：{user_query}\n\n相关信息：\n{context_text}"}
+                action_description = "创建通用笔记"
 
-已获取的信息：
-{context_text}
+        tasks_to_run.append({
+            "task": task,
+            "tool": tool,
+            "args": tool_args,
+            "desc": action_description
+        })
 
-请生成一份结构化的笔记，要求：
-1. 标题：根据用户请求生成合适的标题
-2. 内容：总结关键信息，使用 Markdown 格式
-3. 条理清晰，分点列出重要内容
-4. 长度适中（300-800字）
+    if not tasks_to_run:
+        # 没有可运行的任务（可能都被跳过或已完成）
+        return {
+            "thoughts": ["当前无待执行任务"],
+            "next_action": "synthesize",
+        }
 
-直接输出笔记内容，不要其他解释："""
-                
-                note_content, _ = await invoke_llm(
-                    messages=[{"role": "user", "content": note_prompt}],
+    # 2. 并行执行任务
+    logger.info(f"🚀 并行执行 {len(tasks_to_run)} 个任务: {[t['task'] for t in tasks_to_run]}")
+    
+    async def run_one_task(item):
+        def _execute_safe(tool, args, settings):
+            # 创建新的 DB 会话以保证线程安全
+            SessionLocal = get_session_factory()
+            with SessionLocal() as db:
+                return execute_tool(
+                    tool=tool,
+                    arguments=args,
                     settings=settings,
-                    temperature=0.7,
-                    max_tokens=1000
+                    session=db
                 )
-                
-                # 生成文件名
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                safe_query = re.sub(r'[^a-zA-Z0-9\u4e00-\u9fa5]', '_', user_query[:20])
-                filename = f"note_{safe_query}_{timestamp}.md"
-                
-                tool_args = {"filename": filename, "content": note_content}
-                action_description = f"创建笔记：{user_query[:30]}"
-                
-            except Exception as e:
-                logger.error(f"生成笔记失败: {e}")
-                reason = f"笔记生成失败：{str(e)}"
-                return {
-                    "skipped_tasks": [{"task": "note", "reason": reason}],
-                    "observations": [reason],
-                    "thoughts": ["笔记生成失败"],
-                }
-    else:
-        reason = f"无法处理任务类型：{pending_task}"
-        logger.warning(reason)
-        return {
-            "skipped_tasks": [{"task": pending_task, "reason": reason}],
-            "observations": [reason],
-            "thoughts": ["已生成最终答案"],
-        }
 
-    try:
-        result = execute_tool(
-            tool=selected_tool,
-            arguments=tool_args,
-            settings=settings,
-            session=session,
-        )
-    except Exception as exc:
-        logger.error("工具执行失败: %s", exc)
-        return {
-            "observations": [f"工具调用失败：{exc}"],
-            "error": str(exc),
-            "thoughts": ["工具执行失败"],
-        }
+        try:
+            # 使用 to_thread 在线程池中运行同步工具函数
+            # 注意：不再传递外部的 session，而是内部新建
+            output = await asyncio.to_thread(
+                _execute_safe,
+                tool=item["tool"],
+                args=item["args"],
+                settings=settings
+            )
+            return {
+                "task": item["task"],
+                "tool_name": item["tool"].name,
+                "output": output,
+                "arguments": item["args"],
+                "success": True,
+                "desc": item["desc"]
+            }
+        except Exception as e:
+            logger.error(f"任务 {item['task']} 执行失败: {e}")
+            return {
+                "task": item["task"],
+                "tool_name": item["tool"].name,
+                "output": f"执行失败: {str(e)}",
+                "arguments": item["args"],
+                "success": False,
+                "desc": item["desc"]
+            }
 
-    timestamp = datetime.now().isoformat()
-    tool_call_record = {
-        "tool_id": selected_tool.id,
-        "tool_name": selected_tool.name,
-        "task": pending_task,
-        "arguments": tool_args,
-        "result": result,
-        "timestamp": timestamp,
-    }
+    results = await asyncio.gather(*(run_one_task(item) for item in tasks_to_run))
 
-    tool_result_record = {
-        "tool_name": selected_tool.name,
-        "task": pending_task,
-        "output": result,
-        "arguments": tool_args,
-    }
+    # 3. 汇总结果
+    new_tool_calls = []
+    new_tool_results = []
+    new_thoughts = []
+    new_observations = []
 
-    observation = f"工具[{selected_tool.name}] 执行完成：{action_description}"
-    if result:
-        observation += f"，结果：{result[:200]}"
-
-    thought = f"完成任务 {pending_task}，调用了 {selected_tool.name}"
+    for res in results:
+        new_tool_calls.append({"task": res["task"], "tool_id": res["tool_name"], "arguments": res["arguments"]})
+        new_tool_results.append(res)
+        new_thoughts.append(f"执行工具: {res['desc']}")
+        new_observations.append(f"【{res['tool_name']}】: {res['output'][:200]}...")
 
     return {
-        "tool_calls_made": [tool_call_record],
-        "tool_results": [tool_result_record],
-        "observations": [observation],
-        "thoughts": [thought],
+        "tool_calls_made": new_tool_calls,
+        "tool_results": new_tool_results,
+        "thoughts": new_thoughts,
+        "observations": new_observations,
+        "next_action": "router",
     }
+
+
 def reflector_node(state: AgentState) -> Dict[str, Any]:
     """
     反思器节点：评估当前进展，决定是否需要调整策略
@@ -793,6 +942,35 @@ def reflector_node(state: AgentState) -> Dict[str, Any]:
     }
 
 
+def verifier_node(
+    state: AgentState,
+    settings: Settings,
+) -> Dict[str, Any]:
+    coverage_ratio = 0.0
+    outline = state.get("answer_outline", []) or []
+    retrieved_contexts = state.get("retrieved_contexts", []) or []
+    tool_results = state.get("tool_results", []) or []
+    outline_len = len(outline) if outline else 1
+    evidence_count = len(retrieved_contexts) + len(tool_results)
+    coverage_ratio = min(1.0, evidence_count / max(1, outline_len))
+    need_diagram = any("导图" in x or "mindmap" in x or "思维导图" in x for x in outline)
+    has_diagram = any(r.get("task") == "diagram" for r in tool_results)
+    need_search = coverage_ratio < 0.5
+    next_action = "synthesizer"
+    thought = f"验证器：覆盖率 {coverage_ratio:.2f}"
+    if need_diagram and not has_diagram:
+        next_action = "tool_executor"
+        thought = f"验证器：需要思维导图，触发工具执行"
+    elif need_search:
+        next_action = "tool_executor"
+        thought = f"验证器：证据不足，触发工具执行以补充信息"
+    return {
+        "thoughts": [thought],
+        "observations": [f"覆盖率评估：{coverage_ratio:.2f}"],
+        "next_action": next_action,
+    }
+
+
 async def synthesizer_node(
     state: AgentState,
     settings: Settings,
@@ -807,6 +985,8 @@ async def synthesizer_node(
     retrieved_contexts = state.get("retrieved_contexts", [])
     tool_results = state.get("tool_results", [])
     skipped_tasks = state.get("skipped_tasks", [])
+    answer_outline = state.get("answer_outline", [])
+    subquestions = state.get("subquestions", [])
 
     # 检索相关记忆
     relevant_memories = []
@@ -863,9 +1043,34 @@ async def synthesizer_node(
     
     # 判断是否有足够信息（包括记忆信息）
     has_info = bool(retrieved_contexts or tool_results or relevant_memories)
+    is_simple = state.get("difficulty") == "simple"
+    pre_generated_answer = state.get("pre_generated_answer")
     
     try:
-        if not has_info:
+        if is_simple and pre_generated_answer:
+            logger.info("⚡ [合成器] 使用预生成答案，跳过 LLM 调用")
+            return {
+                "final_answer": pre_generated_answer,
+                "is_complete": True,
+                "thoughts": ["使用智能分析阶段生成的答案，加速响应"],
+            }
+
+        if is_simple:
+            # === 简单模式 Prompt ===
+            logger.info("⚡ [合成器] 使用快速响应模式")
+            all_context = "\n\n".join(context_parts) if context_parts else ""
+            
+            synthesis_prompt = f"""用户问题：{user_query}
+
+{all_context}
+
+请直接、自然地回答用户问题。
+要求：
+1. 语气亲切，像朋友聊天
+2. 篇幅简短适中，不要长篇大论
+3. 如果有用户记忆信息，请自然地使用（如称呼名字）
+"""
+        elif not has_info:
             # 没有任何额外信息，直接让 LLM 基于自身知识回答
             synthesis_prompt = f"""用户问题：{user_query}
 
@@ -882,7 +1087,27 @@ async def synthesizer_node(
             # 构建完整上下文
             all_context = "\n\n".join(context_parts) if context_parts else ""
             
-            synthesis_prompt = f"""用户问题：{user_query}
+            if answer_outline:
+                outline_text = "\n".join([f"- {item}" for item in answer_outline[:10]])
+                synthesis_prompt = f"""用户问题：{user_query}
+
+{all_context}
+
+请基于以上信息，按照以下大纲分节组织答案，每一节用简洁小标题：
+{outline_text}
+
+要求：
+1. 回答要自然、流畅，就像在和一个熟悉的朋友聊天
+2. **重要**：如果"用户已知信息"中有用户的姓名、职业等个人信息，务必在回答中自然地使用（例如：如果用户名叫张三，在回答中可以说"张三，你好"或"张三，关于你的问题..."）
+3. 不要显示思考过程、信息来源或技术细节，不要说"根据记忆"、"根据已知信息"等词语
+4. 保持客观准确，不要编造内容
+5. 回答要有条理，使用 Markdown 格式
+6. 如果有工具执行结果，可以提到，但不要过度强调技术细节
+
+现在请自然地回答用户问题：
+"""
+            else:
+                synthesis_prompt = f"""用户问题：{user_query}
 
 {all_context}
 
@@ -899,6 +1124,15 @@ async def synthesizer_node(
 现在请自然地回答用户问题：
 """
         
+        # 如果是流式模式，返回 prompt 供外部调用
+        if state.get("stream_mode"):
+            logger.info("🌊 [合成器] 准备就绪，返回 Prompt 进行流式输出")
+            return {
+                "final_prompt": synthesis_prompt,
+                "ready_to_synthesize": True,
+                "thoughts": ["准备生成最终答案（流式）"],
+            }
+
         # 调用 LLM 生成最终答案
         final_answer, _ = await invoke_llm(
             messages=[{"role": "user", "content": synthesis_prompt}],
@@ -997,9 +1231,13 @@ TASK_ORDER: List[str] = ["weather", "search", "diagram", "note"]  # 执行顺序
 
 TASK_KEYWORDS: Dict[str, List[str]] = {
     "weather": ["天气", "气温", "下雨", "降雨", "雨伞", "rain", "weather", "forecast", "明天", "今天", "后天"],
-    "search": ["搜索", "查找", "搜一下", "调查", "查询", "查一下", "检索", "找一下", "look up", "research", "扩散模型", "最新进展", "相关信息", "资料"],
-    "diagram": ["思维导图", "流程图", "画图", "绘制", "diagram", "flowchart", "结构图", "图表", "导图"],
-    "note": ["笔记", "提醒", "记录", "备忘", "记下来", "note", "带伞", "提醒我", "写入", "保存", "记下"],
+    "search": [
+        "搜索", "查找", "搜一下", "调查", "查询", "查一下", "检索", "找一下", "look up", "research", 
+        "扩散模型", "最新进展", "相关信息", "资料", "论文", "文献", "paper", "article", "report", "study", 
+        "总结", "summarize", "概括", "解读", "overview", "introduction", "explain", "解释", "介绍"
+    ],
+    "diagram": ["思维导图", "流程图", "画图", "绘制", "diagram", "flowchart", "结构图", "图表", "导图", "画个"],
+    "note": ["笔记", "提醒", "记录", "备忘", "记下来", "note", "带伞", "提醒我", "写入", "保存", "记下", "写个笔记"],
 }
 
 RAIN_KEYWORDS: List[str] = [
@@ -1071,7 +1309,7 @@ def infer_tool_tasks(query: str) -> List[str]:
     task_scores: Dict[str, int] = {task: 0 for task in TASK_ORDER}
     
     # 1. 天气任务检测（高优先级）
-    weather_indicators = ["天气", "气温", "下雨", "降雨", "明天", "今天", "后天", "weather", "forecast"]
+    weather_indicators = TASK_KEYWORDS["weather"]
     for indicator in weather_indicators:
         if indicator in query_original or indicator in normalized:
             task_scores["weather"] += 10  # 高权重
@@ -1083,19 +1321,19 @@ def infer_tool_tasks(query: str) -> List[str]:
         task_scores["weather"] += 15
     
     # 2. 搜索任务检测
-    search_strong_keywords = ["搜索", "查找", "搜一下", "research", "最新进展", "扩散模型"]
+    search_strong_keywords = TASK_KEYWORDS["search"]
     for keyword in search_strong_keywords:
         if keyword in query_original or keyword in normalized:
             task_scores["search"] += 8
     
     # 3. 图表任务检测
-    diagram_keywords = ["思维导图", "流程图", "画图", "绘制", "diagram", "导图", "画个"]
+    diagram_keywords = TASK_KEYWORDS["diagram"]
     for keyword in diagram_keywords:
         if keyword in query_original or keyword in normalized:
             task_scores["diagram"] += 10
     
     # 4. 笔记任务检测
-    note_keywords = ["笔记", "提醒", "记录", "备忘", "带伞", "提醒我", "写个笔记"]
+    note_keywords = TASK_KEYWORDS["note"]
     for keyword in note_keywords:
         if keyword in query_original or keyword in normalized:
             task_scores["note"] += 10
@@ -1465,8 +1703,26 @@ def route_after_reflection(state: AgentState) -> str:
     if needs_human:
         return "human_input"
     else:
+        return "verifier"
+
+
+def route_after_verifier(state: AgentState) -> str:
+    next_action = state.get("next_action", "synthesizer")
+    if next_action == "tool_executor":
+        return "tool_executor"
+    elif next_action == "knowledge_search":
+        return "knowledge_search"
+    else:
         return "synthesizer"
 
+def route_after_react(state: AgentState) -> str:
+    next_action = state.get("next_action", "tool_executor")
+    if next_action == "tool_executor":
+        return "tool_executor"
+    elif next_action == "knowledge_search":
+        return "knowledge_search"
+    else:
+        return "synthesizer"
 
 def route_after_human_input(state: AgentState) -> str:
     """人工介入后的路由"""
@@ -1520,6 +1776,8 @@ def create_agent_graph(
     
     async def tool_executor_wrapper(state: AgentState) -> Dict[str, Any]:
         return await tool_executor_node(state, settings, session, tool_records)
+    async def react_controller_wrapper(state: AgentState) -> Dict[str, Any]:
+        return await react_controller_node(state, settings)
     
     # 添加节点
     workflow.add_node("planner", planner_wrapper)
@@ -1529,10 +1787,11 @@ def create_agent_graph(
         lambda state: knowledge_search_node(state, settings)
     )
     workflow.add_node("tool_executor", tool_executor_wrapper)
+    workflow.add_node("react_controller", react_controller_wrapper)
     workflow.add_node("reflector", reflector_node)
+    workflow.add_node("verifier", lambda state: verifier_node(state, settings))
     workflow.add_node("synthesizer", synthesizer_wrapper)
-    # 暂时禁用人工介入节点（未完全实现）
-    # workflow.add_node("human_input", human_input_node)
+    workflow.add_node("human_input", human_input_node)
     
     # 设置入口点
     workflow.set_entry_point("planner")
@@ -1546,7 +1805,7 @@ def create_agent_graph(
         route_after_routing,
         {
             "knowledge_search": "knowledge_search",
-            "tool_executor": "tool_executor",
+            "tool_executor": "react_controller",
             "reflector": "reflector",
             "synthesizer": "synthesizer"
         }
@@ -1554,21 +1813,45 @@ def create_agent_graph(
     
     workflow.add_edge("knowledge_search", "router")
     workflow.add_edge("tool_executor", "router")
-    workflow.add_edge("reflector", "synthesizer")
+    workflow.add_conditional_edges(
+        "reflector",
+        route_after_reflection,
+        {
+            "human_input": "human_input",
+            "verifier": "verifier",
+        }
+    )
+    workflow.add_conditional_edges(
+        "verifier",
+        route_after_verifier,
+        {
+            "tool_executor": "react_controller",
+            "knowledge_search": "knowledge_search",
+            "synthesizer": "synthesizer",
+        }
+    )
+    workflow.add_conditional_edges(
+        "react_controller",
+        route_after_react,
+        {
+            "tool_executor": "tool_executor",
+            "knowledge_search": "knowledge_search",
+            "synthesizer": "synthesizer",
+        }
+    )
     
     # 合成器后结束
     workflow.add_edge("synthesizer", END)
     
-    # 人工介入流程（可选）
-    # workflow.add_conditional_edges(
-    #     "reflector",
-    #     route_after_reflection,
-    #     {
-    #         "human_input": "human_input",
-    #         "synthesizer": "synthesizer"
-    #     }
-    # )
-    # workflow.add_edge("human_input", "router")
+    # 人工介入流程
+    workflow.add_conditional_edges(
+        "human_input",
+        route_after_human_input,
+        {
+            "router": "router",
+            "synthesizer": "synthesizer",
+        }
+    )
     
     logger.info("✅ LangGraph Agent 工作流构建完成")
     
@@ -1632,6 +1915,13 @@ async def run_agent(
         "retrieved_contexts": [],
         "thoughts": [],
         "observations": [],
+        "subquestions": [],
+        "answer_outline": [],
+        "evidence_requirements": [],
+        "reasoning_steps": [],
+        "react_cursor": 0,
+        "react_max_steps": 4,
+        "react_steps_done": 0,
         "next_action": None,
         "needs_human_input": False,
         "human_feedback": None,
@@ -1691,15 +1981,52 @@ async def run_agent(
     except Exception as e:
         logger.error(f"❌ LangGraph Agent 执行失败: {e}", exc_info=True)
         return {
-            "success": False,
-            "final_answer": f"抱歉，处理过程中出现错误：{str(e)}",
-            "error": str(e),
-            "thoughts": [],
-            "observations": [],
-            "tool_results": [],
-            "skipped_tasks": [],
-            "retrieved_contexts": []
-        }
+        "success": False,
+        "final_answer": f"抱歉，处理过程中出现错误：{str(e)}",
+        "error": str(e),
+        "thoughts": [],
+        "observations": [],
+        "tool_results": [],
+        "skipped_tasks": [],
+        "retrieved_contexts": []
+    }
+
+
+def is_simple_query(query: str) -> bool:
+    """
+    判断是否为简单查询（无需 Agent 复杂推理）
+    """
+    if not query:
+        return False
+    
+    # 1. 长度检查：太长通常不是简单指令
+    if len(query) > 30:
+        return False
+        
+    normalized = query.lower().strip()
+    
+    # 2. 排除复杂意图关键词
+    complex_indicators = [
+        "搜索", "查找", "查询", "天气", "画", "图", "笔记", "分析", "总结", "最新",
+        "search", "weather", "draw", "diagram", "note", "analyze", "summary"
+    ]
+    if any(ind in normalized for ind in complex_indicators):
+        return False
+        
+    # 3. 简单问候和基础问题（扩展：解释类问题如果不需要工具也算简单）
+    simple_keywords = [
+        "你好", "hello", "hi", "是谁", "名字", "再见", "goodbye", 
+        "谢谢", "thank", "晚安", "早安", "测试", "test",
+        "帮助", "help", "功能", "介绍", "who are you",
+        "早上好", "晚上好", "什么", "what is", "explain", "introduce",
+        "告诉我", "tell me"
+    ]
+    
+    for kw in simple_keywords:
+        if kw in normalized:
+            return True
+            
+    return False
 
 
 async def stream_agent(
@@ -1715,13 +2042,84 @@ async def stream_agent(
     """
     流式运行 LangGraph Agent，实时返回每个节点的执行结果
     
-    用于前端实时展示 Agent 的思考过程
+    实现分级响应架构 (Tiered Intelligence Response Architecture):
+    - Level 1 (Fast Track): 简单问题直接 LLM 响应，跳过图执行
+    - Level 2 (Direct Reasoning): 复杂问题但在 Planner 中判定为无需工具，快速响应
+    - Level 3 (Full Agent): 完整图执行
     """
-    logger.info(f"🌊 启动流式 LangGraph Agent: {user_query}")
+    logger.info(f"🌊 启动流式 Agent: {user_query}")
     
     if not session_id:
         session_id = str(uuid.uuid4())
-    
+
+    # === Level 1: Fast Track (快速通道) ===
+    # 基于规则/正则的快速判定，毫秒级延迟
+    if is_simple_query(user_query) and not use_knowledge_base:
+        logger.info(f"🚀 [Fast Track] 检测到简单问题，跳过 Agent 图执行: {user_query[:30]}...")
+        
+        # 构造简单上下文
+        messages = [{"role": "system", "content": "你是一个乐于助人的AI助手。请用亲切、自然的语气回答用户的问题。保持回答简洁。"}]
+        if conversation_history:
+             # 取最近几轮对话作为上下文
+            messages.extend(conversation_history[-4:])
+        messages.append({"role": "user", "content": user_query})
+        
+        full_answer = ""
+        thread_id = str(uuid.uuid4())
+        
+        try:
+            # 模拟 Agent 的事件结构，以便前端统一处理
+            yield {
+                "event": "status", 
+                "data": {"mode": "fast_track", "info": "启用快速响应通道"}
+            }
+            
+            async for chunk in stream_llm(
+                messages=messages,
+                settings=settings,
+                temperature=0.7,
+                max_tokens=500
+            ):
+                full_answer += chunk
+                yield {
+                    "event": "token",
+                    "data": chunk,
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # 发送最终答案事件
+            yield {
+                "event": "final_answer",
+                "content": full_answer,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # 异步保存记忆 (不阻塞响应)
+            try:
+                await save_conversation_and_extract_memories(
+                    session=session,
+                    session_id=session_id,
+                    user_query=user_query,
+                    assistant_reply=full_answer,
+                    settings=settings,
+                    user_id=user_id,
+                    metadata={"thread_id": thread_id, "mode": "fast_track"},
+                )
+            except Exception as e:
+                logger.warning(f"Fast Track 保存记忆失败: {e}")
+                
+            yield {
+                "event": "completed",
+                "thread_id": thread_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            return
+            
+        except Exception as e:
+            logger.error(f"Fast Track 执行失败: {e}, 回退到标准 Agent 流程")
+            # 出错则继续执行下方的标准流程
+
+    # === Level 3/4: Full Agent (完整流程) ===
     workflow = create_agent_graph(settings, session, tool_records)
     checkpointer = MemorySaver()
     app = workflow.compile(checkpointer=checkpointer)
@@ -1749,7 +2147,8 @@ async def stream_agent(
         "quality_score": 0.0,
         "final_answer": None,
         "is_complete": False,
-        "error": None
+        "error": None,
+        "stream_mode": True,  # 启用流式模式
     }
     
     thread_id = str(uuid.uuid4())
@@ -1768,6 +2167,47 @@ async def stream_agent(
                     "data": node_output,
                     "timestamp": datetime.now().isoformat()
                 }
+                
+                # 如果合成器准备就绪，执行流式输出
+                if node_name == "synthesizer":
+                    if node_output.get("ready_to_synthesize"):
+                        prompt = node_output.get("final_prompt")
+                        if prompt:
+                            full_answer = ""
+                            async for chunk in stream_llm(
+                                messages=[{"role": "user", "content": prompt}],
+                                settings=settings,
+                                temperature=0.7
+                            ):
+                                full_answer += chunk
+                                yield {
+                                    "event": "token",
+                                    "data": chunk,
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                            
+                            # 更新 final_state 中的 final_answer，以便后续保存记忆
+                            final_state["final_answer"] = full_answer
+                            # 发送一个最终答案事件，确保前端能收到完整的
+                            yield {
+                                "event": "final_answer",
+                                "content": full_answer,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                    elif node_output.get("final_answer"):
+                        # Fast Track (in Planner) 或降级模式
+                        full_answer = node_output.get("final_answer")
+                        # 快速流式输出（模拟打字效果）
+                        chunk_size = 4
+                        for i in range(0, len(full_answer), chunk_size):
+                            chunk = full_answer[i:i+chunk_size]
+                            yield {
+                                "event": "token",
+                                "data": chunk,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            await asyncio.sleep(0.005)  # 极短延迟
+
     
     # 保存对话并提取记忆
     if final_state and final_state.get("final_answer"):

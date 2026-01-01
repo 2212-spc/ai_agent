@@ -20,9 +20,14 @@ export const useChatStore = defineStore('chat', () => {
     const timelineSteps = ref([]);
 
     // 🔐 用户ID（从localStorage获取，用于隔离不同账号的记忆）
-    const currentUserId = ref(localStorage.getItem('user_id') || null);
+    const currentUserId = ref(localStorage.getItem('user_id'));
+    
+    // 如果没有用户ID，自动生成一个访客ID
     if (!currentUserId.value) {
-        console.warn('⚠️ 未找到用户ID，请先登录');
+        const guestId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        localStorage.setItem('user_id', guestId);
+        currentUserId.value = guestId;
+        console.log('👤 已自动创建访客用户ID:', guestId);
     } else {
         console.log('🔐 当前用户ID:', currentUserId.value);
     }
@@ -58,14 +63,37 @@ export const useChatStore = defineStore('chat', () => {
     // Actions
     function addMessage(message, sessionId = null) {
         const sid = sessionId || currentSessionId.value;
-        if (!sid) return;
+        if (!sid) return null;
         
         const session = ensureSession(sid);
-        session.messages.push({
+        const msg = {
             ...message,
             id: Date.now() + Math.random(), // 确保唯一性
             timestamp: new Date().toISOString()
-        });
+        };
+        session.messages.push(msg);
+        return msg.id; // 返回消息ID
+    }
+    
+    // 更新消息
+    function updateMessage(messageId, updates, sessionId = null) {
+        const sid = sessionId || currentSessionId.value;
+        if (!sid) return;
+        
+        const session = sessions.value.get(sid);
+        if (!session) return;
+        
+        const message = session.messages.find(m => m.id === messageId);
+        if (message) {
+            Object.assign(message, updates);
+            session.lastUpdate = Date.now();
+        }
+    }
+    
+    // 设置当前会话
+    function setCurrentSession(sessionId) {
+        currentSessionId.value = sessionId;
+        ensureSession(sessionId);
     }
 
     function clearMessages(sessionId = null) {
@@ -309,6 +337,22 @@ export const useChatStore = defineStore('chat', () => {
                                 console.log('📝 ✅ 已更新消息，事件:', finalEventType, '长度:', content.length, 'SessionId:', sessionId);
                                 if (onStream) {
                                     onStream(content, sessionId);
+                                }
+                            }
+                        } else if (finalEventType === 'token') {
+                            // 🔥 处理 Token 流式追加
+                            const chunk = eventData.data || '';
+                            if (chunk) {
+                                const currentContent = session.messages[msgIndex].content || '';
+                                const newContent = currentContent + chunk;
+                                const updatedMessage = { ...session.messages[msgIndex], content: newContent };
+                                session.messages.splice(msgIndex, 1, updatedMessage);
+                                
+                                // 强制触发响应式更新
+                                sessions.value = new Map(sessions.value);
+                                
+                                if (onStream) {
+                                    onStream(newContent, sessionId);
                                 }
                             }
                         } else if (finalEventType === 'agent_thought') {
@@ -709,6 +753,22 @@ export const useChatStore = defineStore('chat', () => {
                                 console.log('📝 ✅ 已更新消息（编辑模式），事件:', finalEventType, '长度:', content.length, 'SessionId:', sessionId);
                                 if (onStream) {
                                     onStream(content, sessionId);
+                                }
+                            }
+                        } else if (finalEventType === 'token') {
+                            // 🔥 处理 Token 流式追加
+                            const chunk = eventData.data || '';
+                            if (chunk) {
+                                const currentContent = session.messages[msgIndex].content || '';
+                                const newContent = currentContent + chunk;
+                                const updatedMessage = { ...session.messages[msgIndex], content: newContent };
+                                session.messages.splice(msgIndex, 1, updatedMessage);
+                                
+                                // 强制触发响应式更新
+                                sessions.value = new Map(sessions.value);
+                                
+                                if (onStream) {
+                                    onStream(newContent, sessionId);
                                 }
                             }
                         } else if (finalEventType === 'agent_thought') {
@@ -1173,6 +1233,18 @@ export const useChatStore = defineStore('chat', () => {
                                     onStream(content, sessionId);
                                 }
                             }
+                        } else if (finalEventType === 'token') {
+                            // 🔥 处理 Token 流式追加
+                            const chunk = eventData.data || '';
+                            if (chunk) {
+                                const currentContent = message.content || '';
+                                message.content = currentContent + chunk;
+                                sessions.value = new Map(sessions.value);
+                                
+                                if (onStream) {
+                                    onStream(message.content, sessionId);
+                                }
+                            }
                         } else if (finalEventType === 'agent_thought') {
                             const thoughtText = eventData.thought || '';
                             if (thoughtText && isDeepThinkMode.value) {
@@ -1259,6 +1331,7 @@ export const useChatStore = defineStore('chat', () => {
         
         // 消息管理
         addMessage,
+        updateMessage,            // 新增：更新消息
         clearMessages,
         sendMessage,
         editAndResendMessage,
@@ -1266,6 +1339,7 @@ export const useChatStore = defineStore('chat', () => {
         
         // 会话管理
         setSessionId,
+        setCurrentSession,        // 新增：设置当前会话
         ensureSession,
         setSessionStatus,
         getSessionStatus,

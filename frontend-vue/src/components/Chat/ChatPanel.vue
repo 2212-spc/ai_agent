@@ -4,7 +4,7 @@
  * Features: Premium message bubbles, animations, modern UI
  */
 
-import { ref, computed, nextTick, watch, onMounted } from 'vue';
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
 import { useChatStore } from '../../stores/chat';
 import { marked } from 'marked';
 import axios from 'axios';
@@ -13,6 +13,7 @@ import Icon from '../ui/Icon.vue';
 const chatStore = useChatStore();
 const messageInput = ref('');
 const chatContainer = ref(null);
+const inputAreaRef = ref(null);
 const fileInput = ref(null);
 const attachedFiles = ref([]);
 const showOptions = ref(false);
@@ -213,21 +214,81 @@ watch(messages, (newMessages, oldMessages) => {
         });
     }
 }, { deep: true });
+
+onMounted(() => {
+    scrollToBottom();
+    
+    // Mobile Fluid Layout Observer
+    if (inputAreaRef.value && chatContainer.value) {
+        const observer = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                // Add padding to chat container to match input height + extra space
+                // Use CSS variable for performance if needed, or direct style
+                const height = entry.contentRect.height;
+                chatContainer.value.style.paddingBottom = `${height + 20}px`;
+            }
+        });
+        observer.observe(inputAreaRef.value);
+        
+        onUnmounted(() => {
+            observer.disconnect();
+        });
+    }
+});
 </script>
 
 <template>
-    <div class="chat-panel">
+    <div class="chat-panel chat-panel-immersive">
+        <!-- 1. Dynamic Nebula Background -->
+        <div class="nebula-background">
+            <div class="nebula-layer layer-1"></div>
+            <div class="nebula-layer layer-2"></div>
+            <div class="stars"></div>
+        </div>
+
+        <!-- 2. HUD Overlay (Tactical Border) -->
+        <div class="hud-overlay">
+            <svg class="hud-corner top-left" viewBox="0 0 100 100">
+                <path d="M0 40 V0 H40" fill="none" stroke="var(--brand-primary-500)" stroke-width="2" />
+                <rect x="0" y="0" width="10" height="10" fill="var(--brand-primary-500)" opacity="0.5" />
+            </svg>
+            <svg class="hud-corner top-right" viewBox="0 0 100 100">
+                <path d="M100 40 V0 H60" fill="none" stroke="var(--brand-primary-500)" stroke-width="2" />
+                <rect x="90" y="0" width="10" height="10" fill="var(--brand-primary-500)" opacity="0.5" />
+            </svg>
+            <svg class="hud-corner bottom-left" viewBox="0 0 100 100">
+                <path d="M0 60 V100 H40" fill="none" stroke="var(--brand-primary-500)" stroke-width="2" />
+            </svg>
+            <svg class="hud-corner bottom-right" viewBox="0 0 100 100">
+                <path d="M100 60 V100 H60" fill="none" stroke="var(--brand-primary-500)" stroke-width="2" />
+            </svg>
+            <div class="hud-status">SYSTEM ONLINE // QUANTUM LINK ESTABLISHED</div>
+        </div>
+
+        <!-- 3. Holographic Thinking Core (3D Data Sphere) -->
+        <Transition name="fade">
+            <div v-if="isGenerating" class="holographic-core-container">
+                <div class="holographic-core">
+                    <div class="core-sphere-outer"></div>
+                    <div class="core-sphere-inner"></div>
+                    <div class="core-ring-x"></div>
+                    <div class="core-ring-y"></div>
+                    <div class="core-particles"></div>
+                </div>
+                <div class="holographic-status">
+                    <span class="status-text">NEURAL PROCESSING</span>
+                    <span class="status-dots">...</span>
+                </div>
+            </div>
+        </Transition>
+
         <!-- Generation Notice -->
         <Transition name="slide-down">
-            <div v-if="isGenerating" class="generation-notice">
+            <div v-if="isGenerating" class="generation-notice glass-panel">
                 <div class="notice-content">
-                    <div class="notice-spinner">
-                        <Icon name="sparkles" :size="18" class="animate-pulse" />
-                    </div>
-                    <span class="notice-text">AI 正在生成回复...</span>
+                    <span class="notice-text">Thinking...</span>
                     <button class="notice-stop" @click="stopGeneration">
                         <Icon name="stop" :size="14" />
-                        停止
                     </button>
                 </div>
             </div>
@@ -237,23 +298,24 @@ watch(messages, (newMessages, oldMessages) => {
         <div class="messages-container" ref="chatContainer">
             <!-- Empty State -->
             <div v-if="messages.length === 0" class="empty-state">
-                <div class="empty-icon">
-                    <Icon name="chat-bubble" :size="48" />
+                <div class="empty-visual">
+                    <div class="holo-planet"></div>
+                    <div class="holo-rings"></div>
                 </div>
-                <h3 class="empty-title">开始对话</h3>
-                <p class="empty-subtitle">输入消息开始与 AI Agent 对话</p>
+                <h3 class="empty-title">A.I. AGENT READY</h3>
+                <p class="empty-subtitle">Quantum Core Initialized. Awaiting Input.</p>
                 <div class="empty-suggestions">
-                    <button class="suggestion-chip" @click="messageInput = '帮我分析一下...'">
+                    <button class="suggestion-chip neon-chip" @click="messageInput = '帮我分析一下...'">
                         <Icon name="sparkles" :size="14" />
-                        帮我分析一下...
+                        深度分析
                     </button>
-                    <button class="suggestion-chip" @click="messageInput = '请解释...'">
+                    <button class="suggestion-chip neon-chip" @click="messageInput = '请解释...'">
                         <Icon name="light-bulb" :size="14" />
-                        请解释...
+                        概念解析
                     </button>
-                    <button class="suggestion-chip" @click="messageInput = '如何实现...'">
+                    <button class="suggestion-chip neon-chip" @click="messageInput = '如何实现...'">
                         <Icon name="cpu-chip" :size="14" />
-                        如何实现...
+                        代码实现
                     </button>
                 </div>
             </div>
@@ -272,7 +334,7 @@ watch(messages, (newMessages, oldMessages) => {
                     ]"
                     :style="{ '--index': index }"
                 >
-                    <!-- Avatar -->
+                    <!-- Avatar (Neon Style) -->
                     <div class="message-avatar" :class="`avatar-${msg.role}`">
                         <Icon v-if="msg.role === 'user'" name="user" :size="18" />
                         <Icon v-else-if="msg.role === 'assistant'" name="sparkles" :size="18" />
@@ -281,77 +343,53 @@ watch(messages, (newMessages, oldMessages) => {
 
                     <!-- Content -->
                     <div class="message-body">
-                        <!-- Thinking Steps Panel -->
-                        <div v-if="msg.thinkingSteps && msg.thinkingSteps.length > 0" class="thinking-panel">
+                        <!-- Thinking Steps (Neural Stream) -->
+                        <div v-if="msg.thinkingSteps && msg.thinkingSteps.length > 0" class="thinking-panel neon-panel">
                             <div class="thinking-header">
                                 <Icon name="brain" :size="16" />
-                                <span class="thinking-title">思考过程</span>
-                                <span class="thinking-badge">{{ msg.thinkingSteps.length }} 步骤</span>
+                                <span class="thinking-title">NEURAL STREAM</span>
+                                <span class="thinking-badge">{{ msg.thinkingSteps.length }} NODES</span>
                             </div>
                             <div class="thinking-steps">
+                                <div class="step-line"></div> <!-- Vertical Line -->
                                 <div
                                     v-for="(step, stepIndex) in msg.thinkingSteps"
                                     :key="stepIndex"
                                     class="thinking-step"
                                     :class="step.status"
                                 >
-                                    <div class="step-indicator">
-                                        <span class="step-number">{{ stepIndex + 1 }}</span>
-                                    </div>
+                                    <div class="step-dot"></div>
                                     <div class="step-content">
                                         <div class="step-title">{{ step.title }}</div>
                                         <div class="step-text">{{ step.content }}</div>
                                     </div>
-                                    <div class="step-status">
-                                        <Icon v-if="step.status === 'completed'" name="check-circle" :size="16" class="status-completed" />
-                                        <Icon v-else-if="step.status === 'processing'" name="refresh" :size="16" class="status-processing animate-spin" />
-                                        <div v-else class="status-pending"></div>
+                                    <div class="step-status-icon">
+                                         <Icon v-if="step.status === 'completed'" name="check" :size="14" />
+                                         <Icon v-else-if="step.status === 'processing'" name="refresh" :size="14" class="animate-spin" />
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Message Bubble -->
-                        <div class="message-bubble">
-                            <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
+                        <!-- Message Bubble (Glass) -->
+                        <div class="message-bubble glass-bubble" :class="{ 'generating': isGenerating && index === messages.length - 1 && msg.role === 'assistant' }">
+                            <div v-if="!msg.content && isGenerating && index === messages.length - 1 && msg.role === 'assistant'" class="typing-indicator">
+                                <span></span><span></span><span></span>
+                            </div>
+                            <div v-else class="message-text" v-html="renderMarkdown(msg.content)"></div>
                         </div>
 
-                        <!-- Message Meta -->
+                        <!-- Meta -->
                         <div class="message-meta">
-                            <span class="message-time">
-                                {{ new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}
-                            </span>
-
-                            <!-- Actions -->
+                            <span class="message-time">{{ new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}</span>
                             <div class="message-actions">
-                                <!-- Edit (User only) -->
-                                <button
-                                    v-if="msg.role === 'user'"
-                                    class="action-btn"
-                                    @click="editMessage(msg.id)"
-                                    title="编辑消息"
-                                >
+                                <button v-if="msg.role === 'user'" class="action-btn" @click="editMessage(msg.id)">
                                     <Icon name="pencil" :size="14" />
                                 </button>
-
-                                <!-- Regenerate (Assistant only) -->
-                                <button
-                                    v-if="msg.role === 'assistant'"
-                                    class="action-btn action-regenerate"
-                                    @click="regenerateMessage(msg.id)"
-                                    :disabled="isGenerating"
-                                    title="重新生成"
-                                >
+                                <button v-if="msg.role === 'assistant'" class="action-btn" @click="regenerateMessage(msg.id)" :disabled="isGenerating">
                                     <Icon name="refresh" :size="14" />
                                 </button>
-
-                                <!-- Copy -->
-                                <button
-                                    class="action-btn"
-                                    :class="{ 'is-copied': copiedMessageId === msg.id }"
-                                    @click="copyMessage(msg.id)"
-                                    :title="copiedMessageId === msg.id ? '已复制' : '复制'"
-                                >
+                                <button class="action-btn" @click="copyMessage(msg.id)">
                                     <Icon :name="copiedMessageId === msg.id ? 'check' : 'copy'" :size="14" />
                                 </button>
                             </div>
@@ -359,113 +397,88 @@ watch(messages, (newMessages, oldMessages) => {
                     </div>
                 </div>
             </TransitionGroup>
-
-            <!-- Typing Indicator -->
-            <Transition name="fade-up">
-                <div v-if="isGenerating && messages.length > 0" class="message-wrapper message-assistant">
-                    <div class="message-avatar avatar-assistant">
-                        <Icon name="sparkles" :size="18" class="animate-pulse" />
-                    </div>
-                    <div class="message-body">
-                        <div class="message-bubble typing-bubble">
-                            <div class="typing-indicator">
-                                <span></span>
-                                <span></span>
-                                <span></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </Transition>
         </div>
 
-        <!-- Input Area -->
-        <div class="input-area" :class="{ 'is-edit-mode': isEditMode }">
-            <!-- Edit Mode Banner -->
-            <Transition name="slide-down">
-                <div v-if="isEditMode" class="edit-banner">
-                    <Icon name="pencil" :size="16" />
-                    <span>编辑模式：修改后按 Enter 重新发送</span>
-                    <button class="edit-cancel" @click="cancelEdit">
-                        <Icon name="x" :size="14" />
-                        取消
-                    </button>
-                </div>
-            </Transition>
-
-            <!-- Attached Files -->
-            <Transition name="slide-down">
-                <div v-if="attachedFiles.length > 0" class="attached-files">
-                    <div v-for="(file, index) in attachedFiles" :key="index" class="attached-file">
-                        <Icon name="document" :size="14" />
-                        <span class="file-name">{{ file.name }}</span>
-                        <span class="file-size">({{ (file.size / 1024).toFixed(1) }}KB)</span>
-                        <button class="file-remove" @click="removeFile(index)">
-                            <Icon name="x" :size="12" />
-                        </button>
-                    </div>
-                </div>
-            </Transition>
-
-            <!-- Input Box -->
-            <div class="input-wrapper">
-                <!-- Options Panel -->
-                <Transition name="slide-up">
-                    <div v-show="showOptions" class="options-panel">
-                        <label class="option-item">
-                            <input type="checkbox" v-model="useKnowledgeBase" class="option-checkbox">
-                            <Icon name="database" :size="16" />
-                            <span>知识库检索</span>
-                        </label>
-                        <button class="option-item" @click="$refs.fileInput.click()">
-                            <Icon name="attachment" :size="16" />
-                            <span>上传文件</span>
+        <!-- Input Area (Quantum Field) -->
+        <div class="input-area-container" ref="inputAreaRef">
+            <div class="input-area glass-panel" :class="{ 'is-edit-mode': isEditMode }">
+                <!-- Edit Banner -->
+                <Transition name="slide-down">
+                    <div v-if="isEditMode" class="edit-banner">
+                        <Icon name="pencil" :size="16" />
+                        <span>EDIT MODE</span>
+                        <button class="edit-cancel" @click="cancelEdit">
+                            <Icon name="x" :size="14" />
                         </button>
                     </div>
                 </Transition>
 
-                <div class="input-box">
-                    <button class="input-action" @click="toggleOptions" :class="{ 'is-active': showOptions }">
-                        <Icon name="plus" :size="20" />
-                    </button>
+                <!-- Files -->
+                <Transition name="slide-down">
+                    <div v-if="attachedFiles.length > 0" class="attached-files">
+                        <div v-for="(file, index) in attachedFiles" :key="index" class="attached-file">
+                            <Icon name="document" :size="14" />
+                            <span class="file-name">{{ file.name }}</span>
+                            <button class="file-remove" @click="removeFile(index)">
+                                <Icon name="x" :size="12" />
+                            </button>
+                        </div>
+                    </div>
+                </Transition>
 
-                    <textarea
-                        v-model="messageInput"
-                        @keydown="handleKeyDown"
-                        placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
-                        class="message-input"
-                        rows="1"
-                        :disabled="isLoading"
-                    ></textarea>
+                <!-- Input Box Wrapper -->
+                <div class="input-wrapper">
+                    <!-- Options -->
+                    <Transition name="slide-up">
+                        <div v-show="showOptions" class="options-panel glass-panel">
+                             <div class="option-item" :class="{ 'is-active': useKnowledgeBase }" @click="useKnowledgeBase = !useKnowledgeBase">
+                                <Icon name="database" :size="20" />
+                                <span>Knowledge</span>
+                            </div>
+                            <div class="option-item" @click="$refs.fileInput.click()">
+                                <Icon name="attachment" :size="20" />
+                                <span>Upload</span>
+                            </div>
+                        </div>
+                    </Transition>
 
-                    <button
-                        v-if="!isGenerating"
-                        @click="sendMessage"
-                        class="send-btn"
-                        :class="{ 'is-active': messageInput.trim() }"
-                        :disabled="!messageInput.trim()"
-                        title="发送消息"
-                    >
-                        <Icon name="arrow-up" :size="18" />
-                    </button>
-                    <button
-                        v-else
-                        @click="stopGeneration"
-                        class="send-btn stop-btn"
-                        title="停止生成"
-                    >
-                        <Icon name="stop" :size="18" />
-                    </button>
+                    <!-- Quantum Input Box -->
+                    <div class="input-box quantum-box">
+                        <button class="input-action" @click="toggleOptions" :class="{ 'is-active': showOptions }">
+                            <Icon name="plus" :size="20" />
+                        </button>
+
+                        <textarea
+                            v-model="messageInput"
+                            @keydown="handleKeyDown"
+                            @focus="isInputFocused = true"
+                            @blur="isInputFocused = false"
+                            placeholder="Enter command..."
+                            class="message-input"
+                            rows="1"
+                            :disabled="isLoading"
+                        ></textarea>
+
+                        <button
+                            v-if="!isGenerating"
+                            @click="sendMessage"
+                            class="send-btn neon-send"
+                            :class="{ 'is-active': messageInput.trim() }"
+                            :disabled="!messageInput.trim()"
+                        >
+                            <Icon name="arrow-up" :size="18" />
+                        </button>
+                        <button
+                            v-else
+                            @click="stopGeneration"
+                            class="send-btn stop-btn"
+                        >
+                            <Icon name="stop" :size="18" />
+                        </button>
+                    </div>
+
+                    <input ref="fileInput" type="file" multiple style="display: none;" @change="handleFileSelect" />
                 </div>
-
-                <input
-                    ref="fileInput"
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf,.doc,.docx,.txt"
-                    @change="handleFileSelect"
-                    style="display: none;"
-                />
             </div>
         </div>
     </div>
@@ -479,6 +492,189 @@ watch(messages, (newMessages, oldMessages) => {
     height: 100%;
     background: var(--bg-secondary);
     position: relative;
+}
+
+.chat-panel-immersive {
+    position: relative;
+    overflow: hidden;
+}
+
+.nebula-background {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.nebula-layer {
+    position: absolute;
+    inset: 0;
+    background: var(--gradient-mesh);
+    background-size: 200% 200%;
+    filter: blur(40px);
+    opacity: 0.5;
+    animation: gradientShift 22s ease-in-out infinite;
+}
+
+.nebula-layer.layer-2 {
+    opacity: 0.35;
+    animation-duration: 30s;
+    mix-blend-mode: screen;
+}
+
+.stars {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.15) 1px, transparent 1px);
+    background-size: 2px 2px;
+    opacity: 0.2;
+}
+
+.hud-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.hud-corner {
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    opacity: 0.6;
+}
+
+.hud-corner.top-left { top: 8px; left: 8px; }
+.hud-corner.top-right { top: 8px; right: 8px; }
+.hud-corner.bottom-left { bottom: 8px; left: 8px; }
+.hud-corner.bottom-right { bottom: 8px; right: 8px; }
+
+.hud-status {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: var(--text-xs);
+    color: var(--brand-primary-400);
+    letter-spacing: 1px;
+}
+
+.glass-panel {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-radius: var(--radius-xl);
+}
+
+.glass-bubble {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    box-shadow: var(--shadow-md);
+}
+
+.neon-chip {
+    box-shadow: var(--shadow-brand);
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.neon-chip:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-brand-lg);
+}
+
+.neon-panel {
+    box-shadow: var(--shadow-brand);
+}
+
+.messages-container {
+    position: relative;
+    z-index: 2;
+}
+
+.input-area-container {
+    position: relative;
+    z-index: 3;
+}
+
+/* ==================== HOLOGRAPHIC CORE ==================== */
+.holographic-core-container {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+}
+
+.holographic-core {
+    width: 120px;
+    height: 120px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.core-inner {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #fff, var(--brand-primary-400));
+    box-shadow: 0 0 30px var(--brand-primary-500);
+    animation: pulse 2s ease-in-out infinite;
+    z-index: 3;
+}
+
+.core-outer {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border: 2px solid rgba(139, 92, 246, 0.3);
+    border-radius: 50%;
+    border-top-color: var(--brand-primary-400);
+    border-bottom-color: var(--brand-primary-400);
+    animation: spin 4s linear infinite;
+    z-index: 2;
+}
+
+.core-ring {
+    position: absolute;
+    width: 140%;
+    height: 140%;
+    border: 1px dashed rgba(139, 92, 246, 0.2);
+    border-radius: 50%;
+    animation: spin 10s linear infinite reverse;
+    z-index: 1;
+}
+
+.holographic-status {
+    margin-top: 40px;
+    font-family: 'Courier New', monospace;
+    color: var(--brand-primary-400);
+    letter-spacing: 2px;
+    font-size: 12px;
+    text-shadow: 0 0 10px var(--brand-primary-500);
+    animation: blink 1s steps(2) infinite;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(0.8); opacity: 0.7; }
 }
 
 /* ==================== GENERATION NOTICE ==================== */
@@ -548,17 +744,48 @@ watch(messages, (newMessages, oldMessages) => {
     text-align: center;
 }
 
-.empty-icon {
-    width: 80px;
-    height: 80px;
+.empty-visual {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    margin-bottom: var(--space-6);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--gradient-primary);
-    border-radius: var(--radius-2xl);
-    color: white;
-    margin-bottom: var(--space-6);
-    animation: float 3s ease-in-out infinite;
+}
+
+.planet {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    box-shadow: 
+        inset -10px -10px 20px rgba(0,0,0,0.5),
+        0 0 30px rgba(139, 92, 246, 0.4);
+    position: relative;
+    z-index: 2;
+    animation: float 6s ease-in-out infinite;
+}
+
+.orbit {
+    position: absolute;
+    width: 160px;
+    height: 160px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    animation: spin 20s linear infinite;
+}
+
+.orbit::before {
+    content: '';
+    position: absolute;
+    top: 14px;
+    left: 85%;
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #fff;
 }
 
 @keyframes float {
@@ -622,6 +849,21 @@ watch(messages, (newMessages, oldMessages) => {
     gap: var(--space-3);
     animation: fadeInUp 0.4s var(--ease-out) forwards;
     animation-delay: calc(var(--index, 0) * 50ms);
+}
+
+/* Cursor effect for generating message */
+.message-bubble.generating .message-text::after {
+    content: '▋';
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 2px;
+    animation: blink 1s step-end infinite;
+    color: var(--brand-primary-500);
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
 }
 
 @keyframes fadeInUp {
@@ -1108,13 +1350,17 @@ watch(messages, (newMessages, oldMessages) => {
 
 .option-item {
     display: flex;
+    flex-direction: column; /* Vertical on all screens for consistency */
     align-items: center;
+    justify-content: center;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-2);
+    min-width: 64px;
+    height: 64px;
     background: var(--bg-primary);
     border: 1px solid var(--border-primary);
-    border-radius: var(--radius-md);
-    font-size: var(--text-sm);
+    border-radius: var(--radius-lg);
+    font-size: var(--text-xs);
     color: var(--text-secondary);
     cursor: pointer;
     transition: all var(--transition-fast);
@@ -1123,10 +1369,27 @@ watch(messages, (newMessages, oldMessages) => {
 .option-item:hover {
     border-color: var(--brand-primary-300);
     color: var(--brand-primary-600);
+    transform: translateY(-2px);
 }
 
-.option-checkbox {
-    accent-color: var(--brand-primary-500);
+.option-item.is-active {
+    background: var(--bg-brand);
+    border-color: var(--brand-primary-500);
+    color: var(--brand-primary-600);
+}
+
+.option-item.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--bg-secondary);
+}
+
+.option-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
 }
 
 /* Input Box */
@@ -1320,45 +1583,284 @@ watch(messages, (newMessages, oldMessages) => {
     background: rgba(255, 255, 255, 0.9);
 }
 
+.core-sphere-outer {
+    position: absolute;
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.85), var(--brand-primary-400));
+    box-shadow: var(--shadow-brand-glow);
+    animation: pulse 2.5s ease-in-out infinite;
+    z-index: 2;
+}
+
+.core-sphere-inner {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 70% 70%, var(--brand-secondary-400), transparent 60%);
+    animation: spin 6s linear infinite;
+    opacity: 0.75;
+    z-index: 3;
+}
+
+.core-ring-x {
+    position: absolute;
+    width: 160px;
+    height: 160px;
+    border: 2px solid rgba(139,92,246,0.3);
+    border-radius: 50%;
+    animation: spin 8s linear infinite;
+    z-index: 1;
+}
+
+.core-ring-y {
+    position: absolute;
+    width: 160px;
+    height: 160px;
+    border: 2px dashed rgba(6,182,212,0.3);
+    border-radius: 50%;
+    transform: rotateX(60deg);
+    animation: spinReverse 12s linear infinite;
+    z-index: 1;
+}
+
+.core-particles {
+    position: absolute;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+    animation: cosmicGlow 3s ease-in-out infinite;
+    z-index: 0;
+}
+
+.holo-planet {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    box-shadow: inset -10px -10px 20px rgba(0,0,0,0.5), 0 0 30px rgba(139, 92, 246, 0.4);
+    position: relative;
+    z-index: 2;
+    animation: float 6s ease-in-out infinite;
+}
+
+.holo-rings {
+    position: absolute;
+    width: 180px;
+    height: 180px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    animation: spin 20s linear infinite;
+}
+
+.input-area {
+    position: relative;
+    z-index: 3;
+}
+
+.input-box.quantum-box {
+    position: relative;
+    border: 2px solid rgba(139,92,246,0.3);
+}
+
+.input-box.quantum-box::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: var(--radius-2xl);
+    background: conic-gradient(from 0deg, rgba(139,92,246,0.5), rgba(6,182,212,0.5), rgba(236,72,153,0.5), rgba(139,92,246,0.5));
+    filter: blur(8px);
+    opacity: 0.6;
+    z-index: -1;
+}
+
+.send-btn.neon-send {
+    box-shadow: var(--shadow-brand);
+}
+
+.send-btn.neon-send.is-active {
+    background: var(--gradient-primary);
+    color: #fff;
+    box-shadow: var(--shadow-brand-lg);
+}
+
+.thinking-panel.neon-panel .thinking-steps {
+    position: relative;
+}
+
+.thinking-panel.neon-panel .step-line {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    background: linear-gradient(180deg, rgba(139,92,246,0.4), rgba(6,182,212,0.4));
+}
+
+.thinking-panel.neon-panel .thinking-step {
+    position: relative;
+    padding-left: 24px;
+}
+
+.thinking-panel.neon-panel .step-dot {
+    position: absolute;
+    left: 4px;
+    top: 18px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--brand-primary-500);
+    box-shadow: 0 0 12px rgba(139,92,246,0.5);
+}
+
 /* ==================== RESPONSIVE ==================== */
 @media (max-width: 768px) {
     .messages-container {
         padding: var(--space-4);
+        padding-bottom: var(--space-20); /* Ensure space for bottom input */
+        -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
     }
 
     .message-wrapper {
         gap: var(--space-2);
+        margin-bottom: var(--space-2);
     }
 
     .message-avatar {
-        width: 32px;
-        height: 32px;
+        display: none; /* Hide avatars on mobile like iMessage */
     }
 
+    /* iOS Style Bubbles */
     .message-bubble {
-        padding: var(--space-3);
+        padding: 10px 16px;
+        border-radius: 20px;
+        max-width: 75%;
+        font-size: 16px;
+        line-height: 1.4;
+        position: relative;
+        box-shadow: none; /* Flat style */
     }
 
-    .empty-suggestions {
+    /* User Bubble (Right - Blue) */
+    .message-user {
+        justify-content: flex-end;
+    }
+
+    .message-user .message-bubble {
+        background: var(--ios-blue);
+        color: white;
+        border: none;
+        border-bottom-right-radius: 4px; /* Tail effect */
+    }
+
+    /* Assistant Bubble (Left - Gray) */
+    .message-assistant .message-bubble {
+        background: var(--ios-gray);
+        color: black;
+        border: none;
+        border-bottom-left-radius: 4px; /* Tail effect */
+    }
+    
+    [data-theme="dark"] .message-assistant .message-bubble {
+        background: var(--ios-gray-dark);
+        color: white;
+    }
+
+    /* Input Area - iOS Style */
+    .input-area-container {
+        position: fixed; /* Fixed to bottom */
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: rgba(255, 255, 255, 0.95); /* More opaque to prevent overlap visibility */
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-top: 1px solid rgba(0,0,0,0.1);
+        padding-bottom: env(safe-area-inset-bottom);
+        display: flex;
         flex-direction: column;
     }
 
-    .suggestion-chip {
-        width: 100%;
-        justify-content: center;
+    [data-theme="dark"] .input-area-container {
+        background: rgba(30, 30, 30, 0.95);
+        border-top: 1px solid rgba(255,255,255,0.1);
     }
 
     .input-area {
-        padding: var(--space-3);
+        padding: 8px 12px;
+        background: transparent;
+        border: none;
+        order: 1; /* Input stays above options */
     }
 
+    .input-wrapper {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        position: relative; /* Context for children */
+    }
+    
+    /* Move Options Panel OUT of input-wrapper flow visually */
     .options-panel {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px; /* Reduce gap to fit screen */
+        padding: 12px; /* Reduce padding */
+        padding-top: 0;
+        background: transparent;
+        order: 2; /* Below input */
+        border: none;
+        margin: 0;
+        width: 100%;
+        box-sizing: border-box; /* Ensure padding doesn't increase width */
+        overflow-x: hidden; /* Prevent horizontal scroll bar */
+    }
+    
+    .option-item {
+        background: rgba(242, 242, 247, 0.8); /* iOS System Gray 6 */
+        border-radius: 12px;
+        /* Remove aspect-ratio: 1 to allow height to adapt to content if needed, but keep square-ish */
+        height: auto;
+        min-height: 70px;
+        box-shadow: none;
+        border: none;
+        display: flex;
         flex-direction: column;
-        gap: var(--space-2);
+        align-items: center;
+        justify-content: center;
+        padding: 8px 4px; /* Reduce internal padding */
+    }
+    
+    .option-item span {
+        font-size: 10px; /* Smaller text */
+        white-space: nowrap; /* Prevent wrapping */
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+    }
+    
+    [data-theme="dark"] .option-item {
+        background: rgba(44, 44, 46, 0.8); /* iOS Dark Gray 6 */
     }
 
-    .message-actions {
-        opacity: 1;
+    .input-box {
+        flex: 1;
+        background: white;
+        border: 1px solid #c6c6c8; /* iOS Border Gray */
+        border-radius: 20px; /* Capsule shape */
+        padding: 6px 12px; /* Slim padding */
+        display: flex;
+        align-items: center;
+        min-height: 36px;
+    }
+    
+    [data-theme="dark"] .input-box {
+        background: #1c1c1e;
+        border-color: #38383a;
     }
 }
 </style>

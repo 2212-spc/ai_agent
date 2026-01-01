@@ -38,7 +38,7 @@ from .tool_service import (
     parse_tool_call,
     validate_tool_config,
 )
-from .graph_agent import run_agent, stream_agent
+from .graph_agent import run_agent, stream_agent, is_simple_query
 from .file_processor import FileProcessor, chunk_text
 from .rag_service import ingest_text_chunk
 from .agent_builder import execute_custom_agent, stream_custom_agent
@@ -1344,6 +1344,10 @@ async def chat_with_langgraph_agent_stream(
                             "content": node_data["final_answer"]
                         })
                         logger.info(f"📤 已发送最终答案到前端，长度: {len(node_data['final_answer'])}")
+                
+                elif event_type == "token":
+                    # 实时 Token 流
+                    yield format_sse("token", {"data": event.get("data", "")})
                 
                 elif event_type == "completed":
                     # Agent 执行完成
@@ -3157,49 +3161,6 @@ class MultiAgentChatResponse(BaseModel):
     quality_score: float = 0.0
     thread_id: str
     session_id: str
-
-
-def is_simple_query(query: str) -> bool:
-    """
-    判断问题是否简单，简单问题可以走快速路径
-
-    简单问题特征：
-    - 问候语、闲聊
-    - 简单定义性问题（什么是X）
-    - 短问题（少于20字）
-    - 不需要深度分析或多步骤处理
-    """
-    query_lower = query.lower().strip()
-    query_len = len(query)
-
-    # 问候语和闲聊
-    greetings = ["你好", "hello", "hi", "嗨", "早上好", "晚上好", "谢谢", "再见", "好的", "ok"]
-    if any(query_lower.startswith(g) or query_lower == g for g in greetings):
-        return True
-
-    # 简单定义问题
-    simple_patterns = ["什么是", "是什么", "who is", "what is", "定义", "解释一下"]
-    if query_len < 30 and any(p in query_lower for p in simple_patterns):
-        return True
-
-    # 非常短的问题
-    if query_len < 15:
-        return True
-
-    # 复杂问题关键词（需要多智能体）
-    complex_keywords = [
-        "分析", "对比", "比较", "研究", "报告", "总结多个",
-        "深度", "详细", "全面", "综合", "evaluate", "analyze",
-        "最新", "趋势", "发展", "前沿", "现状"
-    ]
-    if any(kw in query_lower for kw in complex_keywords):
-        return False
-
-    # 默认：中等长度问题判为简单
-    if query_len < 50:
-        return True
-
-    return False
 
 
 @app.post("/chat/multi-agent", response_model=MultiAgentChatResponse)

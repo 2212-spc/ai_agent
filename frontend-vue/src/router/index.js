@@ -44,6 +44,16 @@ const routes = [
         path: '/register',
         name: 'Register',
         component: () => import('../views/Register.vue')
+    },
+    {
+        path: '/agent/builder',
+        name: 'AgentBuilder',
+        component: () => import('../views/AgentBuilderHome.vue')
+    },
+    {
+        path: '/agent/edit',
+        name: 'AgentEditor',
+        component: () => import('../views/AgentEditor.vue')
     }
 ];
 
