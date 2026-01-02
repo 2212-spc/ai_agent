@@ -9,6 +9,7 @@ import { useChatStore } from '../../stores/chat';
 import { marked } from 'marked';
 import axios from 'axios';
 import Icon from '../ui/Icon.vue';
+import { API_BASE_URL } from '../../config/api';
 
 const chatStore = useChatStore();
 const messageInput = ref('');
@@ -52,7 +53,7 @@ async function handleFileSelect(event) {
             const formData = new FormData();
             formData.append('file', file);
 
-            const response = await axios.post('http://127.0.0.1:8000/documents/upload', formData, {
+            const response = await axios.post(`${API_BASE_URL}/documents/upload`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
 

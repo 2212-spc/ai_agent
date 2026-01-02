@@ -8,6 +8,7 @@ import ChatPanel from '../components/Chat/ChatPanel.vue';
 import CanvasPanel from '../components/Canvas/CanvasPanel.vue';
 import TimelinePanel from '../components/Chat/TimelinePanel.vue';
 import NotificationContainer from '../components/NotificationContainer.vue';
+import { API_BASE_URL } from '../config/api';
 
 const chatStore = useChatStore();
 const canvasStore = useCanvasStore();
@@ -102,7 +103,7 @@ function onModeChange() {
 async function loadHistoryList() {
     isLoadingHistory.value = true;
     try {
-        const response = await fetch('http://127.0.0.1:8000/conversations');
+        const response = await fetch(`${API_BASE_URL}/conversations`);
         const data = await response.json();
         historyList.value = data.slice(0, 10); // 只显示最近10条
     } catch (error) {
@@ -131,7 +132,7 @@ async function selectConversation(sessionId) {
         
         // 如果会话消息为空，从后端加载历史消息
         if (session.messages.length === 0) {
-            const response = await fetch(`http://127.0.0.1:8000/conversation/${sessionId}/history?limit=100`);
+            const response = await fetch(`${API_BASE_URL}/conversation/${sessionId}/history?limit=100`);
             
             // 如果是404（新会话），不报错
             if (!response.ok) {

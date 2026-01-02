@@ -8,6 +8,7 @@ import NodeConfig from './NodeConfig.vue';
 import BuilderTutorial from './BuilderTutorial.vue';
 import { getAllNodeTypes, NODE_CATEGORIES } from '../../config/nodeTypes';
 import { AGENT_TEMPLATES, getAllTemplates } from '../../config/agentTemplates';
+import { API_BASE_URL } from '../../config/api';
 
 const router = useRouter();
 const canvasStore = useCanvasStore();
@@ -119,7 +120,7 @@ async function handleSave() {
   saveLoading.value = true;
 
   try {
-    const response = await fetch('http://127.0.0.1:8000/agents', {
+    const response = await fetch(`${API_BASE_URL}/agents`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -179,7 +180,7 @@ async function handleExecute() {
     console.log('节点数量:', config.nodes.length, '边数量:', config.edges?.length || 0);
     console.log('节点ID类型检查:', config.nodes.map(n => ({ id: n.id, type: typeof n.id })));
     
-    const saveResponse = await fetch('http://127.0.0.1:8000/agents', {
+    const saveResponse = await fetch(`${API_BASE_URL}/agents`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -228,7 +229,7 @@ async function handleExecute() {
     // 使用流式API执行Agent
     console.log('开始执行Agent:', agent.id);
     
-    const execResponse = await fetch(`http://127.0.0.1:8000/agents/${agent.id}/execute/stream`, {
+    const execResponse = await fetch(`${API_BASE_URL}/agents/${agent.id}/execute/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

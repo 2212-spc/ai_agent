@@ -4,6 +4,8 @@
 
 **🎉 全新 Vue 3 前端现已推出！** 提供更好的开发体验和用户交互。
 
+**🐳 Docker 一键部署**：无需配置环境，一键启动，功能完整，无需梯子！
+
 ![](https://img.shields.io/badge/Python-3.10+-blue)
 ![](https://img.shields.io/badge/FastAPI-0.110+-green)
 ![](https://img.shields.io/badge/Vue-3.4+-42b883)
@@ -134,8 +136,64 @@
 
 ## 🚀 快速开始
 
-### 前置要求
+### 🐳 方式一：Docker 部署（推荐）⭐
+
+**最简单的部署方式，一键启动，功能完整，无需梯子！**
+
+#### ✨ 优势
+- ✅ **一键启动**：无需手动配置环境，无需安装 Python/Node.js
+- ✅ **功能完整**：所有功能完整保留，无任何缩水
+- ✅ **无需梯子**：已配置国内镜像源，国内用户可直接使用
+- ✅ **跨平台**：Windows/Linux/Mac 都能用
+- ✅ **易维护**：数据持久化，日志完善
+
+#### 前置要求
+- [Docker Desktop](https://www.docker.com/get-started) 20.10 或更高版本
+- [Docker Compose](https://docs.docker.com/compose/install/) 2.0 或更高版本
+- DeepSeek API Key（[获取地址](https://platform.deepseek.com/)）
+
+#### 启动步骤
+
+```bash
+# 1. 克隆项目
+git clone <your-repo-url>
+cd ai_agent
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，填入你的 DEEPSEEK_API_KEY
+
+# 3. 一键启动（Windows）
+start.bat
+
+# 或一键启动（Linux/Mac）
+chmod +x start.sh
+./start.sh
+
+# 或直接使用 Docker Compose
+docker-compose up -d
+```
+
+#### 访问应用
+
+- **前端界面**：http://localhost
+- **后端 API 文档**：http://localhost:8000/docs
+
+#### 📝 说明
+
+- **无需梯子**：Dockerfile 已配置国内镜像源（阿里云），国内用户可直接构建
+- **首次构建**：需要 5-10 分钟下载依赖和基础镜像，请耐心等待
+- **数据持久化**：所有数据保存在 `backend/data/` 目录，删除容器不会丢失数据
+
+详细文档请查看：[Docker 部署指南](DOCKER_DEPLOYMENT.md)
+
+---
+
+### 💻 方式二：本地开发部署
+
+#### 前置要求
 - Python 3.10 或更高版本
+- Node.js 18 或更高版本
 - pip 或 conda 包管理器
 - DeepSeek API Key（[获取地址](https://platform.deepseek.com/)）
 
@@ -501,7 +559,7 @@ ai_agent/
 │   │   ├── graph_agent.py     # LangGraph Agent 核心逻辑
 │   │   ├── memory_service.py  # 长期记忆系统
 │   │   ├── rag_service.py     # RAG 检索服务
-│   │   ├── tool_service.py    # 工具服务（含上网功能）
+│   │   ├── tool_service.py     # 工具服务（含上网功能）
 │   │   ├── agent_builder.py   # Agent构建器后端逻辑
 │   │   ├── agent_roles.py     # 多智能体角色定义（含Prompt管理）
 │   │   └── multi_agent.py     # 多智能体系统核心逻辑
@@ -511,6 +569,7 @@ ai_agent/
 │   │   ├── diagrams/          # 生成的图表
 │   │   ├── chroma/            # 向量数据库
 │   │   └── agent.db           # SQLite 数据库
+│   ├── Dockerfile             # 后端 Docker 镜像配置
 │   ├── requirements.txt       # Python 依赖
 │   └── 重启增强版服务器.ps1   # 启动脚本（Windows）
 │
@@ -535,8 +594,12 @@ ai_agent/
 │   │   │   ├── chat.js        # 聊天状态
 │   │   │   └── canvas.js      # 画布状态
 │   │   ├── router/            # 路由配置
+│   │   ├── config/            # 配置文件
+│   │   │   └── api.js         # API 配置（支持环境变量）
 │   │   └── assets/            # 静态资源
 │   │       └── styles/        # 样式文件
+│   ├── Dockerfile             # 前端 Docker 镜像配置
+│   ├── nginx.conf             # Nginx 配置
 │   ├── package.json           # NPM 依赖
 │   ├── vite.config.js         # Vite 配置
 │   └── USAGE_GUIDE.md         # 详细使用指南
@@ -550,7 +613,12 @@ ai_agent/
 │   ├── css/                   # 模块化CSS
 │   └── js/                    # 模块化JavaScript
 │
-└── README.md                   # 本文件
+├── docker-compose.yml         # Docker Compose 编排配置
+├── .env.example               # 环境变量模板
+├── start.sh                   # Linux/Mac 一键启动脚本
+├── start.bat                  # Windows 一键启动脚本
+├── DOCKER_DEPLOYMENT.md       # Docker 部署详细指南
+└── README.md                  # 本文件
 ```
 
 ---
@@ -713,7 +781,17 @@ A: 正常现象，需要下载嵌入模型（约 500MB）和依赖包，请耐�
 A: 确保网络畅通，KaTeX 库需要从 CDN 加载。可以按 F12 查看控制台错误。
 
 ### Q: 搜索功能不可用？
-A: 检查网络连接，确保可以访问 DuckDuckGo。部分地区可能需要代理。
+A: 检查网络连接，确保可以访问 DuckDuckGo。国内用户通常可以直接访问。
+
+### Q: Docker 构建失败？
+A: 
+1. 确保 Docker Desktop 已启动
+2. 检查网络连接，Dockerfile 已配置国内镜像源，无需梯子
+3. 如果还是失败，尝试：`docker-compose build --no-cache`
+4. 查看详细日志：`docker-compose logs`
+
+### Q: Docker 部署需要梯子吗？
+A: **不需要！** Dockerfile 已配置国内镜像源（阿里云），国内用户可直接使用，无需梯子。
 
 ### Q: DeepSeek API 调用失败？
 A: 检查：

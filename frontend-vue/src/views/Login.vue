@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
+import { API_BASE_URL } from '../config/api';
 
 const router = useRouter();
 const email = ref('');
@@ -19,7 +20,7 @@ async function handleLogin() {
     error.value = '';
     
     try {
-        const response = await axios.post('http://127.0.0.1:8000/api/auth/login', {
+        const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
             email: email.value,
             password: password.value
         });

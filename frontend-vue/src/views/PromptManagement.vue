@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
+import { API_BASE_URL } from '../config/api';
 
 const router = useRouter();
 const prompts = ref([]);
@@ -17,7 +18,7 @@ const newPrompt = ref({
     content: '',
     agent_id: ''
 });
-const apiBase = 'http://127.0.0.1:8000';
+const apiBase = API_BASE_URL;
 
 async function loadPrompts() {
     isLoading.value = true;

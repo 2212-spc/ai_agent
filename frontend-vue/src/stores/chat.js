@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import axios from 'axios';
+import { API_BASE_URL } from '../config/api';
 
 // 会话状态枚举
 const SESSION_STATUS = {
@@ -13,7 +14,7 @@ export const useChatStore = defineStore('chat', () => {
     // State
     const currentSessionId = ref(null);
     const isLoading = ref(false);
-    const apiBase = 'http://127.0.0.1:8000';
+    const apiBase = API_BASE_URL;
     const isMultiAgentMode = ref(false);
     const useKnowledgeBase = ref(true);
     const useTools = ref(true);  // 🔧 启用工具（上网搜索等），默认开启

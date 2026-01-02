@@ -1,0 +1,52 @@
+services:
+  # 后端服务
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-agent-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+    volumes:
+      # 持久化数据
+      - ./backend/data:/app/data
+      # 开发模式：挂载代码（可选，生产环境删除）
+      # - ./backend/app:/app/app
+    networks:
+      - ai-agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # 前端服务
+  frontend:
+    build:
+      context: ./frontend-vue
+      dockerfile: Dockerfile
+    container_name: ai-agent-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - ai-agent-network
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+
+networks:
+  ai-agent-network:
+    driver: bridge
+
+# 可选：使用 Docker volumes 代替绑定挂载（更好的性能）
+# volumes:
+#   backend-data:
+#     driver: local
+

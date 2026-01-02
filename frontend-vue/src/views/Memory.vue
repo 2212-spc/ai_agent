@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useChatStore } from '../stores/chat';
 import { useNotification, NOTIFICATION_TYPES } from '../composables/useNotification';
+import { API_BASE_URL } from '../config/api';
 
 const chatStore = useChatStore();
 const { showRich } = useNotification();
@@ -59,7 +60,7 @@ async function loadMemories() {
         if (selectedType.value !== 'all') params.append('memory_type', selectedType.value);
         params.append('limit', '100');
         
-        const response = await fetch(`http://127.0.0.1:8000/api/memories/search?${params}`);
+        const response = await fetch(`${API_BASE_URL}/api/memories/search?${params}`);
         if (!response.ok) throw new Error('加载记忆失败');
         
         memories.value = await response.json();
@@ -77,7 +78,7 @@ async function loadUserPreferences() {
     const userId = 'default'; // 使用默认用户ID
     isConfigLoading.value = true;
     try {
-        const response = await fetch(`http://127.0.0.1:8000/api/preferences?user_id=${userId}`);
+        const response = await fetch(`${API_BASE_URL}/api/preferences?user_id=${userId}`);
         if (!response.ok) throw new Error('加载偏好设置失败');
         
         const data = await response.json();
@@ -100,7 +101,7 @@ async function updateUserPreferences() {
     const userId = 'default';
     isConfigLoading.value = true;
     try {
-        const response = await fetch('http://127.0.0.1:8000/api/preferences', {
+        const response = await fetch(`${API_BASE_URL}/api/preferences`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -141,7 +142,7 @@ async function deleteMemory(memoryId) {
     if (!confirm('确定要删除这条记忆吗？')) return;
     
     try {
-        const response = await fetch(`http://127.0.0.1:8000/api/memories/${memoryId}`, {
+        const response = await fetch(`${API_BASE_URL}/api/memories/${memoryId}`, {
             method: 'DELETE',
         });
         
@@ -166,7 +167,7 @@ async function deleteBatch() {
     if (!confirm(`确定要删除选中的 ${selectedMemories.value.size} 条记忆吗？`)) return;
     
     try {
-        const response = await fetch('http://127.0.0.1:8000/api/memories/batch', {
+        const response = await fetch(`${API_BASE_URL}/api/memories/batch`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',

@@ -1,0 +1,73 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 文档和示例
+*.md
+!README.md
+!DOCKER_DEPLOYMENT.md
+docs/
+assets/
+
+# 测试
+tests/
+*.test.js
+*.spec.js
+coverage/
+
+# 环境变量（不打包到镜像）
+.env
+.env.local
+.env.*.local
+
+# 日志
+*.log
+logs/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 数据文件（会通过 volume 挂载）
+backend/data/
+!backend/data/.gitkeep
+
+# 前端构建产物（如果在根目录构建）
+frontend-vue/dist/
+frontend-vue/node_modules/
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+

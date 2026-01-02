@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import { getNodeType } from '../../config/nodeTypes';
+import { API_BASE_URL } from '../../config/api';
 
 const props = defineProps({
   node: {
@@ -29,7 +30,7 @@ const availableTools = ref([]);
 // 加载可用工具
 onMounted(async () => {
   try {
-    const response = await fetch('http://127.0.0.1:8000/tools');
+    const response = await fetch(`${API_BASE_URL}/tools`);
     if (response.ok) {
       const tools = await response.json();
       availableTools.value = tools.map(tool => ({
