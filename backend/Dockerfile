@@ -1,6 +1,6 @@
 # 后端 Dockerfile - AI Agent Backend
 # 使用国内镜像源（无需梯子）
-FROM registry.cn-hangzhou.aliyuncs.com/acs/python:3.10-slim
+FROM docker.m.daocloud.io/python:3.10-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -16,7 +16,8 @@ COPY requirements.txt .
 
 # 安装 Python 依赖
 # 使用国内镜像加速（可选）
-RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制应用代码
 COPY . .

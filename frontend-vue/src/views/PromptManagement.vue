@@ -18,7 +18,75 @@ const newPrompt = ref({
     content: '',
     agent_id: ''
 });
+
+// AI 辅助生成相关状态
+const showAiPanel = ref(false);
+const aiRequirement = ref('');
+const generatedKeywords = ref([]);
+const selectedKeywords = ref([]);
+const isExtracting = ref(false);
+const isGenerating = ref(false);
+
 const apiBase = API_BASE_URL;
+
+async function extractKeywords() {
+    if (!aiRequirement.value) return;
+    
+    isExtracting.value = true;
+    try {
+        const response = await axios.post(`${apiBase}/prompts/extract-keywords`, {
+            user_requirement: aiRequirement.value
+        });
+        generatedKeywords.value = response.data.keywords;
+        selectedKeywords.value = [...response.data.keywords]; // 默认全选
+    } catch (error) {
+        console.error('提取关键词失败:', error);
+        alert('提取关键词失败: ' + (error.response?.data?.detail || error.message));
+    } finally {
+        isExtracting.value = false;
+    }
+}
+
+function toggleKeyword(keyword) {
+    const index = selectedKeywords.value.indexOf(keyword);
+    if (index === -1) {
+        selectedKeywords.value.push(keyword);
+    } else {
+        selectedKeywords.value.splice(index, 1);
+    }
+}
+
+async function generatePromptWithKeywords() {
+    if (!newPrompt.value.agent_id) {
+        alert('请先选择一个智能体');
+        return;
+    }
+    
+    isGenerating.value = true;
+    try {
+        const response = await axios.post(`${apiBase}/prompts/generate`, {
+            agent_id: newPrompt.value.agent_id,
+            user_requirement: aiRequirement.value,
+            keywords: selectedKeywords.value
+        });
+        
+        if (response.data.success) {
+            newPrompt.value.content = response.data.generated_prompt;
+            // 如果名称为空，自动填充建议名称
+            if (!newPrompt.value.name) {
+                newPrompt.value.name = response.data.suggested_name;
+            }
+            if (!newPrompt.value.description) {
+                newPrompt.value.description = response.data.suggested_description;
+            }
+        }
+    } catch (error) {
+        console.error('生成Prompt失败:', error);
+        alert('生成失败: ' + (error.response?.data?.detail || error.message));
+    } finally {
+        isGenerating.value = false;
+    }
+}
 
 async function loadPrompts() {
     isLoading.value = true;
@@ -47,6 +115,30 @@ async function activatePrompt(promptId) {
         loadPrompts();
     } catch (error) {
         console.error('激活Prompt失败:', error);
+        alert('激活失败: ' + (error.response?.data?.detail || error.message));
+    }
+}
+
+async function deactivatePrompt(promptId) {
+    try {
+        await axios.post(`${apiBase}/prompts/${promptId}/deactivate`);
+        loadPrompts();
+    } catch (error) {
+        console.error('停用Prompt失败:', error);
+        alert('停用失败: ' + (error.response?.data?.detail || error.message));
+    }
+}
+
+async function deletePrompt(promptId) {
+    if (confirm('确定要删除这个Prompt模板吗？此操作不可恢复。')) {
+        try {
+            await axios.delete(`${apiBase}/prompts/${promptId}`);
+            loadPrompts();
+            alert('Prompt删除成功！');
+        } catch (error) {
+            console.error('删除Prompt失败:', error);
+            alert('删除失败: ' + (error.response?.data?.detail || error.message));
+        }
     }
 }
 
@@ -103,7 +195,7 @@ onMounted(() => {
             <div class="header-left">
                 <button class="btn-icon" @click="router.push('/chat')">←</button>
                 <div>
-                    <h1>Prompt模板管理</h1>
+                    <h1>Prompt模板管理 (v2.2)</h1>
                     <p class="subtitle">管理智能体的Prompt模板</p>
                 </div>
             </div>
@@ -120,7 +212,7 @@ onMounted(() => {
                 <select v-model="selectedAgent" class="select">
                     <option value="">全部</option>
                     <option v-for="agent in agents" :key="agent.name" :value="agent.name">
-                        {{ agent.display_name }}
+                        {{ agent.name }}
                     </option>
                 </select>
             </div>
@@ -158,7 +250,21 @@ onMounted(() => {
                         >
                             激活
                         </button>
+                        <button
+                            v-if="prompt.is_active"
+                            @click="deactivatePrompt(prompt.id)"
+                            class="btn btn-warning btn-small"
+                        >
+                            停用
+                        </button>
                         <button class="btn btn-secondary btn-small" @click="viewPrompt(prompt)">查看</button>
+                        <button
+                            v-if="!prompt.is_default"
+                            @click="deletePrompt(prompt.id)"
+                            class="btn btn-danger btn-small"
+                        >
+                            删除
+                        </button>
                     </div>
                 </div>
             </div>
@@ -200,7 +306,7 @@ onMounted(() => {
         <div v-if="showCreateModal" class="modal-overlay" @click="closeCreateModal">
             <div class="modal-content" @click.stop>
                 <div class="modal-header">
-                    <h2>新建Prompt模板</h2>
+                    <h2>新建Prompt模板 (v2.0 AI增强版)</h2>
                     <button class="modal-close" @click="closeCreateModal">×</button>
                 </div>
                 <div class="modal-body">
@@ -212,7 +318,7 @@ onMounted(() => {
                         <label>智能体:</label>
                         <select v-model="newPrompt.agent_id" class="select">
                             <option v-for="agent in agents" :key="agent.id" :value="agent.id">
-                                {{ agent.display_name }}
+                                {{ agent.name }}
                             </option>
                         </select>
                     </div>
@@ -220,6 +326,56 @@ onMounted(() => {
                         <label>描述:</label>
                         <input type="text" v-model="newPrompt.description" placeholder="简要描述" />
                     </div>
+
+                    <!-- AI 智能辅助面板 -->
+                    <div class="ai-helper-panel">
+                        <div class="ai-helper-header" @click="showAiPanel = !showAiPanel">
+                            <span>✨ AI 智能辅助生成</span>
+                            <span class="toggle-icon">{{ showAiPanel ? '▼' : '▶' }}</span>
+                        </div>
+                        
+                        <div v-if="showAiPanel" class="ai-helper-content">
+                            <div class="helper-step">
+                                <label>1. 描述您的需求:</label>
+                                <textarea 
+                                    v-model="aiRequirement" 
+                                    placeholder="例如：帮我写一个能分析财报并提取风险点的助手..."
+                                    rows="3"
+                                ></textarea>
+                                <button 
+                                    class="btn btn-secondary btn-small full-width" 
+                                    @click="extractKeywords"
+                                    :disabled="isExtracting || !aiRequirement"
+                                >
+                                    {{ isExtracting ? '分析中...' : '🔍 提取关键词' }}
+                                </button>
+                            </div>
+
+                            <div v-if="generatedKeywords.length > 0" class="helper-step">
+                                <label>2. 选择核心关键词 (点击切换):</label>
+                                <div class="keywords-cloud">
+                                    <span 
+                                        v-for="kw in generatedKeywords" 
+                                        :key="kw"
+                                        class="keyword-tag"
+                                        :class="{ active: selectedKeywords.includes(kw) }"
+                                        @click="toggleKeyword(kw)"
+                                    >
+                                        {{ kw }}
+                                        <span class="check-mark" v-if="selectedKeywords.includes(kw)">✓</span>
+                                    </span>
+                                </div>
+                                <button 
+                                    class="btn btn-primary btn-small full-width" 
+                                    @click="generatePromptWithKeywords"
+                                    :disabled="isGenerating || selectedKeywords.length === 0"
+                                >
+                                    {{ isGenerating ? '生成中...' : '✨ 生成 Prompt 内容' }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="detail-section">
                         <label>内容:</label>
                         <textarea 
@@ -346,6 +502,26 @@ onMounted(() => {
 .badge-default {
     background: var(--bg-tertiary);
     color: var(--text-tertiary);
+}
+
+.btn-warning {
+    background: #ffc107;
+    color: #212529;
+    border: none;
+}
+
+.btn-warning:hover {
+    background: #e0a800;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+    border: none;
+}
+
+.btn-danger:hover {
+    background: #c82333;
 }
 
 .prompt-meta {
@@ -497,5 +673,96 @@ onMounted(() => {
     font-family: var(--font-mono);
     max-height: 400px;
     overflow-y: auto;
+}
+
+/* AI 辅助面板样式 */
+.ai-helper-panel {
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+}
+
+.ai-helper-header {
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    color: var(--primary-color);
+    user-select: none;
+}
+
+.ai-helper-content {
+    padding: 16px;
+    border-top: 1px solid var(--border-primary);
+}
+
+.helper-step {
+    margin-bottom: 16px;
+}
+
+.helper-step:last-child {
+    margin-bottom: 0;
+}
+
+.helper-step label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.helper-step textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border-secondary);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.full-width {
+    width: 100%;
+}
+
+.keywords-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.keyword-tag {
+    padding: 4px 12px;
+    border-radius: 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+    color: var(--text-primary);
+}
+
+.keyword-tag:hover {
+    border-color: var(--primary-color);
+}
+
+.keyword-tag.active {
+    background: var(--primary-light);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    font-weight: 500;
+}
+
+.check-mark {
+    margin-left: 4px;
+    font-size: 10px;
 }
 </style>

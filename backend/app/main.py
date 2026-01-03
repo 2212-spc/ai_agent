@@ -288,6 +288,12 @@ class PromptGenerateRequest(BaseModel):
     user_requirement: str = Field(..., description="用户需求描述（自然语言）")
     reference_style: Optional[str] = Field(None, description="参考风格（如：简洁、详细、专业等）")
     output_format: Optional[str] = Field(None, description="期望的输出格式（如：JSON、Markdown、纯文本等）")
+    keywords: Optional[List[str]] = Field(None, description="用户选择的关键指令或词汇")
+
+
+class ExtractKeywordsRequest(BaseModel):
+    """关键词提取请求"""
+    user_requirement: str = Field(..., description="用户需求描述")
 
 
 class AgentExecuteRequest(BaseModel):
@@ -2083,6 +2089,64 @@ JSON结构示例：
             status_code=500,
             detail=f"生成Prompt失败: {str(e)}"
         )
+
+
+@app.post("/prompts/extract-keywords")
+async def extract_keywords_from_requirement(
+    payload: ExtractKeywordsRequest,
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    """
+    从用户需求中提取关键指令或词汇
+    """
+    from .graph_agent import invoke_llm
+    
+    prompt = f"""请分析以下用户需求，提取 5-10 个关键的 Prompt 指令、核心概念或功能关键词。
+这些关键词将用于后续生成更精确的 Prompt 模板。
+
+用户需求：
+{payload.user_requirement}
+
+要求：
+1. 只返回关键词列表
+2. 关键词应该简短、有力（如"分析财报"、"提取风险"、"JSON格式"）
+3. 直接返回 JSON 数组格式，不要Markdown标记
+
+输出示例：
+["关键词1", "关键词2", "关键词3"]
+
+输出："""
+
+    try:
+        messages = [{"role": "user", "content": prompt}]
+        reply, _ = await invoke_llm(
+            messages=messages,
+            settings=settings,
+            temperature=0.5,
+        )
+        
+        # 清理和解析 JSON
+        reply = reply.strip()
+        if reply.startswith("```"):
+            reply = reply.split("\n", 1)[1]
+            if reply.endswith("```"):
+                reply = reply.rsplit("\n", 1)[0]
+        
+        # 尝试查找列表部分
+        start = reply.find("[")
+        end = reply.rfind("]")
+        if start != -1 and end != -1:
+            reply = reply[start:end+1]
+            
+        import json
+        keywords = json.loads(reply)
+        
+        return {"keywords": keywords}
+        
+    except Exception as e:
+        logger.error(f"提取关键词失败: {e}", exc_info=True)
+        # 降级策略：简单的基于规则的提取或返回空列表
+        return {"keywords": [], "error": str(e)}
 
 
 @app.post("/agents/{agent_id}/execute", response_model=ChatResponse)

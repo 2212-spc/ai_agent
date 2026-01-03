@@ -1,6 +1,6 @@
 # 前端 Dockerfile - Vue 3 Frontend
 # 使用国内镜像源（无需梯子）
-FROM registry.cn-hangzhou.aliyuncs.com/acs/node:18-alpine as builder
+FROM docker.m.daocloud.io/node:22-alpine as builder
 
 # 设置工作目录
 WORKDIR /app
@@ -12,15 +12,19 @@ COPY package*.json ./
 RUN npm config set registry https://registry.npmmirror.com && \
     npm install
 
-# 复制源代码
+# 强制更新缓存
+COPY version.txt .
 COPY . .
+
+# [调试] 打印关键文件内容，确认是否为最新代码
+RUN cat src/views/PromptManagement.vue | grep "extract-keywords" || echo "KEYWORD NOT FOUND IN SOURCE"
 
 # 构建生产版本
 RUN npm run build
 
 # 生产环境 - 使用 nginx 提供静态文件
 # 使用国内镜像源（无需梯子）
-FROM registry.cn-hangzhou.aliyuncs.com/acs/nginx:alpine
+FROM docker.m.daocloud.io/nginx:alpine
 
 # 复制构建产物到 nginx
 COPY --from=builder /app/dist /usr/share/nginx/html
